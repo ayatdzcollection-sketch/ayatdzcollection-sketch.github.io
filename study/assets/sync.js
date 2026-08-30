@@ -79,12 +79,9 @@ function formatCode(code) {
   return code.replace(/(.{4})(.{4})(.{4})/, '$1-$2-$3');
 }
 
-function stableJson(v) {
-  try { return JSON.stringify(v); } catch (e) { return ''; }
-}
-
-/* Key-order-independent, so a payload that came back from the server in a different
-   property order is not mistaken for a change and pushed again on every sync. */
+/* Key-order-independent on purpose. Postgres stores jsonb with its own key ordering, so
+   a record comes back spelled differently than it went in. Comparing raw JSON would call
+   that a change on every sync, and would let key order decide merge tie-breaks. */
 function canonicalJson(v) {
   if (v === null || typeof v !== 'object') return JSON.stringify(v);
   if (Array.isArray(v)) return '[' + v.map(canonicalJson).join(',') + ']';
@@ -105,7 +102,7 @@ function deepEqual(a, b) {
 function defaultMerge(aVal, bVal, aM, bM) {
   if (aM > bM) return aVal;
   if (bM > aM) return bVal;
-  return stableJson(aVal) >= stableJson(bVal) ? aVal : bVal;
+  return canonicalJson(aVal) >= canonicalJson(bVal) ? aVal : bVal;
 }
 
 /* FSRS state records are only coherent as a set: stability, difficulty, last, reps and
@@ -120,7 +117,7 @@ function pickStateRecord(a, b) {
   var bReps = (b && typeof b.reps === 'number') ? b.reps : 0;
   if (aReps > bReps) return a;
   if (bReps > aReps) return b;
-  return stableJson(a) >= stableJson(b) ? a : b;
+  return canonicalJson(a) >= canonicalJson(b) ? a : b;
 }
 
 function mergeExams(aEx, bEx) {
@@ -134,7 +131,7 @@ function mergeExams(aEx, bEx) {
     if (!prev) { byTs[k] = e; continue; }
     // Same timestamp from both sides: prefer a pass, then break ties deterministically.
     if (!prev.exact && e.exact) byTs[k] = e;
-    else if (prev.exact === e.exact && stableJson(e) > stableJson(prev)) byTs[k] = e;
+    else if (prev.exact === e.exact && canonicalJson(e) > canonicalJson(prev)) byTs[k] = e;
   }
   var out = [];
   for (var key in byTs) if (Object.prototype.hasOwnProperty.call(byTs, key)) out.push(byTs[key]);

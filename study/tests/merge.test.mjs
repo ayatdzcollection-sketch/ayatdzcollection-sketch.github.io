@@ -177,6 +177,32 @@ test('the import summary describes fsrs changes in words', () => {
   assert.match(text, /1 exam result added/);
 });
 
+/* ---------- key ordering ----------
+   Postgres jsonb reorders object keys, so a record returned by the server is spelled
+   differently than the one sent. Merging must not notice. */
+
+test('a server round-trip that only reorders keys is not treated as a change', () => {
+  const local = { s: 15.69105, d: 3.2245015893713678, last: 1788130094855, reps: 1, lapses: 0 };
+  const fromServer = { d: 3.2245015893713678, s: 15.69105, last: 1788130094855, reps: 1, lapses: 0 };
+
+  const a = env({ 'fifty-states:fsrs': [{ states: { Texas: local }, quizDate: null, exams: [] }, 100] });
+  const b = env({ 'fifty-states:fsrs': [{ states: { Texas: fromServer }, quizDate: null, exams: [] }, 100] });
+
+  const m = merge(a, b);
+  const picked = fsrsOf(m).states.Texas;
+  assert.equal(picked.s, local.s, 'no value changed');
+  assert.equal(picked.d, local.d, 'float precision preserved exactly');
+  assert.deepEqual(merge(a, b), merge(b, a), 'key order does not decide the tie');
+  assert.deepEqual(merge(a, m), m, 'still idempotent across a reordered round-trip');
+});
+
+test('reordered keys compare equal, so no needless push is triggered', () => {
+  const { deepEqual: eq } = require('../assets/sync.js');
+  assert.equal(eq({ a: 1, b: { x: 1, y: 2 } }, { b: { y: 2, x: 1 }, a: 1 }), true);
+  assert.equal(eq({ a: 1 }, { a: 2 }), false, 'real differences still register');
+  assert.equal(eq([1, 2], [2, 1]), false, 'array order still matters');
+});
+
 /* ---------- pairing codes ---------- */
 
 test('pairing codes are read leniently but validated strictly', () => {
