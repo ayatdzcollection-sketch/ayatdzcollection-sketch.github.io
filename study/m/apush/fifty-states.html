@@ -144,7 +144,10 @@ svg#map{display:block;width:100%;height:100%}
 .work{padding-top:16px}
 .sectlabel{font-family:var(--cond);font-weight:600;text-transform:uppercase;letter-spacing:.14em;
   font-size:10.5px;color:var(--ink3);border-bottom:1px solid var(--rule);padding-bottom:5px;
-  margin:0 0 12px;display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+  margin:0 0 12px;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:6px 10px}
+/* the heading keeps its own line rather than breaking in half when the toggles beside it
+   are too wide to sit alongside */
+.sectlabel .lbl{white-space:nowrap}
 
 .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px 12px}
 @media(min-width:640px) and (max-width:1079px){.grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
@@ -793,7 +796,21 @@ const elapsed = ()=> Date.now()-clockStart;
 const short = s => s.length>13 ? s.split(' ').map(w=>w[0]).join('') : s;
 const shuffle = a => { a=a.slice(); for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];} return a; };
 
-let follow = window.innerWidth < 1080;
+/* Off by default: the map opens at full extent and stays where you put it, so the zoom
+   buttons and dragging behave the way a map normally does. Turning it on re-frames the
+   map on whichever blank has focus. Remembered per device — a phone and a laptop
+   reasonably want different answers, so it is excluded from sync. */
+let follow = false;
+/* Which blank has focus. Deliberately separate from activeName: that one is owned by
+   locate() and tells the keyboard-open reflow to re-frame, which is precisely what we do
+   not want happening while auto-zoom is off. */
+let focusedName = null;
+function setFollow(v){
+  follow = !!v;
+  store.set('followFocus', follow);
+  document.querySelectorAll('#fol, #rfol').forEach(el => { el.checked = follow; });
+  if (follow && focusedName) locate(focusedName);
+}
 
 /* ---------- blank-to-blank navigator ----------
    Moves through answer grids with on-screen arrows. If the keyboard is open
@@ -892,8 +909,8 @@ function modeExam(){
     const el = work.querySelector(`input[data-i="${i}"]`); if(el){ el.focus(); el.scrollIntoView({block:'center',behavior:'smooth'}); } };
 
   work.innerHTML = `
-    <div class="sectlabel">Answer sheet<span style="display:flex;gap:14px;flex-wrap:wrap">
-      <span class="toggle"><input type="checkbox" id="fol" ${follow?'checked':''}><label for="fol">Follow focus</label></span>
+    <div class="sectlabel"><span class="lbl">Answer sheet</span><span style="display:flex;gap:14px;flex-wrap:wrap">
+      <span class="toggle"><input type="checkbox" id="fol" ${follow?'checked':''}><label for="fol">Auto-zoom to state</label></span>
       <span class="toggle"><input type="checkbox" id="adv" ${examAuto?'checked':''}><label for="adv">Instant check</label></span></span></div>
     <p style="margin:0 0 14px;color:var(--ink2);font-size:15px">Every state carries a number. Write each name in the matching blank; no word bank, spelling counts. Tap a map number to jump to its blank, or use the corner arrows to move between blanks without opening the keyboard. Instant check marks each answer as you commit it and jumps ahead when you are exactly right; leave it off for an honest cold run.</p>
     <div id="out"></div>
@@ -919,6 +936,7 @@ function modeExam(){
       if (examAuto){ paintFromRows(name); setClass(name,'on'); }
       else { resetClasses(); setClass(name,'on'); }
     }
+    focusedName = name;
     if(follow) locate(name);
   };
   setNav({ inputs: ()=>[...grid.querySelectorAll('input')], hi });
@@ -948,7 +966,7 @@ function modeExam(){
     const i=+e.target.dataset.i, nx=grid.querySelector(`input[data-i="${i+1}"]`);
     if(nx) navStep(1); else document.getElementById('grade').click();
   });
-  document.getElementById('fol').onchange = e => { follow = e.target.checked; };
+  document.getElementById('fol').onchange = e => { setFollow(e.target.checked); };
   document.getElementById('adv').onchange = e => { examAuto = e.target.checked; };
   document.getElementById('grade').onclick = gradeExam;
   document.getElementById('new').onclick = modeExam;
@@ -1081,7 +1099,9 @@ function runRegion(r){
     const el=work.querySelector(`input[data-i="${i}"]`); if(el) el.focus(); };
   setMargin([['Mode','Region drill'],['Chunk',short(r.name)],['Correct',`0<small> / ${r.states.length}</small>`],['Progress','0%']]);
   work.innerHTML = `
-    <div class="sectlabel">${r.name}<span style="font-family:var(--mono);text-transform:none;letter-spacing:0">${r.states.length} states</span></div>
+    <div class="sectlabel"><span class="lbl">${r.name}</span><span style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
+      <span class="toggle"><input type="checkbox" id="rfol" ${follow?'checked':''}><label for="rfol">Auto-zoom to state</label></span>
+      <span style="font-family:var(--mono);text-transform:none;letter-spacing:0">${r.states.length} states</span></span></div>
     <div class="cue"><span>${r.cue}</span></div>
     <div id="rres"></div>
     <div class="btnrow"><button class="btn" id="rgrade">Check chunk</button>
@@ -1090,8 +1110,10 @@ function runRegion(r){
   const g=document.getElementById('rgrid');
   g.innerHTML = region.order.map((n,i)=>
     `<label class="ans" data-i="${i}"><span class="n">${i+1}</span><input data-i="${i}" autocomplete="off" autocorrect="off" autocapitalize="words" spellcheck="false" enterkeyhint="next" aria-label="State ${i+1}" placeholder="state"></label>`).join('');
+  document.getElementById('rfol').onchange = e => { setFollow(e.target.checked); };
   const rhi = i => { const n=region.order[i];
     region.order.forEach(x=>setClass(x,'')); setClass(n,'on');
+    focusedName = n;
     if(follow) locate(n); };
   setNav({ inputs: ()=>[...g.querySelectorAll('input')], hi: rhi });
   g.addEventListener('focusin',e=>{ if(e.target.tagName!=='INPUT')return;
@@ -1440,6 +1462,7 @@ document.querySelectorAll('.tab').forEach(t=>{
 /* ---------- boot ---------- */
 (async ()=>{
   const d = await store.get('regionsDone'); if(d) mem.regionsDone = d;
+  const ff = await store.get('followFocus'); if(ff != null) follow = !!ff;
   const f = await store.get('fsrs');
   if (f && f.states){ FS = f; ensureFS(); }
   else {

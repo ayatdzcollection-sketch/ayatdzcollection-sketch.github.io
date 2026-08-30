@@ -32,9 +32,10 @@ var KEEPALIVE_LIMIT = 60000;   // browsers cap keepalive bodies at ~64KB
 
 /* Keys that stay on this device and never enter a sync or export envelope.
  * 'deck' is dead Leitner data read once at boot for migration.
+ * 'followFocus' is a view preference: a phone and a laptop reasonably want different ones.
  * 'recent' is browser-history-like: meaningful per device, noise across devices. */
 var SYNC_EXCLUDE = {
-  'fifty-states': ['deck'],
+  'fifty-states': ['deck', 'followFocus'],
   'hub': ['recent']
 };
 

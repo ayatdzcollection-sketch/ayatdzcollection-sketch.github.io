@@ -7,7 +7,7 @@
  * Bump VERSION whenever you change a shell file (index.html, hub.css, hub.js, sync.js).
  * Without a bump, browsers keep serving the cached copy.
  */
-const VERSION = 'v1';
+const VERSION = 'v2';
 const SHELL_CACHE = 'studyhub-' + VERSION;
 const FONT_CACHE  = 'studyhub-fonts';          // unversioned: fonts are immutable, keep them across updates
 const SCOPE = self.registration.scope;
