@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="light only">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#EEF1EC">
+<meta name="robots" content="noindex,nofollow">
+<title>Private</title>
+<link rel="icon" href="study/assets/icon.svg" type="image/svg+xml">
+<style>
+:root{
+  --paper:#EEF1EC; --ink:#17242A; --ink-soft:#4A5A60; --ink-faint:#8A9A9E;
+  --rule:#C7CFC8; --rule-soft:#DCE2DA; --accent:#7A5C2E; --bad:#94402E;
+  --mono:ui-monospace,Menlo,Consolas,"Liberation Mono",monospace;
+  --serif:Georgia,"Times New Roman",serif;
+}
+*{box-sizing:border-box}
+body{
+  margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
+  background-image:linear-gradient(var(--rule-soft) 1px,transparent 1px),
+                   linear-gradient(90deg,var(--rule-soft) 1px,transparent 1px);
+  background-size:28px 28px;
+  font-family:var(--serif);font-size:17px;line-height:1.5;
+  display:flex;align-items:center;justify-content:center;
+  padding:calc(24px + env(safe-area-inset-top,0px)) 20px calc(24px + env(safe-area-inset-bottom,0px));
+}
+.card{width:100%;max-width:420px}
+.eyebrow{margin:0;font-family:var(--mono);font-size:11px;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--ink-faint)}
+h1{margin:4px 0 0;font-size:30px;font-weight:600;letter-spacing:-.01em}
+p.lede{margin:8px 0 22px;color:var(--ink-soft);font-size:15.5px}
+label{display:block;margin-bottom:6px;font-family:var(--mono);font-size:11px;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint)}
+.row{display:flex;gap:8px}
+input{
+  flex:1 1 auto;min-width:0;height:52px;font-family:var(--mono);font-size:17px;
+  letter-spacing:.08em;text-transform:uppercase;background:#fff;color:var(--ink);
+  border:1px solid var(--rule);border-radius:2px;padding:0 14px;
+}
+input:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:var(--accent)}
+button{
+  min-height:52px;padding:0 20px;border:1px solid var(--ink);background:var(--ink);
+  color:var(--paper);font-family:"Helvetica Neue",Arial,sans-serif;font-size:15px;
+  font-weight:600;border-radius:2px;cursor:pointer;
+}
+button:active{opacity:.85}
+.msg{margin:12px 0 0;font-size:14.5px;color:var(--bad);min-height:1.4em}
+.links{list-style:none;margin:22px 0 0;padding:0}
+.links li{border-top:1px solid var(--rule-soft)}
+.links li:last-child{border-bottom:1px solid var(--rule-soft)}
+.links a{display:block;min-height:60px;padding:15px 2px;text-decoration:none;color:inherit}
+.links a:active{background:#F6F8F4}
+.links .t{display:block;font-size:18px;font-weight:600}
+.links .d{display:block;margin-top:2px;font-size:14.5px;color:var(--ink-soft)}
+.foot{margin:24px 0 0;font-family:var(--mono);font-size:11px;letter-spacing:.06em;color:var(--ink-faint)}
+.lock{margin-top:18px}
+</style>
+</head>
+<body>
+<main class="card">
+
+  <p class="eyebrow">Private</p>
+  <h1 id="head">Enter code</h1>
+  <p class="lede" id="lede">This page is not indexed and not linked anywhere.</p>
+
+  <form id="gate">
+    <label for="code">Access code</label>
+    <div class="row">
+      <input id="code" type="text" autocomplete="off" autocorrect="off"
+             autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX" maxlength="12">
+      <button type="submit">Open</button>
+    </div>
+    <p class="msg" id="msg"></p>
+  </form>
+
+  <div id="inside" hidden>
+    <ul class="links">
+      <li>
+        <a href="study/">
+          <span class="t">Study Hub</span>
+          <span class="d">Class materials, offline-capable, synced across devices.</span>
+        </a>
+      </li>
+    </ul>
+    <p class="foot">Anything served from this site is public to anyone with the URL.</p>
+    <button type="button" id="lock" class="lock">Lock again</button>
+  </div>
+
+</main>
+
+<script>
+/* A curtain, not a lock. GitHub Pages serves every file publicly, so anyone who knows a
+   direct URL reaches it regardless. This only keeps the root page from listing what is
+   here. Only the code's hash is stored in this file. */
+var CODE_HASH = 'ed385d555bea48e4292710fcb2bf134a970391086286f90602c6222293cc4e0b';
+var UNLOCK_KEY = 'roothub:unlocked';
+
+function normalize(s) {
+  return String(s || '').toUpperCase().replace(/[\s\-]/g, '')
+    .replace(/O/g, '0').replace(/[IL]/g, '1').replace(/U/g, 'V');
+}
+
+function sha256Hex(str) {
+  return crypto.subtle.digest('SHA-256', new TextEncoder().encode(str)).then(function (buf) {
+    return Array.prototype.map.call(new Uint8Array(buf), function (b) {
+      return ('0' + b.toString(16)).slice(-2);
+    }).join('');
+  });
+}
+
+function reveal() {
+  document.getElementById('gate').hidden = true;
+  document.getElementById('inside').hidden = false;
+  document.getElementById('head').textContent = 'Contents';
+  document.getElementById('lede').textContent = 'Everything currently published here.';
+}
+
+try { if (localStorage.getItem(UNLOCK_KEY) === '1') reveal(); } catch (e) {}
+
+document.getElementById('gate').addEventListener('submit', function (e) {
+  e.preventDefault();
+  var msg = document.getElementById('msg');
+  msg.textContent = '';
+  var entered = normalize(document.getElementById('code').value);
+  if (!entered) { msg.textContent = 'Enter the code.'; return; }
+  if (!crypto.subtle) { msg.textContent = 'This browser cannot check the code (needs a secure connection).'; return; }
+  sha256Hex(entered).then(function (h) {
+    if (h === CODE_HASH) {
+      try { localStorage.setItem(UNLOCK_KEY, '1'); } catch (e) {}
+      reveal();
+    } else {
+      msg.textContent = 'That code does not match.';
+      document.getElementById('code').select();
+    }
+  });
+});
+
+document.getElementById('lock').addEventListener('click', function () {
+  try { localStorage.removeItem(UNLOCK_KEY); } catch (e) {}
+  location.reload();
+});
+</script>
+</body>
+</html>

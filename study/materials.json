@@ -1,0 +1,19 @@
+{
+  "classes": [
+    {
+      "id": "apush",
+      "name": "AP US History",
+      "term": "2026-27",
+      "materials": [
+        {
+          "id": "fifty-states",
+          "title": "The Fifty States — name and locate",
+          "blurb": "Numbered blank-map quiz with spaced repetition and a readiness score.",
+          "path": "m/apush/fifty-states.html",
+          "tags": ["map", "quiz", "spaced-repetition"],
+          "added": "2026-08-30"
+        }
+      ]
+    }
+  ]
+}
