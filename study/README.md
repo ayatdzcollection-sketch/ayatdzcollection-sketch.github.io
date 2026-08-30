@@ -21,9 +21,10 @@ So:
 - **The pairing code is the only thing guarding your synced progress.** Never commit it,
   never paste it into an issue, never log it. It lives in your browser's storage and
   nowhere else.
-- The Supabase **anon key** in `assets/sync.js` is meant to be public — the database
-  denies it all direct table access (see *Sync* below). The **service role key** must
-  never appear in this repo, in any file, ever.
+- The Supabase **publishable key** (older projects call it the anon key) in
+  `assets/sync.js` is meant to be public — the database denies it all direct table access
+  (see *Sync* below). The **secret / service role key** must never appear in this repo, in
+  any file, ever.
 
 ---
 
@@ -101,18 +102,25 @@ on the network. Supabase is a background replica, never the source of truth.
 
 ### One-time setup
 
-1. In the Supabase dashboard for the **study system** project, open the SQL editor and run
-   `supabase/migrations/0001_study_sync.sql`.
-2. Copy the project URL and the **anon / public** key from Project Settings → API.
+Already done for the **study system** project; repeat this only for a new project.
+
+1. In the Supabase dashboard, open the SQL editor and run
+   `supabase/migrations/0001_study_sync.sql`. It is safe to re-run.
+2. Copy the project URL and the **publishable** (anon / public) key from
+   Project Settings → API keys.
 3. Paste both into the two constants at the top of `assets/sync.js`:
 
 ```js
 var SUPABASE_URL      = 'https://xxxxxxxx.supabase.co';
-var SUPABASE_ANON_KEY = 'eyJ...';
+var SUPABASE_ANON_KEY = 'sb_publishable_...';
 ```
 
 Leave them empty and everything still works except pairing — local saving, offline, and
-the copy-paste backup are all independent of Supabase.
+the copy-paste backup are all independent of Supabase. If the functions are missing the
+Sync panel says so in plain words rather than failing silently.
+
+A free Supabase project pauses after a stretch of inactivity; the first sync after that
+may need a retry while it wakes.
 
 ### How pairing works
 
