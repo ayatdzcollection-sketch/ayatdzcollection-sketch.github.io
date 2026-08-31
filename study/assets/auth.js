@@ -60,8 +60,15 @@ var StudyAuth = {
      and it is the only source of decryption keys for anything not yet opened. */
   signedIn: function () { return !!ls(TOKEN_KEY); },
 
+  /* Dashes and capitals are for reading the code, not for typing it. Both ends agree on
+     the stripped, upper-cased form, so "1n9p fevg43m4f3eq" and "1N9P-FEVG-43M4-F3EQ" are
+     the same code. Nothing is lost: the alphabet is uppercase and digits only. */
+  normalize: function (code) {
+    return String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  },
+
   login: function (code) {
-    return rpc('auth_login', { p_code: String(code || '').trim() }).then(function (r) {
+    return rpc('auth_login', { p_code: StudyAuth.normalize(code) }).then(function (r) {
       if (!r || !r.ok) {
         var e = new Error('bad_code');
         e.friendly = 'That code was not recognised.';
@@ -130,15 +137,36 @@ var StudyAuth = {
     });
   },
 
-  /* Fetch a published .enc and turn it back into HTML. */
+  /* Fetch a published .enc and turn it back into HTML.
+     The ciphertext is put into the cache here rather than left to the service worker: on
+     a first visit the worker is often still installing and not yet controlling the page,
+     so its fetch handler never sees this request. Caching it directly means a material
+     you have opened once is genuinely available offline, whatever the worker was doing at
+     the time. Safe to store — without the key it is noise. */
   openMaterial: function (path, id) {
-    return Promise.all([
-      fetch(path).then(function (r) {
-        if (!r.ok) throw new Error('missing_file');
-        return r.arrayBuffer();
-      }),
-      StudyAuth.materialKey(id)
-    ]).then(function (both) {
+    var fetched = fetch(path).then(function (r) {
+      if (!r.ok) throw new Error('missing_file');
+      if (window.caches) {
+        try {
+          var copy = r.clone();
+          caches.open('studyhub-materials').then(function (c) {
+            c.put(path, copy);
+          }).catch(function () {});
+        } catch (e) {}
+      }
+      return r.arrayBuffer();
+    }).catch(function (err) {
+      // Offline and the worker did not answer: look in the cache ourselves.
+      if (!window.caches) throw err;
+      return caches.open('studyhub-materials')
+        .then(function (c) { return c.match(path); })
+        .then(function (hit) {
+          if (!hit) throw new Error('missing_file');
+          return hit.arrayBuffer();
+        });
+    });
+
+    return Promise.all([fetched, StudyAuth.materialKey(id)]).then(function (both) {
       return StudyAuth.decrypt(new Uint8Array(both[0]), both[1]);
     });
   },

@@ -29,6 +29,15 @@ function showApp() {
 }
 
 function initGate() {
+
+  var peek = $('peek');
+  if (peek) peek.addEventListener('click', function () {
+    var f = $('code');
+    var hidden = f.type === 'password';
+    f.type = hidden ? 'text' : 'password';
+    peek.textContent = hidden ? 'Hide' : 'Show';
+    f.focus();
+  });
   $('gateform').addEventListener('submit', function (e) {
     e.preventDefault();
     var btn = $('gatebtn'), msg = $('gatemsg');

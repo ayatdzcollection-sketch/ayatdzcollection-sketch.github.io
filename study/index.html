@@ -25,14 +25,16 @@
     <label for="code">Access code</label>
     <div class="row">
       <input id="code" type="password" autocomplete="current-password"
-             autocorrect="off" autocapitalize="off" spellcheck="false"
-             placeholder="••••-••••-••••">
+             autocorrect="off" autocapitalize="characters" spellcheck="false"
+             enterkeyhint="go" placeholder="XXXX-XXXX-XXXX">
+      <button class="btn ghost" type="button" id="peek" aria-label="Show the code">Show</button>
       <button class="btn" type="submit" id="gatebtn">Open</button>
     </div>
     <p class="msg" id="gatemsg"></p>
   </form>
-  <p class="fine">Codes are checked on the server and never stored in this page.
-     Materials are published encrypted, so the files are unreadable without one.</p>
+  <p class="fine">Dashes and capitals do not matter — type it however you like.
+     Codes are checked on the server and never stored in this page. Materials are
+     published encrypted, so the files are unreadable without one.</p>
 </section>
 
 <!-- ============ unlocked ============ -->
