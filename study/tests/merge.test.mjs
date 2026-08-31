@@ -13,6 +13,7 @@ const require = createRequire(import.meta.url);
 const {
   normalizeCode, formatCode,
   mergeEnvelopes, mergeFsrsValue, mergeRegionsDone, mergeExams,
+  mergeNumberSet, mergeSettings, makeEventMerge,
   buildEnvelopeFrom, diffEnvelopes, describeFsrsChange
 } = require('../assets/sync.js');
 
@@ -36,8 +37,8 @@ const merge = (a, b) => mergeEnvelopes(a, b).merged;
 /* ---------- fsrs.states: whole-record wins ---------- */
 
 test('same state on both sides: the more recent review wins the WHOLE record', () => {
-  // A reviewed Ohio earlier but has more reps; B reviewed it later. B must win outright —
-  // mixing A's reps into B's record would describe a review history that never happened.
+  // A reviewed Ohio earlier but has more reps; B reviewed it later. B must win outright.
+  // Mixing A's reps into B's record would describe a review history that never happened.
   const a = env({ 'fifty-states:fsrs': [{ states: { Ohio: rec(9.5, 4, 1000, 12, 1) }, quizDate: null, exams: [] }, 100] });
   const b = env({ 'fifty-states:fsrs': [{ states: { Ohio: rec(2.1, 7, 2000, 3, 0) }, quizDate: null, exams: [] }, 100] });
 
@@ -255,4 +256,123 @@ test('pairing codes are read leniently but validated strictly', () => {
   assert.throws(() => normalizeCode('K7Q2-9MXR'), /12 characters/);
   assert.throws(() => normalizeCode('K7Q29MXR4B8!'), /character we do not use/);
   assert.throws(() => normalizeCode(null), /Enter a pairing code/);
+});
+
+
+/* ---------- periodic: set size became a setting ---------- */
+
+/* Sets used to be identified as s1, s11, s21: ids that bake a fixed set size of ten into
+   the id itself. Once the size is configurable those ids name nothing, so progress moved to
+   a plain list of atomic numbers. That list has to stay numeric: mergeRegionsDone would
+   have been the obvious rule to reuse and it is the wrong one. */
+
+test('started elements merge as numbers, not as strings', () => {
+  const out = mergeNumberSet([2, 10, 1], [3, 10]);
+  assert.deepEqual(out, [1, 2, 3, 10], 'numeric order, not lexicographic');
+  assert.equal(typeof out[3], 'number', 'members stay numbers or every lookup misses');
+  assert.deepEqual(mergeNumberSet(out, []), out, 'idempotent');
+  assert.deepEqual(mergeNumberSet([3], [1]), mergeNumberSet([1], [3]), 'order-independent');
+});
+
+test('started tolerates the junk a damaged or half-migrated device can send', () => {
+  assert.deepEqual(mergeNumberSet(null, [1]), [1]);
+  assert.deepEqual(mergeNumberSet(undefined, undefined), []);
+  assert.deepEqual(mergeNumberSet(['4', 'x', NaN, null], [4]), [4], 'numeric strings count once, junk is dropped');
+});
+
+test('legacy setsDone and the new started list coexist without contaminating each other', () => {
+  // The fold from one to the other happens in the material, not here. This pins the
+  // boundary: sync must carry both keys intact while old devices are still writing one.
+  const a = env({ 'periodic:started': [[1, 2, 3], 100] });
+  const b = env({ 'periodic:setsDone': [['s1', 's11'], 200] });
+  const m = merge(a, b);
+  assert.deepEqual(m.ns.periodic.started.value, [1, 2, 3]);
+  assert.deepEqual(m.ns.periodic.setsDone.value, ['s1', 's11']);
+});
+
+test('legacy setsDone is still a plain sorted string union', () => {
+  const m = merge(env({ 'periodic:setsDone': [['s11'], 1] }),
+                  env({ 'periodic:setsDone': [['s1'], 2] }));
+  assert.deepEqual(m.ns.periodic.setsDone.value, ['s1', 's11']);
+});
+
+/* ---------- settings merge field by field ---------- */
+
+const st = (fields, at, v = 2) => ({ v, at, ...fields });
+
+test('two devices changing different settings both keep their change', () => {
+  // The failure this prevents: the phone pushes its whole object, and the setSize it has
+  // not touched in a month rides along and overwrites the laptop's.
+  const a = st({ setSize: 15, retention: 0.9 }, { setSize: 100, retention: 1 });
+  const b = st({ setSize: 10, retention: 0.85 }, { setSize: 1, retention: 200 });
+  const m = mergeSettings(a, b, 100, 200);
+  assert.equal(m.setSize, 15, "the laptop's newer setSize survives");
+  assert.equal(m.retention, 0.85, "the phone's newer retention survives");
+});
+
+test('a stale device with the newer envelope cannot clobber an older-stamped field', () => {
+  // This is the whole reason the rule exists. Under defaultMerge, b wins everything
+  // because its envelope mtime is larger.
+  const a = st({ scope: { from: 1, to: 54 } }, { scope: 900 });
+  const b = st({ scope: { from: 1, to: 20 } }, { scope: 100 });
+  assert.deepEqual(mergeSettings(a, b, 1, 999).scope, { from: 1, to: 54 });
+});
+
+test('a setting only one side knows about is never stripped', () => {
+  // An older build must not delete a field a newer build added.
+  const a = st({ setSize: 10, newField: 'x' }, { setSize: 5, newField: 5 });
+  const b = st({ setSize: 20 }, { setSize: 50 });
+  const m = mergeSettings(a, b, 10, 20);
+  assert.equal(m.newField, 'x', 'unknown field passes through');
+  assert.equal(m.setSize, 20, 'known field still resolves by stamp');
+});
+
+test('unstamped settings fall back to the envelope mtime', () => {
+  // Objects written before per-field stamps existed have no at map at all.
+  const a = { setSize: 10 };
+  const b = { setSize: 20 };
+  assert.equal(mergeSettings(a, b, 100, 200).setSize, 20);
+  assert.equal(mergeSettings(a, b, 200, 100).setSize, 10);
+});
+
+test('settings merging is idempotent, order-independent and stamps forward', () => {
+  const a = st({ setSize: 15, hints: true }, { setSize: 300, hints: 100 });
+  const b = st({ setSize: 10, hints: false }, { setSize: 100, hints: 300 });
+  const m = mergeSettings(a, b, 1, 2);
+  assert.equal(m.at.setSize, 300, 'output stamp is the max of the two');
+  assert.equal(m.at.hints, 300);
+  assert.deepEqual(mergeSettings(b, a, 2, 1), m, 'order does not matter');
+  assert.deepEqual(mergeSettings(a, m, 1, 2), m, 'idempotent');
+});
+
+test('an exact stamp tie is broken the same way defaultMerge breaks one', () => {
+  const a = st({ setSize: 10 }, { setSize: 500 });
+  const b = st({ setSize: 20 }, { setSize: 500 });
+  assert.deepEqual(mergeSettings(a, b, 1, 1), mergeSettings(b, a, 1, 1),
+    'side-symmetric, or two devices would trade the value forever');
+});
+
+/* ---------- event log depth ---------- */
+
+test('graded tests keep a deeper history than practice runs', () => {
+  // Drills write to exams constantly. If tests shared that 20-slot log, a week of
+  // practice would evict every graded result.
+  const many = n => Array.from({ length: n }, (_, i) => ({ ts: i + 1, exact: 1, of: 1 }));
+  assert.equal(mergeExams(many(60), []).length, 20, 'fifty-states is untouched');
+  assert.equal(makeEventMerge(40)(many(60), []).length, 40);
+  assert.equal(makeEventMerge(40)(many(60), [])[0].ts, 21, 'the newest are the ones kept');
+});
+
+/* ---------- import preview reads both material shapes ---------- */
+
+test('the import preview counts periodic cards, not only fifty-states states', () => {
+  // This reported "no changes" for every periodic import while moving hundreds of records,
+  // so the confirmation prompt was asking the user to agree to something it had not read.
+  const before = { cards: { 'Na|n2s': rec(1, 5, 10, 1, 0) }, quizDate: null, exams: [] };
+  const after = { cards: { 'Na|n2s': rec(9, 5, 99, 2, 0), 'K|s2n': rec(2, 5, 50, 1, 0) }, quizDate: null, exams: [] };
+  const line = describeFsrsChange(before, after);
+  assert.match(line, /1 card added/);
+  assert.match(line, /1 card updated/);
+  assert.equal(describeFsrsChange({ states: {} }, { states: { Ohio: rec(1, 5, 1, 1, 0) } }),
+    '1 state added', 'fifty-states still says states');
 });

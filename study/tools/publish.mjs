@@ -6,7 +6,7 @@
  *   node study/tools/publish.mjs --bootstrap   set the two codes, first run only
  *
  * Plaintext materials live in study/src/m/ and are never committed. What ships to
- * GitHub Pages is study/m/<name>.enc — AES-256-GCM ciphertext. The key lives only in
+ * GitHub Pages is study/m/<name>.enc, AES-256-GCM ciphertext. The key lives only in
  * Supabase and is handed out to a logged-in browser.
  *
  * Losing study/src/ is survivable: --pull rebuilds it from the published ciphertext
@@ -73,10 +73,16 @@ const toSourcePaths = html => html.replace(/(["'(])assets\/(sync|hub)\.js/g, '$1
 
 /* ---------- login ---------- */
 
+/* The hub strips punctuation and upper-cases a code before sending it, and the stored
+   hashes were rotated to that normalized form. The publisher has to agree, or a perfectly
+   correct code typed with its dashes in is rejected while the same code works in the
+   browser. Identical to StudyAuth.normalize in assets/auth.js. */
+const normalizeCode = c => String(c || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+
 async function adminToken() {
   const code = process.env.STUDY_ADMIN_CODE;
   if (!code) die('Set STUDY_ADMIN_CODE first:\n    export STUDY_ADMIN_CODE=...');
-  const r = await rpc('auth_login', { p_code: code });
+  const r = await rpc('auth_login', { p_code: normalizeCode(code) });
   if (!r.ok) die('That admin code was rejected.');
   if (r.role !== 'admin') die(`That code is a ${r.role} code, not an admin code.`);
   return r.token;
@@ -88,9 +94,10 @@ async function bootstrap() {
   const admin = process.env.STUDY_ADMIN_CODE;
   const viewer = process.env.STUDY_VIEWER_CODE;
   if (!admin || !viewer) die('Set both STUDY_ADMIN_CODE and STUDY_VIEWER_CODE.');
-  const r = await rpc('auth_bootstrap', { p_admin_code: admin, p_viewer_code: viewer });
+  const r = await rpc('auth_bootstrap', { p_admin_code: normalizeCode(admin),
+                                         p_viewer_code: normalizeCode(viewer) });
   if (!r.ok) die(`Bootstrap refused: ${r.error}`);
-  console.log('  Codes set. They exist only as bcrypt hashes now — keep your copies safe.');
+  console.log('  Codes set. They exist only as bcrypt hashes now, so keep your copies safe.');
 }
 
 function walkSources() {

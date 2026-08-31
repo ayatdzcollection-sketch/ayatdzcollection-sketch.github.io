@@ -14,7 +14,7 @@ Live at `https://ayatdzcollection-sketch.github.io/study/`.
 is the default state of every material.
 
 Materials are still published as **AES-256-GCM ciphertext** (`m/<class>/<name>.enc`) and
-the key still comes from the server. That is not to hide them from visitors — the server
+the key still comes from the server. That is not to hide them from visitors. The server
 hands the key to anyone who asks for an unlocked item. It is what makes **locking** real
 and instant: flipping the switch withholds the key immediately, with no republish and no
 file to delete, and a stranger holding the `.enc` has nothing but noise.
@@ -26,7 +26,7 @@ One admin code, entered under **Owner** in the hub, gives you:
 | | |
 |---|---|
 | **Hidden** | The item disappears from everyone else's list. |
-| **Locked** | The item stays listed and marked locked, but its key is withheld from everyone but you. This is the one that actually protects it, and the database enforces it — not the page. |
+| **Locked** | The item stays listed and marked locked, but its key is withheld from everyone but you. This is the one that actually protects it, and the database enforces it, not the page. |
 
 Plus changing codes, seeing how many devices are signed in, and signing them all out.
 
@@ -65,7 +65,7 @@ node study/tools/publish.mjs
 ```
 
 That encrypts each source, writes `m/<class>/<name>.enc`, and registers the material with
-its key. Commit the `.enc` files. **Never commit `study/src/`** — it is gitignored.
+its key. Commit the `.enc` files. **Never commit `study/src/`**: it is gitignored.
 
 Losing `src/` is survivable: `node study/tools/publish.mjs --pull` decrypts everything back
 out of the published files using your admin code.
@@ -102,7 +102,7 @@ StudyStore.registerMerge('your-material', 'progress', function (a, b, aMtime, bM
 ```
 
 **One caveat.** `registerMerge` only applies on pages where your material is loaded. The
-hub also merges — on load, on focus, and during a copy-paste import — when your page is
+hub also merges (on load, on focus, and during a copy-paste import) when your page is
 not open. If losing data in that window matters (it does for anything spaced-repetition),
 put the rule in `BUILTIN_MERGES` at the top of `assets/sync.js` instead. Both existing
 materials do exactly that.
@@ -123,8 +123,11 @@ device synced.
 |---|---|
 | FSRS records (`states`, `cards`) | Per item, keep the record with the larger `last`; tie goes to more `reps`. The whole record travels together, never field by field. |
 | `exams` | Concatenate, dedupe by `ts`, keep the newest 20. |
+| `tests` | The same rule with a deeper history: newest 40, so a week of drilling cannot evict a graded result. |
 | `quizDate` | From whichever side wrote that key more recently. |
-| `regionsDone`, `setsDone` | Set union. |
+| `regionsDone`, `setsDone` | Set union over strings. Legacy: `setsDone` ids encoded a fixed set size. |
+| `started` | Set union over numbers. Atomic numbers, so changing the set size cannot orphan progress. |
+| `settings` | Field by field, each carrying its own timestamp. A device that touched one switch cannot carry its stale copy of the others back over. |
 | Anything else | Newest write wins, unless a merge function is registered. |
 
 Syncs happen on load, when a tab becomes visible, on reconnect, as the page closes, and on
@@ -144,7 +147,7 @@ directory) precaches the hub shell and caches material ciphertext as you open th
 
 **Updates install themselves.** Every page load, every return to the tab, and every moment
 the device regains a connection triggers a version check. When a newer build is found it
-is adopted and the page reloads on its own — except while you are typing into a material,
+is adopted and the page reloads on its own, except while you are typing into a material,
 where it waits for a quiet moment instead. The Sync panel also has a manual *Update now*
 and a *Clear cache & reload* that recovers from any stuck state.
 
@@ -188,7 +191,7 @@ behaviour; release it with `StudyStore._debug.setOffline(false)` in the console.
 
 | Path | What it is |
 |---|---|
-| `index.html` | The hub — open to anyone |
+| `index.html` | The hub (open to anyone) |
 | `view.html` | Fetches, decrypts and runs a material |
 | `materials.json` | Source list for the publisher |
 | `sw.js` | Service worker: offline cache and self-updating |
@@ -196,7 +199,7 @@ behaviour; release it with `StudyStore._debug.setOffline(false)` in the console.
 | `assets/sync.js` | Shared storage, merge engine, cross-device sync |
 | `assets/hub.js` | Hub interface, sync panel, admin controls, QR encoder |
 | `tools/publish.mjs` | Encrypt, register, and pull back materials |
-| `src/m/**` | Plaintext sources — never committed |
+| `src/m/**` | Plaintext sources (never committed) |
 | `m/**` | Published ciphertext |
 | `supabase/migrations/` | Database schema |
 | `tests/merge.test.mjs` | Merge rule tests |

@@ -1,4 +1,4 @@
-/* StudyStore — shared local-first storage + sync for every Study Hub material.
+/* StudyStore: shared local-first storage + sync for every Study Hub material.
  *
  * Load it before your material's own script:
  *     <script src="../../assets/sync.js"></script>
@@ -13,7 +13,7 @@
 'use strict';
 
 /* ============================================================================
- * CONFIG — the only lines you edit to turn sync on.
+ * CONFIG: the only lines you edit to turn sync on.
  * Paste your Supabase project URL and anon (public) key. Leave empty to run
  * local-only: everything works except pairing sync.
  * NEVER put the service_role key here. This file is public.
@@ -32,20 +32,23 @@ var KEEPALIVE_LIMIT = 60000;   // browsers cap keepalive bodies at ~64KB
 
 /* Keys that stay on this device and never enter a sync or export envelope.
  * 'deck' is dead Leitner data read once at boot for migration.
- * 'followFocus' is a view preference: a phone and a laptop reasonably want different ones.
+ * 'followFocus' and 'mapPrefs' are view preferences: a phone and a laptop reasonably want
+ * different zoom behaviour, and carrying one device's choice to the other is a nuisance.
+ * 'ui' is which tab was last open, not progress, and reasonably different per device.
  * 'recent' is browser-history-like: meaningful per device, noise across devices. */
 var SYNC_EXCLUDE = {
-  'fifty-states': ['deck', 'followFocus'],
+  'fifty-states': ['deck', 'followFocus', 'mapPrefs'],
+  'periodic': ['ui'],
   'hub': ['recent']
 };
 
-/* Captured at parse time — document.currentScript is only valid while this script runs. */
+/* Captured at parse time: document.currentScript is only valid while this script runs. */
 var SCRIPT_URL = (typeof document !== 'undefined' && document.currentScript)
   ? document.currentScript.src
   : null;
 
 /* ============================================================================
- * SECTION A — pure core. No window, no localStorage, no navigator, no fetch.
+ * SECTION A: pure core. No window, no localStorage, no navigator, no fetch.
  * Everything here is unit-testable under plain Node.
  * ========================================================================== */
 
@@ -98,7 +101,7 @@ function deepEqual(a, b) {
 
 /* Default rule for any key without a registered merge: newest write wins.
  * An exact mtime tie falls back to a lexicographic comparison purely so the result is
- * deterministic and side-symmetric — merge(a,b) and merge(b,a) must agree, or repeated
+ * deterministic and side-symmetric: merge(a,b) and merge(b,a) must agree, or repeated
  * syncs between two devices would never settle. */
 function defaultMerge(aVal, bVal, aM, bM) {
   if (aM > bM) return aVal;
@@ -121,7 +124,12 @@ function pickStateRecord(a, b) {
   return canonicalJson(a) >= canonicalJson(b) ? a : b;
 }
 
-function mergeExams(aEx, bEx) {
+/* Event logs all merge the same way: concatenate, dedupe by timestamp, keep the newest N.
+ * The cap is a parameter because the two histories want different depths. Practice runs
+ * share one 20-slot log, but graded tests are rarer and worth more, so they keep 40: a
+ * week of drilling should not be able to evict a test result. */
+function makeEventMerge(cap) {
+  return function (aEx, bEx) {
   var all = [].concat(Array.isArray(aEx) ? aEx : [], Array.isArray(bEx) ? bEx : []);
   var byTs = {};
   for (var i = 0; i < all.length; i++) {
@@ -137,8 +145,10 @@ function mergeExams(aEx, bEx) {
   var out = [];
   for (var key in byTs) if (Object.prototype.hasOwnProperty.call(byTs, key)) out.push(byTs[key]);
   out.sort(function (x, y) { return x.ts - y.ts; });
-  return out.slice(-20);
+  return out.slice(-cap);
+  };
 }
+var mergeExams = makeEventMerge(20);
 
 /* Every spaced-repetition material shares one shape: a map of records keyed by whatever
    it drills, plus exams and a quiz date. Only the name of that map differs, so the rule
@@ -190,14 +200,85 @@ function mergeRegionsDone(aVal, bVal) {
   return out;
 }
 
+/* mergeRegionsDone stringifies its members, which is right for ids like "r3" and wrong for
+ * atomic numbers: it would sort 10 before 2 and hand back the string "10" where the quiz
+ * looks up the number 10, so every element would read as unlearned. Same union, kept
+ * numeric, non-numbers dropped rather than coerced. */
+function mergeNumberSet(aVal, bVal) {
+  var seen = {};
+  var push = function (arr) {
+    if (!Array.isArray(arr)) return;
+    for (var i = 0; i < arr.length; i++) {
+      /* Number(null) is 0 and Number('') is 0, so a null in a half-migrated list would
+       * quietly become "element 0". Only numbers and non-blank strings are considered. */
+      var raw = arr[i];
+      if (typeof raw !== 'number' && typeof raw !== 'string') continue;
+      if (typeof raw === 'string' && raw.trim() === '') continue;
+      var v = Number(raw);
+      if (isFinite(v)) seen[v] = true;
+    }
+  };
+  push(aVal); push(bVal);
+  var out = [];
+  for (var k in seen) if (Object.prototype.hasOwnProperty.call(seen, k)) out.push(Number(k));
+  out.sort(function (x, y) { return x - y; });
+  return out;
+}
+
+/* Settings are a bag of independent switches, not one document. Newest-write-wins fails
+ * quietly and badly here: a phone that has been closed a week opens, the user nudges one
+ * slider, and the phone pushes its whole object, carrying its month-old scope back over
+ * the laptop's. Nothing errors; the user just finds settings reverting.
+ *
+ * So each field carries its own timestamp in the 'at' map and each field is decided on its
+ * own. A field only one side knows about survives untouched, which means an older build can
+ * never strip a setting a newer one added. */
+function mergeSettings(aVal, bVal, aM, bM) {
+  var a = aVal && typeof aVal === 'object' ? aVal : {};
+  var b = bVal && typeof bVal === 'object' ? bVal : {};
+  var aAt = (a.at && typeof a.at === 'object') ? a.at : {};
+  var bAt = (b.at && typeof b.at === 'object') ? b.at : {};
+  var aEnv = typeof aM === 'number' ? aM : 0;
+  var bEnv = typeof bM === 'number' ? bM : 0;
+
+  var names = {}, f;
+  for (f in a) if (Object.prototype.hasOwnProperty.call(a, f) && f !== 'at' && f !== 'v') names[f] = true;
+  for (f in b) if (Object.prototype.hasOwnProperty.call(b, f) && f !== 'at' && f !== 'v') names[f] = true;
+
+  var out = {}, at = {};
+  for (f in names) {
+    if (!Object.prototype.hasOwnProperty.call(names, f)) continue;
+    var inA = Object.prototype.hasOwnProperty.call(a, f);
+    var inB = Object.prototype.hasOwnProperty.call(b, f);
+    /* An object written before per-field stamps existed has no 'at', so fall back to the
+     * envelope mtime, the best evidence available for when it was last touched. */
+    var aT = typeof aAt[f] === 'number' ? aAt[f] : aEnv;
+    var bT = typeof bAt[f] === 'number' ? bAt[f] : bEnv;
+    if (!inB) { out[f] = a[f]; at[f] = aT; continue; }
+    if (!inA) { out[f] = b[f]; at[f] = bT; continue; }
+    if (aT > bT) out[f] = a[f];
+    else if (bT > aT) out[f] = b[f];
+    /* Exact tie: the same rule defaultMerge uses, so merge(a,b) and merge(b,a) agree and
+     * repeated syncs between two devices settle instead of oscillating forever. */
+    else out[f] = canonicalJson(a[f]) >= canonicalJson(b[f]) ? a[f] : b[f];
+    at[f] = aT > bT ? aT : bT;
+  }
+  out.v = Math.max(typeof a.v === 'number' ? a.v : 0, typeof b.v === 'number' ? b.v : 0);
+  out.at = at;
+  return out;
+}
+
 /* Material-specific merges that the HUB also needs live here rather than being registered
- * by the material. The hub merges on load, on visibility and during import preview — all
+ * by the material. The hub merges on load, on visibility and during import preview, all
  * while the quiz page may be closed. See README, "Adding a material". */
 var BUILTIN_MERGES = {
   'fifty-states:fsrs': mergeFsrsValue,
   'fifty-states:regionsDone': mergeRegionsDone,
   'periodic:fsrs': mergePeriodicFsrs,
-  'periodic:setsDone': mergeRegionsDone      // a set union works for any list of ids
+  'periodic:setsDone': mergeRegionsDone,     // legacy ids; kept so an old device loses nothing
+  'periodic:started': mergeNumberSet,        // set-size-independent successor to setsDone
+  'periodic:settings': mergeSettings,
+  'periodic:tests': makeEventMerge(40)
 };
 
 function mtimeOf(entry) {
@@ -298,7 +379,12 @@ function diffEnvelopes(before, after) {
 function describeFsrsChange(beforeVal, afterVal) {
   var b = beforeVal && typeof beforeVal === 'object' ? beforeVal : {};
   var a = afterVal && typeof afterVal === 'object' ? afterVal : {};
-  var bs = b.states || {}, as = a.states || {};
+  /* Each material names this map for whatever it drills: fifty-states uses 'states', the
+   * periodic table uses 'cards'. Reading only 'states' made every periodic import report
+   * "no changes" while silently moving hundreds of records: the user was being asked to
+   * confirm an import on false information. */
+  var bs = b.states || b.cards || {}, as = a.states || a.cards || {};
+  var noun = (a.cards || b.cards) ? 'card' : 'state';
   var added = 0, updated = 0, name;
   for (name in as) {
     if (!Object.prototype.hasOwnProperty.call(as, name)) continue;
@@ -308,15 +394,15 @@ function describeFsrsChange(beforeVal, afterVal) {
   var bEx = Array.isArray(b.exams) ? b.exams.length : 0;
   var aEx = Array.isArray(a.exams) ? a.exams.length : 0;
   var parts = [];
-  if (added) parts.push(added + ' state' + (added === 1 ? '' : 's') + ' added');
-  if (updated) parts.push(updated + ' state' + (updated === 1 ? '' : 's') + ' updated');
+  if (added) parts.push(added + ' ' + noun + (added === 1 ? '' : 's') + ' added');
+  if (updated) parts.push(updated + ' ' + noun + (updated === 1 ? '' : 's') + ' updated');
   if (aEx > bEx) parts.push((aEx - bEx) + ' exam result' + ((aEx - bEx) === 1 ? '' : 's') + ' added');
   if (b.quizDate !== a.quizDate) parts.push('quiz date set to ' + (a.quizDate || 'none'));
   return parts.length ? parts.join(', ') : 'no changes';
 }
 
 /* ============================================================================
- * SECTION B — Node export, so tests/merge.test.mjs can load the real code.
+ * SECTION B: Node export, so tests/merge.test.mjs can load the real code.
  * ========================================================================== */
 
 if (typeof module !== 'undefined' && module.exports) {
@@ -328,7 +414,10 @@ if (typeof module !== 'undefined' && module.exports) {
     mergePeriodicFsrs: mergePeriodicFsrs,
     makeFsrsMerge: makeFsrsMerge,
     mergeRegionsDone: mergeRegionsDone,
+    mergeNumberSet: mergeNumberSet,
+    mergeSettings: mergeSettings,
     mergeExams: mergeExams,
+    makeEventMerge: makeEventMerge,
     pickStateRecord: pickStateRecord,
     mergeEnvelopes: mergeEnvelopes,
     buildEnvelopeFrom: buildEnvelopeFrom,
@@ -345,7 +434,7 @@ if (typeof module !== 'undefined' && module.exports) {
 }
 
 /* ============================================================================
- * SECTION C — browser wiring. Guarded so Node never reaches it.
+ * SECTION C: browser wiring. Guarded so Node never reaches it.
  * ========================================================================== */
 
 if (typeof window === 'undefined') return;
@@ -427,7 +516,7 @@ function storageKey(ns, key) { return STORE_PREFIX + ns + ':' + key; }
 
 /* Walks localStorage and rebuilds the sync envelope from whatever is actually there.
  * Reading the store rather than tracking writes means data written by a material's
- * no-StudyStore fallback path is picked up too — the key format is identical. */
+ * no-StudyStore fallback path is picked up too, since the key format is identical. */
 function collectEntries() {
   var meta = readMeta();
   var entries = {};
@@ -580,7 +669,7 @@ function isOffline() {
 function syncNow(reason) {
   if (!canSync()) { setState('idle', ''); return Promise.resolve(false); }
   if (isOffline()) {
-    setState('offline', 'Offline — changes saved on this device.');
+    setState('offline', 'Offline: changes saved on this device.');
     return Promise.resolve(false);
   }
   if (inFlight) { pendingAgain = true; return Promise.resolve(false); }
@@ -636,9 +725,9 @@ function syncNow(reason) {
     }
     return ok;
   }).catch(function (err) {
-    if (isOffline()) setState('offline', 'Offline — changes saved on this device.');
+    if (isOffline()) setState('offline', 'Offline: changes saved on this device.');
     else setState('error', (err && err.status === 404)
-      ? 'Sync functions missing on the server — run the migration.'
+      ? 'Sync functions missing on the server: run the migration.'
       : 'Sync error. Will retry.');
     return false;
   }).then(function (ok) {
@@ -709,7 +798,7 @@ function decodeExport(str) {
   }
   if (s.indexOf('SH1:') === 0) {
     if (typeof DecompressionStream === 'undefined') {
-      return Promise.reject(new Error('This browser cannot read compressed backups. Export again from the other device — it will fall back to the uncompressed format.'));
+      return Promise.reject(new Error('This browser cannot read compressed backups. Export again from the other device. It will fall back to the uncompressed format.'));
     }
     var bytes = base64ToBytes(s.slice(4));
     var ds = new DecompressionStream('deflate-raw');
@@ -743,12 +832,13 @@ function previewImport(str) {
         var detail = '';
         if (key === 'fsrs') {
           var beforeVal = (local.ns[ns] && local.ns[ns][key]) ? local.ns[ns][key].value : null;
-          detail = ' — ' + describeFsrsChange(beforeVal, merged.ns[ns][key].value);
-        } else if (key === 'regionsDone') {
+          detail = ' (' + describeFsrsChange(beforeVal, merged.ns[ns][key].value) + ')';
+        } else if (key === 'regionsDone' || key === 'setsDone' || key === 'started') {
           var bn = (local.ns[ns] && local.ns[ns][key] && Array.isArray(local.ns[ns][key].value))
             ? local.ns[ns][key].value.length : 0;
           var an = merged.ns[ns][key].value.length;
-          detail = ' — ' + an + ' regions total (' + Math.max(0, an - bn) + ' new)';
+          var unit = key === 'started' ? 'elements' : key === 'setsDone' ? 'sets' : 'regions';
+          detail = ' (' + an + ' ' + unit + ' total, ' + Math.max(0, an - bn) + ' new)';
         }
         lines.push(ns + ' / ' + key + ': ' + diff.namespaces[ns][key] + detail);
       }
@@ -756,7 +846,7 @@ function previewImport(str) {
     return {
       ok: true,
       totalChanged: diff.totalChanged,
-      summary: lines.length ? lines : ['Nothing new — this device is already up to date.'],
+      summary: lines.length ? lines : ['Nothing new: this device is already up to date.'],
       commit: function () {
         applyEnvelope(merged);
         markDirty();
@@ -775,7 +865,7 @@ var UPDATE_MIN_GAP = 5 * 60 * 1000;
 var swReloading = false;
 
 /* Look for a newer build. Called on load, whenever the tab comes back to the front, and
-   the moment the device regains a connection — which is the case that matters on a phone
+   the moment the device regains a connection, which is the case that matters on a phone
    that was opened on mobile data or out of range. */
 function checkForUpdate(reg, force) {
   if (!reg) return;
@@ -786,7 +876,7 @@ function checkForUpdate(reg, force) {
   try { reg.update().catch(function () {}); } catch (e) {}
 }
 
-/* Swap to a waiting build on its own, but never while someone is typing into a material —
+/* Swap to a waiting build on its own, but never while someone is typing into a material:
    a reload mid-answer would be its own kind of bug. If they are, it waits for the next
    quiet moment, and the hub's "Update now" button is always there as the manual path. */
 function adoptWhenIdle(worker) {
@@ -862,12 +952,12 @@ var StudyStore = {
       });
       window.addEventListener('online', function () { syncNow('online'); });
       window.addEventListener('offline', function () {
-        setState('offline', 'Offline — changes saved on this device.');
+        setState('offline', 'Offline: changes saved on this device.');
       });
       window.addEventListener('pagehide', finalFlush);
     } catch (e) {}
 
-    if (isOffline()) setState('offline', 'Offline — changes saved on this device.');
+    if (isOffline()) setState('offline', 'Offline: changes saved on this device.');
     syncNow('load');
     return StudyStore;
   },
@@ -959,7 +1049,7 @@ var StudyStore = {
   _debug: {
     setOffline: function (v) {
       FORCE_OFFLINE = !!v;
-      if (FORCE_OFFLINE) setState('offline', 'Offline — changes saved on this device.');
+      if (FORCE_OFFLINE) setState('offline', 'Offline: changes saved on this device.');
       else syncNow('debug-online');
       return FORCE_OFFLINE;
     },

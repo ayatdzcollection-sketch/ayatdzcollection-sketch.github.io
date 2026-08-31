@@ -8,7 +8,7 @@
  * sync.js, auth.js). Devices check for a new version on every load and whenever they
  * regain a connection, so a bump reaches them without anyone having to think about it.
  */
-const VERSION = 'v5';
+const VERSION = 'v6';
 const SHELL_CACHE = 'studyhub-' + VERSION;
 const FONT_CACHE  = 'studyhub-fonts';          // unversioned: fonts are immutable
 const MAT_CACHE   = 'studyhub-materials';      // ciphertext; survives shell updates
@@ -27,7 +27,7 @@ self.addEventListener('install', event => {
     const cache = await caches.open(SHELL_CACHE);
     await cache.addAll(SHELL);
   })());
-  // No skipWaiting here — the page decides when to swap, so it never happens mid-keystroke.
+  // No skipWaiting here: the page decides when to swap, so it never happens mid-keystroke.
 });
 
 self.addEventListener('activate', event => {
