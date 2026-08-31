@@ -536,6 +536,30 @@ function applyUpdate(worker) {
   worker.postMessage({ type: 'SKIP_WAITING' });
 }
 
+/* The switch is site-wide rather than per material, because it is one decision about your
+   own data and it would be strange to have to make it separately in each quiz. The chemistry
+   settings page shows the same switch bound to the same key. */
+function initTelemetry() {
+  var box = $('telon'), state = $('telstate'), note = $('telnote');
+  if (!box || !window.StudyStore || !StudyStore.telemetry) return;
+  function paint() {
+    var on = StudyStore.telemetry.enabled();
+    box.checked = on;
+    state.textContent = on ? 'On' : 'Off';
+    if (!on) { note.textContent = 'Off. Nothing is logged, and anything still waiting has been discarded.'; return; }
+    var q = StudyStore.telemetry.pending();
+    note.textContent = q
+      ? q + ' review' + (q === 1 ? '' : 's') + ' waiting for a connection.'
+      : 'Nothing waiting to send.';
+  }
+  box.addEventListener('change', function () {
+    StudyStore.telemetry.setEnabled(box.checked);
+    paint();
+  });
+  paint();
+  setInterval(paint, 20000);
+}
+
 function initSW() {
   var note = $('swnote'), updateBtn = $('doupdate');
 
@@ -585,6 +609,7 @@ function boot() {
   if (window.StudyStore) { try { StudyStore.init({ namespace: 'hub' }); } catch (e) {} }
   initSyncPanel();
   initSW();
+  initTelemetry();
 
   loadCatalog().then(function () {
     $('err').hidden = true;

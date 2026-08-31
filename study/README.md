@@ -140,13 +140,58 @@ node --test "study/tests/*.test.mjs"
 
 ---
 
+## Review logs
+
+Every material schedules you with a memory model, and the only way to know whether the
+model is any good is to compare what it predicted against what happened. With the switch on
+(Sync & backup in the hub, or Settings inside the chemistry material) each review queues one
+anonymous line and sends it when there is a connection.
+
+| Sent | Not sent |
+|---|---|
+| Material and card key, which is the question asked (`Na|n2s`, `Ohio`) | Anything you typed |
+| Grade, and how long the answer took | Your name, codes, tokens or session |
+| Stability, difficulty and predicted retrievability *before* the review | Your IP address |
+| Days since the last review, reps, lapses, scheduler version | Anything that identifies a person |
+
+Identity is a random 32-hex install id generated on the device, so one device's stream stays
+separable from another's without anyone being named. Clearing site data throws it away.
+
+Local-first, like the rest. Events sit in `studyhub:hub:telemetryQueue` (device-local, never
+synced, because copying a queue between devices would send the same reviews twice) and are
+flushed in batches of 200 when online, on load, on becoming visible, on reconnect and every
+five minutes. The queue holds 1000 events and drops the **oldest** when it overflows: a
+queue that has overflowed has not reached the server in a long while, and the recent reviews
+are the ones still worth keeping. The preference itself does sync, because a decision about
+your own data should hold on every device you study on.
+
+Turning it off discards whatever is still queued.
+
+**The `telemetry_ingest` function has to exist before anything is stored.** Run
+`0004_telemetry.sql` in the Supabase SQL editor. Until then clients get one 404 per page
+load, stop trying for that load, and keep queueing. Nothing breaks and nothing is lost.
+
+```sql
+-- how well calibrated is the scheduler?
+select width_bucket(retrievability, 0, 1, 10) as predicted_decile,
+       count(*), avg((grade > 1)::int) as actually_recalled
+from study_reviews where retrievability is not null
+group by 1 order by 1;
+```
+
+---
+
 ## Offline and updates
 
 A service worker at the root of this folder (a worker cannot control files above its own
 directory) precaches the hub shell and caches material ciphertext as you open things.
 
-**Updates install themselves.** Every page load, every return to the tab, and every moment
-the device regains a connection triggers a version check. When a newer build is found it
+**Updates install themselves.** Every page load, every return to the tab, every moment the
+device regains a connection, and every three minutes while a tab is open and in front
+triggers a version check. Checks are floored at 90 seconds apart however many things ask for
+one, the poll skips a backgrounded or offline tab so a phone in a pocket spends nothing on
+it, and the worker is registered with `updateViaCache: 'none'` because GitHub Pages serves
+`sw.js` with a max-age that would otherwise answer the check from the browser's own cache. When a newer build is found it
 is adopted and the page reloads on its own, except while you are typing into a material,
 where it waits for a quiet moment instead. The Sync panel also has a manual *Update now*
 and a *Clear cache & reload* that recovers from any stuck state.

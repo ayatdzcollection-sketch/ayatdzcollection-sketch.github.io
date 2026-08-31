@@ -39,7 +39,12 @@ var KEEPALIVE_LIMIT = 60000;   // browsers cap keepalive bodies at ~64KB
 var SYNC_EXCLUDE = {
   'fifty-states': ['deck', 'followFocus', 'mapPrefs'],
   'periodic': ['ui'],
-  'hub': ['recent']
+  /* 'telemetryQueue' and 'installId' are per device by definition: copying a queue between
+   * devices would send the same reviews twice, and the install id is what keeps one
+   * device's stream separable from another's without naming anybody. The 'telemetry'
+   * preference itself DOES sync, because a decision about your own data should hold
+   * everywhere you study rather than needing to be made again on each device. */
+  'hub': ['recent', 'telemetryQueue', 'installId']
 };
 
 /* Captured at parse time: document.currentScript is only valid while this script runs. */
@@ -861,7 +866,8 @@ function previewImport(str) {
 /* -------------------------------------------------- service worker */
 
 var lastUpdateCheck = 0;
-var UPDATE_MIN_GAP = 5 * 60 * 1000;
+var UPDATE_MIN_GAP = 90 * 1000;          // floor between checks, whatever asks for one
+var UPDATE_POLL_MS = 3 * 60 * 1000;      // and a heartbeat, for a tab nobody touches
 var swReloading = false;
 
 /* Look for a newer build. Called on load, whenever the tab comes back to the front, and
@@ -904,7 +910,10 @@ function registerServiceWorker() {
   } catch (e) { return; }
 
   try {
-    navigator.serviceWorker.register(swUrl).then(function (reg) {
+    /* updateViaCache 'none' matters here: GitHub Pages serves sw.js with a max-age, and
+     * without this the browser would answer an update check from its HTTP cache and the
+     * poll above would be looking at a stale copy of the worker for ten minutes at a time. */
+    navigator.serviceWorker.register(swUrl, { updateViaCache: 'none' }).then(function (reg) {
       checkForUpdate(reg, true);
 
       if (reg.waiting && navigator.serviceWorker.controller) adoptWhenIdle(reg.waiting);
@@ -920,6 +929,16 @@ function registerServiceWorker() {
       document.addEventListener('visibilitychange', function () {
         if (document.visibilityState === 'visible') checkForUpdate(reg, false);
       });
+
+      /* A tab left open all afternoon would otherwise never look again: the load check has
+       * already run, and neither visibility nor connectivity changes while you sit there
+       * studying. Only poll while the tab is actually in front and online, so a backgrounded
+       * phone is not spending battery or data on it. */
+      setInterval(function () {
+        if (document.visibilityState !== 'visible') return;
+        if (isOffline()) return;
+        checkForUpdate(reg, false);
+      }, UPDATE_POLL_MS);
     }).catch(function () {});
 
     var reloaded = false;
@@ -929,6 +948,146 @@ function registerServiceWorker() {
       location.reload();
     });
   } catch (e) {}
+}
+
+/* -------------------------------------------------- telemetry */
+/* Anonymous review logs, kept so the scheduler can be checked against reality and its
+ * weights refitted later. An FSRS optimiser needs one thing above all: what the model
+ * predicted your chance of recall was, set against whether you actually recalled it. That
+ * pair is what an event carries.
+ *
+ * What goes out per review: which material, a card key (an element symbol and a direction,
+ * or a state name), the grade, how long the answer took, and the model's own numbers at
+ * the moment it asked. What does not go out: any name, any code, any address, anything you
+ * typed. The card key is the question, never your answer to it.
+ *
+ * Local-first like everything else here. Events queue on the device and are only ever sent
+ * over a live connection; with no connection they simply wait. The queue is capped, and
+ * when it is full the OLDEST events are dropped rather than the newest, because a queue
+ * that has overflowed is one that has not reached the server in a long time and the recent
+ * reviews are the ones still worth having. */
+var TELEMETRY_MAX   = 1000;   // events held on the device before the oldest are dropped
+var TELEMETRY_BATCH = 200;    // events per request
+var TELEMETRY_FLUSH_MS = 5 * 60 * 1000;
+var telemetryQueue = null;    // lazily read; null means 'not loaded yet'
+var telemetryWriteT = 0;
+var telemetryBusy = false;
+/* Set when the server has no telemetry_ingest function, which is the state of a project
+ * whose 0004 migration has not been run yet. Sending would 404 on every review, so it is
+ * tried once per page load and then left alone. */
+var telemetryUnavailable = false;
+
+var TEL_PREF_KEY  = STORE_PREFIX + 'hub:telemetry';
+var TEL_QUEUE_KEY = STORE_PREFIX + 'hub:telemetryQueue';
+var TEL_ID_KEY    = STORE_PREFIX + 'hub:installId';
+
+/* Default on, and said so plainly in the interface rather than buried here. */
+function telemetryEnabled() {
+  var raw = rawGet(TEL_PREF_KEY);
+  if (raw === null || raw === '') return true;
+  try { return JSON.parse(raw) !== false; } catch (e) { return true; }
+}
+function telemetrySetEnabled(on) {
+  on = !!on;
+  rawSet(TEL_PREF_KEY, JSON.stringify(on));
+  /* Stamped and pushed the same way StudyStore.set does it, so the choice reaches the
+     other devices instead of sitting here as an untracked write. */
+  try {
+    var meta = readMeta();
+    meta.mtimes['hub:telemetry'] = Date.now();
+    writeMeta(meta);
+    markDirty();
+    schedulePush();
+  } catch (e) {}
+  /* Turning it off discards what has not been sent. Keeping a queue you have just opted
+   * out of, in the hope you opt back in, is not a decision this should make for you. */
+  if (!on) { telemetryQueue = []; rawRemove(TEL_QUEUE_KEY); }
+  return on;
+}
+
+/* A random per-device id, so one device's reviews can be told apart from another's without
+ * anyone having to be identified. It is not tied to a person, a code or a session, and
+ * clearing site data throws it away for good. */
+function installId() {
+  var id = rawGet(TEL_ID_KEY);
+  if (id) return id;
+  var bytes;
+  try {
+    bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    id = Array.prototype.map.call(bytes, function (b) {
+      return ('0' + b.toString(16)).slice(-2);
+    }).join('');
+  } catch (e) {
+    id = 'x' + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+  }
+  rawSet(TEL_ID_KEY, id);
+  return id;
+}
+
+function telemetryLoad() {
+  if (telemetryQueue) return telemetryQueue;
+  var raw = rawGet(TEL_QUEUE_KEY);
+  try { telemetryQueue = raw ? JSON.parse(raw) : []; } catch (e) { telemetryQueue = []; }
+  if (!Array.isArray(telemetryQueue)) telemetryQueue = [];
+  return telemetryQueue;
+}
+/* Debounced: a speed round writes an event every couple of seconds and there is no reason
+ * for each one to serialise the whole queue. */
+function telemetryPersist() {
+  clearTimeout(telemetryWriteT);
+  telemetryWriteT = setTimeout(function () {
+    try { rawSet(TEL_QUEUE_KEY, JSON.stringify(telemetryQueue || [])); } catch (e) {}
+  }, 2000);
+}
+function telemetryPersistNow() {
+  clearTimeout(telemetryWriteT);
+  try { rawSet(TEL_QUEUE_KEY, JSON.stringify(telemetryQueue || [])); } catch (e) {}
+}
+
+function telemetryRecord(ev) {
+  if (!telemetryEnabled() || !ev || typeof ev !== 'object') return;
+  var q = telemetryLoad();
+  q.push(ev);
+  if (q.length > TELEMETRY_MAX) q.splice(0, q.length - TELEMETRY_MAX);
+  telemetryPersist();
+}
+
+function telemetryFlush(useKeepalive) {
+  if (telemetryBusy || telemetryUnavailable || !telemetryEnabled()) return Promise.resolve(0);
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return Promise.resolve(0);
+  if (isOffline()) return Promise.resolve(0);
+  var q = telemetryLoad();
+  if (!q.length) return Promise.resolve(0);
+  var batch = q.slice(0, TELEMETRY_BATCH);
+  telemetryBusy = true;
+  return rpc('telemetry_ingest', { p_install: installId(), p_events: batch }, !!useKeepalive)
+    .then(function () {
+      /* Splice by count rather than replacing the array: reviews can be recorded while the
+       * request is in flight, and they must not be dropped along with the batch. */
+      telemetryQueue.splice(0, batch.length);
+      telemetryPersistNow();
+      telemetryBusy = false;
+      return batch.length;
+    })
+    .catch(function (err) {
+      telemetryBusy = false;
+      if (err && (err.status === 404 || err.status === 400)) telemetryUnavailable = true;
+      return 0;   // the queue is left alone, so nothing is lost by a failed send
+    });
+}
+
+function telemetryStart() {
+  try {
+    window.addEventListener('online', function () { telemetryFlush(); });
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'visible') telemetryFlush();
+      else telemetryPersistNow();
+    });
+    window.addEventListener('pagehide', function () { telemetryPersistNow(); telemetryFlush(true); });
+    setInterval(function () { telemetryFlush(); }, TELEMETRY_FLUSH_MS);
+  } catch (e) {}
+  setTimeout(function () { telemetryFlush(); }, 8000);
 }
 
 /* -------------------------------------------------- public API */
@@ -944,6 +1103,7 @@ var StudyStore = {
 
     adoptOrphanMtimes();
     registerServiceWorker();
+    telemetryStart();
 
     try {
       document.addEventListener('visibilitychange', function () {
@@ -1038,6 +1198,14 @@ var StudyStore = {
     };
   },
 
+  telemetry: {
+    enabled: telemetryEnabled,
+    setEnabled: telemetrySetEnabled,
+    record: telemetryRecord,
+    flush: telemetryFlush,
+    pending: function () { return telemetryLoad().length; },
+    installId: installId
+  },
   exportCode: exportCode,
   previewImport: previewImport,
   importCode: function (str) {
