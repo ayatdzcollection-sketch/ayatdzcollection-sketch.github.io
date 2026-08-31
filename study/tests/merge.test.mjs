@@ -177,6 +177,48 @@ test('the import summary describes fsrs changes in words', () => {
   assert.match(text, /1 exam result added/);
 });
 
+/* ---------- periodic table ----------
+   Same rule as the states quiz, over a differently-named record map. Two devices
+   drilling different element sets must end up with both. */
+
+test('periodic: cards from both devices survive, newer review wins a shared card', () => {
+  const { mergePeriodicFsrs } = require('../assets/sync.js');
+  const a = { cards: { 'He|n2s': rec(9, 4, 5000, 6, 0), 'Li|s2n': rec(2, 6, 4000, 2, 0) }, quizDate: null, exams: [] };
+  const b = { cards: { 'He|n2s': rec(1, 7, 9000, 1, 0), 'Be|n2s': rec(3, 5, 4500, 3, 0) }, quizDate: null, exams: [] };
+
+  const m = mergePeriodicFsrs(a, b, 10, 10);
+  assert.deepEqual(Object.keys(m.cards).sort(), ['Be|n2s', 'He|n2s', 'Li|s2n']);
+  assert.deepEqual(m.cards['He|n2s'], rec(1, 7, 9000, 1, 0), 'newer last wins the whole record');
+  assert.deepEqual(m.cards['Li|s2n'], rec(2, 6, 4000, 2, 0), 'device A keeps its own card');
+  assert.deepEqual(m.cards['Be|n2s'], rec(3, 5, 4500, 3, 0), 'device B contributes its own');
+});
+
+test('periodic: the two directions of one element are independent cards', () => {
+  const { mergePeriodicFsrs } = require('../assets/sync.js');
+  const a = { cards: { 'Na|n2s': rec(8, 3, 9000, 5, 0) }, exams: [], quizDate: null };
+  const b = { cards: { 'Na|s2n': rec(1, 8, 100, 1, 2) }, exams: [], quizDate: null };
+  const m = mergePeriodicFsrs(a, b, 1, 1);
+  assert.equal(Object.keys(m.cards).length, 2, 'name->symbol and symbol->name do not collide');
+});
+
+test('periodic: started sets union across devices', () => {
+  const a = env({ 'periodic:setsDone': [['s1', 's11'], 10] });
+  const b = env({ 'periodic:setsDone': [['s1', 's21'], 20] });
+  assert.deepEqual(merge(a, b).ns.periodic.setsDone.value, ['s1', 's11', 's21']);
+});
+
+test('periodic and fifty-states never read each other', () => {
+  const a = env({
+    'fifty-states:fsrs': [{ states: { Ohio: rec(1, 5, 100, 1, 0) }, quizDate: null, exams: [] }, 10],
+    'periodic:fsrs': [{ cards: { 'H|n2s': rec(2, 5, 200, 1, 0) }, quizDate: null, exams: [] }, 10]
+  });
+  const b = env({ 'periodic:fsrs': [{ cards: { 'H|n2s': rec(9, 3, 900, 4, 0) }, quizDate: null, exams: [] }, 20] });
+  const m = merge(a, b);
+  assert.ok(m.ns['fifty-states'].fsrs.value.states.Ohio, 'the map quiz is untouched');
+  assert.equal(m.ns.periodic.fsrs.value.cards['H|n2s'].last, 900, 'the element card took the newer review');
+  assert.equal(m.ns.periodic.fsrs.value.states, undefined, 'no cross-contamination of field names');
+});
+
 /* ---------- key ordering ----------
    Postgres jsonb reorders object keys, so a record returned by the server is spelled
    differently than the one sent. Merging must not notice. */

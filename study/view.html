@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="light only">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#F2F1ED">
+<meta name="robots" content="noindex,nofollow">
+<title>Opening…</title>
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<style>
+:root{
+  --paper:#F2F1ED; --ink:#1B2327; --ink2:#4E5B61; --ink3:#87949A;
+  --rule:#D2D2CB; --bad:#94402E;
+  --mono:ui-monospace,Menlo,Consolas,monospace;
+  --serif:Georgia,"Times New Roman",serif;
+  --cond:"Helvetica Neue",Arial,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif);
+  font-size:17px;line-height:1.5;min-height:100vh;display:flex;align-items:center;justify-content:center;
+  padding:calc(24px + env(safe-area-inset-top,0px)) 20px calc(24px + env(safe-area-inset-bottom,0px))}
+.card{max-width:440px;width:100%}
+.eyebrow{margin:0;font-family:var(--mono);font-size:11px;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--ink3)}
+h1{margin:4px 0 0;font-size:26px;font-weight:600;letter-spacing:-.01em}
+p{margin:10px 0 0;color:var(--ink2);font-size:15.5px}
+.bad{color:var(--bad)}
+.btn{display:inline-block;margin-top:20px;min-height:48px;line-height:46px;padding:0 18px;
+  border:1px solid var(--ink);background:var(--ink);color:var(--paper);
+  font-family:var(--cond);font-size:15px;font-weight:600;border-radius:2px;
+  cursor:pointer;text-decoration:none}
+.btn.ghost{background:transparent;color:var(--ink);border-color:var(--rule)}
+.spin{display:inline-block;width:11px;height:11px;border:2px solid var(--rule);
+  border-top-color:var(--ink);border-radius:50%;animation:sp .7s linear infinite;vertical-align:-1px;margin-right:7px}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spin{animation:none}}
+</style>
+</head>
+<body>
+<main class="card" id="card">
+  <p class="eyebrow">Study hub</p>
+  <h1 id="h">Opening…</h1>
+  <p id="msg"><span class="spin"></span>Fetching and decrypting.</p>
+  <div id="acts"></div>
+</main>
+
+<script src="assets/auth.js"></script>
+<script>
+/* Materials ship as ciphertext. This page fetches the .enc, asks the server for the key
+   (which it only gets with a valid session), decrypts in the browser, and hands the
+   document over to the material itself.
+   It lives at /study/ so the material's own relative asset paths resolve — the publisher
+   rewrites "../../assets/" to "assets/" for exactly this reason. */
+(function () {
+  var q = new URLSearchParams(location.search);
+  var id = q.get('m') || '';
+  var h = document.getElementById('h');
+  var msg = document.getElementById('msg');
+  var acts = document.getElementById('acts');
+
+  function fail(title, detail, showLogin) {
+    h.textContent = title;
+    msg.className = 'bad';
+    msg.textContent = detail;
+    acts.innerHTML = '';
+    var back = document.createElement('a');
+    back.className = 'btn ghost'; back.href = './'; back.textContent = 'Back to the hub';
+    if (showLogin) {
+      var a = document.createElement('a');
+      a.className = 'btn'; a.href = './'; a.textContent = 'Enter your code';
+      acts.appendChild(a);
+      acts.appendChild(document.createTextNode(' '));
+    }
+    acts.appendChild(back);
+  }
+
+  if (!id) return fail('Nothing to open', 'No material was named in the address.');
+  if (!window.StudyAuth || !StudyAuth.signedIn()) {
+    return fail('Locked', 'This device is not signed in. Open the hub and enter your code.', true);
+  }
+  if (!window.crypto || !crypto.subtle) {
+    return fail('Cannot decrypt here',
+      'This browser does not expose Web Crypto, which usually means the page is not on a secure connection.');
+  }
+
+  StudyAuth.catalog().then(function (items) {
+    var m = null;
+    for (var i = 0; i < items.length; i++) if (items[i].id === id) m = items[i];
+    if (!m) return fail('Not found', 'No material with that name is available to you.');
+    document.title = m.title || 'Study';
+    h.textContent = m.title || 'Opening…';
+
+    return StudyAuth.openMaterial(m.path, m.id).then(function (html) {
+      // Hand the whole document over. Same URL, same origin, so localStorage, the
+      // service worker and StudyStore all keep working exactly as before.
+      document.open();
+      document.write(html);
+      document.close();
+    });
+  }).catch(function (e) {
+    var k = String(e && e.message);
+    if (k === 'no_session') {
+      StudyAuth.signOut();
+      return fail('Session expired', 'Open the hub and enter your code again.', true);
+    }
+    if (k === 'locked') {
+      return fail('Locked', 'This one needs an admin code. Yours does not open it.');
+    }
+    if (k === 'missing_file') {
+      return fail('Not published', 'The encrypted file for this material is not on the server yet.');
+    }
+    if (k === 'decrypt_failed') {
+      return fail('Could not decrypt',
+        'The key did not fit this file. It was probably republished with a new key — reload the hub and try again.');
+    }
+    return fail('Could not open it', 'Something went wrong fetching this material. Check your connection and try again.');
+  });
+})();
+</script>
+</body>
+</html>

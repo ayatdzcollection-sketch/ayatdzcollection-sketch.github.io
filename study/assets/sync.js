@@ -140,35 +140,42 @@ function mergeExams(aEx, bEx) {
   return out.slice(-20);
 }
 
-function mergeFsrsValue(aVal, bVal, aM, bM) {
-  var a = aVal && typeof aVal === 'object' ? aVal : {};
-  var b = bVal && typeof bVal === 'object' ? bVal : {};
-  var aStates = a.states && typeof a.states === 'object' ? a.states : {};
-  var bStates = b.states && typeof b.states === 'object' ? b.states : {};
+/* Every spaced-repetition material shares one shape: a map of records keyed by whatever
+   it drills, plus exams and a quiz date. Only the name of that map differs, so the rule
+   is written once and bound to each material's field. */
+function makeFsrsMerge(mapField) {
+  return function (aVal, bVal, aM, bM) {
+    var a = aVal && typeof aVal === 'object' ? aVal : {};
+    var b = bVal && typeof bVal === 'object' ? bVal : {};
+    var aMap = a[mapField] && typeof a[mapField] === 'object' ? a[mapField] : {};
+    var bMap = b[mapField] && typeof b[mapField] === 'object' ? b[mapField] : {};
 
-  var states = {};
-  var name;
-  for (name in aStates) if (Object.prototype.hasOwnProperty.call(aStates, name)) states[name] = aStates[name];
-  for (name in bStates) {
-    if (!Object.prototype.hasOwnProperty.call(bStates, name)) continue;
-    states[name] = Object.prototype.hasOwnProperty.call(aStates, name)
-      ? pickStateRecord(aStates[name], bStates[name])
-      : bStates[name];
-  }
+    var out = {};
+    var name;
+    for (name in aMap) if (Object.prototype.hasOwnProperty.call(aMap, name)) out[name] = aMap[name];
+    for (name in bMap) {
+      if (!Object.prototype.hasOwnProperty.call(bMap, name)) continue;
+      out[name] = Object.prototype.hasOwnProperty.call(aMap, name)
+        ? pickStateRecord(aMap[name], bMap[name])
+        : bMap[name];
+    }
 
-  var quizDate;
-  if (aM > bM) quizDate = a.quizDate;
-  else if (bM > aM) quizDate = b.quizDate;
-  else if (a.quizDate && !b.quizDate) quizDate = a.quizDate;
-  else if (b.quizDate && !a.quizDate) quizDate = b.quizDate;
-  else quizDate = (String(a.quizDate) >= String(b.quizDate)) ? a.quizDate : b.quizDate;
+    var quizDate;
+    if (aM > bM) quizDate = a.quizDate;
+    else if (bM > aM) quizDate = b.quizDate;
+    else if (a.quizDate && !b.quizDate) quizDate = a.quizDate;
+    else if (b.quizDate && !a.quizDate) quizDate = b.quizDate;
+    else quizDate = (String(a.quizDate) >= String(b.quizDate)) ? a.quizDate : b.quizDate;
 
-  return {
-    states: states,
-    quizDate: typeof quizDate === 'undefined' ? null : quizDate,
-    exams: mergeExams(a.exams, b.exams)
+    var merged = { quizDate: typeof quizDate === 'undefined' ? null : quizDate,
+                   exams: mergeExams(a.exams, b.exams) };
+    merged[mapField] = out;
+    return merged;
   };
 }
+
+var mergeFsrsValue    = makeFsrsMerge('states');   // fifty-states
+var mergePeriodicFsrs = makeFsrsMerge('cards');    // periodic table
 
 function mergeRegionsDone(aVal, bVal) {
   var seen = {};
@@ -188,7 +195,9 @@ function mergeRegionsDone(aVal, bVal) {
  * while the quiz page may be closed. See README, "Adding a material". */
 var BUILTIN_MERGES = {
   'fifty-states:fsrs': mergeFsrsValue,
-  'fifty-states:regionsDone': mergeRegionsDone
+  'fifty-states:regionsDone': mergeRegionsDone,
+  'periodic:fsrs': mergePeriodicFsrs,
+  'periodic:setsDone': mergeRegionsDone      // a set union works for any list of ids
 };
 
 function mtimeOf(entry) {
@@ -316,6 +325,8 @@ if (typeof module !== 'undefined' && module.exports) {
     formatCode: formatCode,
     defaultMerge: defaultMerge,
     mergeFsrsValue: mergeFsrsValue,
+    mergePeriodicFsrs: mergePeriodicFsrs,
+    makeFsrsMerge: makeFsrsMerge,
     mergeRegionsDone: mergeRegionsDone,
     mergeExams: mergeExams,
     pickStateRecord: pickStateRecord,
@@ -759,6 +770,40 @@ function previewImport(str) {
 
 /* -------------------------------------------------- service worker */
 
+var lastUpdateCheck = 0;
+var UPDATE_MIN_GAP = 5 * 60 * 1000;
+var swReloading = false;
+
+/* Look for a newer build. Called on load, whenever the tab comes back to the front, and
+   the moment the device regains a connection — which is the case that matters on a phone
+   that was opened on mobile data or out of range. */
+function checkForUpdate(reg, force) {
+  if (!reg) return;
+  try { if (navigator.onLine === false) return; } catch (e) {}
+  var now = Date.now();
+  if (!force && now - lastUpdateCheck < UPDATE_MIN_GAP) return;
+  lastUpdateCheck = now;
+  try { reg.update().catch(function () {}); } catch (e) {}
+}
+
+/* Swap to a waiting build on its own, but never while someone is typing into a material —
+   a reload mid-answer would be its own kind of bug. If they are, it waits for the next
+   quiet moment, and the hub's "Update now" button is always there as the manual path. */
+function adoptWhenIdle(worker) {
+  if (!worker || swReloading) return;
+  var tryNow = function () {
+    var el = document.activeElement;
+    var typing = el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName);
+    if (typing || document.visibilityState !== 'visible') return false;
+    swReloading = true;
+    worker.postMessage({ type: 'SKIP_WAITING' });
+    return true;
+  };
+  if (tryNow()) return;
+  var iv = setInterval(function () { if (tryNow()) clearInterval(iv); }, 4000);
+  setTimeout(function () { clearInterval(iv); }, 120000);
+}
+
 function registerServiceWorker() {
   if (!('serviceWorker' in navigator) || !SCRIPT_URL) return;
   var swUrl;
@@ -767,7 +812,33 @@ function registerServiceWorker() {
     if (u.origin !== location.origin) return;
     swUrl = new URL('../sw.js', SCRIPT_URL).href;   // assets/../sw.js == hub root
   } catch (e) { return; }
-  try { navigator.serviceWorker.register(swUrl).catch(function () {}); } catch (e) {}
+
+  try {
+    navigator.serviceWorker.register(swUrl).then(function (reg) {
+      checkForUpdate(reg, true);
+
+      if (reg.waiting && navigator.serviceWorker.controller) adoptWhenIdle(reg.waiting);
+      reg.addEventListener('updatefound', function () {
+        var nw = reg.installing;
+        if (!nw) return;
+        nw.addEventListener('statechange', function () {
+          if (nw.state === 'installed' && navigator.serviceWorker.controller) adoptWhenIdle(nw);
+        });
+      });
+
+      window.addEventListener('online', function () { checkForUpdate(reg, true); });
+      document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'visible') checkForUpdate(reg, false);
+      });
+    }).catch(function () {});
+
+    var reloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', function () {
+      if (reloaded) return;
+      reloaded = true;
+      location.reload();
+    });
+  } catch (e) {}
 }
 
 /* -------------------------------------------------- public API */

@@ -1,73 +1,91 @@
-/* Study Hub — manifest rendering, filtering, recents, and the sync panel. */
+/* Study Hub — gate, catalog, sync panel, admin controls. */
 (function () {
 'use strict';
 
 var $ = function (id) { return document.getElementById(id); };
-var manifest = null;
-var swRegistration = null;
+var items = [];
+var role = null;
 
-/* ============================================================ manifest */
+/* ============================================================ gate */
 
-function ManifestError(msg, detail) {
-  this.message = msg;
-  this.detail = detail || '';
+function showGate(msg) {
+  $('gate').hidden = false;
+  $('app').hidden = true;
+  if (msg) $('gatemsg').textContent = msg;
+  var f = $('code');
+  if (f) setTimeout(function () { f.focus(); }, 60);
 }
 
-function loadManifest() {
-  return fetch('materials.json', { cache: 'no-cache' }).then(function (res) {
-    if (!res.ok) {
-      throw new ManifestError(
-        'Could not load materials.json (HTTP ' + res.status + ').',
-        res.status === 404
-          ? 'The file is missing from this folder. It sits next to index.html.'
-          : 'The server refused the request.');
-    }
-    return res.text();
-  }).then(function (text) {
-    var data;
-    try {
-      data = JSON.parse(text);
-    } catch (e) {
-      throw new ManifestError('materials.json is not valid JSON.',
-        e.message + ' — a stray comma or a missing quote will do this. Paste the file into a JSON checker to find the spot.');
-    }
-    if (!data || !Array.isArray(data.classes)) {
-      throw new ManifestError('materials.json is missing its "classes" list.',
-        'The file must look like { "classes": [ … ] }.');
-    }
-    return data;
+function showApp() {
+  $('gate').hidden = true;
+  $('app').hidden = false;
+  role = StudyAuth.role();
+  var chip = $('rolechip');
+  chip.textContent = role === 'admin' ? 'Admin' : 'Viewer';
+  chip.hidden = false;
+  $('adminpanel').hidden = role !== 'admin';
+  $('whonote').textContent = 'Signed in as ' + (role === 'admin' ? 'admin' : 'viewer') +
+    ' on this browser. Signing out also clears the material keys cached here.';
+}
+
+function initGate() {
+  $('gateform').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var btn = $('gatebtn'), msg = $('gatemsg');
+    msg.textContent = '';
+    var code = $('code').value;
+    if (!code.trim()) { msg.textContent = 'Enter your code.'; return; }
+    btn.disabled = true; btn.textContent = 'Checking…';
+    StudyAuth.login(code).then(function () {
+      $('code').value = '';
+      btn.disabled = false; btn.textContent = 'Open';
+      showApp();
+      boot();
+    }, function (err) {
+      btn.disabled = false; btn.textContent = 'Open';
+      msg.textContent = err.friendly || 'That code was not recognised.';
+      $('code').select();
+    });
   });
 }
 
-function showError(err) {
+/* ============================================================ catalog */
+
+function loadCatalog() {
+  return StudyAuth.catalog().then(function (list) {
+    items = (list || []).filter(function (i) { return i.kind !== 'link'; });
+    return items;
+  });
+}
+
+function showError(title, detail) {
   var box = $('err');
   box.innerHTML = '';
-  var h = document.createElement('h2');
-  h.textContent = 'Something is wrong with the material list';
-  var p = document.createElement('p');
-  p.textContent = err.message || String(err);
+  var h = document.createElement('h2'); h.textContent = title;
   box.appendChild(h);
-  box.appendChild(p);
-  if (err.detail) {
-    var d = document.createElement('p');
-    d.textContent = err.detail;
-    box.appendChild(d);
-  }
+  if (detail) { var p = document.createElement('p'); p.textContent = detail; box.appendChild(p); }
   box.hidden = false;
 }
 
-/* ============================================================ rendering */
-
-function safePath(p) {
-  // Materials are always relative to this folder. Anything else is a mistake or worse.
-  return typeof p === 'string' && p && !/^[a-z]+:/i.test(p) && p.charAt(0) !== '/' && p.indexOf('..') === -1;
+/* Materials are grouped into their classes for display. The catalog is a flat list so the
+   server can filter it per role without knowing anything about how the hub lays it out. */
+function groupByClass(list) {
+  var order = [], byId = {};
+  list.forEach(function (m) {
+    var id = m.class_id || 'other';
+    if (!byId[id]) {
+      byId[id] = { id: id, name: m.class_name || 'Other', term: m.term, materials: [] };
+      order.push(byId[id]);
+    }
+    byId[id].materials.push(m);
+  });
+  return order;
 }
 
-function matches(material, klass, needle) {
+function matches(m, klass, needle) {
   if (!needle) return true;
-  var hay = [material.title, material.blurb, (material.tags || []).join(' '), klass.name, klass.id]
-    .join(' ').toLowerCase();
-  return needle.split(/\s+/).every(function (word) { return hay.indexOf(word) !== -1; });
+  var hay = [m.title, m.blurb, (m.tags || []).join(' '), klass.name, klass.id].join(' ').toLowerCase();
+  return needle.split(/\s+/).every(function (w) { return hay.indexOf(w) !== -1; });
 }
 
 function renderAll(needle) {
@@ -75,25 +93,25 @@ function renderAll(needle) {
   wrap.innerHTML = '';
   var shown = 0;
 
-  (manifest.classes || []).forEach(function (klass) {
-    var mats = (klass.materials || []).filter(function (m) { return matches(m, klass, needle); });
+  groupByClass(items).forEach(function (klass) {
+    var mats = klass.materials.filter(function (m) { return matches(m, klass, needle); });
     if (!mats.length) return;
 
     var sec = document.createElement('section');
     sec.className = 'klass';
-    if (klass.id) sec.id = String(klass.id);
+    sec.id = klass.id;
+    sec.setAttribute('data-subject', klass.id);
 
     var head = document.createElement('div');
     head.className = 'khead';
     var h2 = document.createElement('h2');
     h2.className = 'kname';
-    h2.textContent = klass.name || klass.id || 'Untitled class';
+    h2.textContent = klass.name;
     head.appendChild(h2);
     if (klass.term) {
-      var term = document.createElement('span');
-      term.className = 'kterm';
-      term.textContent = klass.term;
-      head.appendChild(term);
+      var t = document.createElement('span');
+      t.className = 'kterm'; t.textContent = klass.term;
+      head.appendChild(t);
     }
     sec.appendChild(head);
 
@@ -101,32 +119,23 @@ function renderAll(needle) {
     ul.className = 'rows';
 
     mats.forEach(function (m) {
+      var lockedForMe = m.locked && role !== 'admin';
       var li = document.createElement('li');
-      var a = document.createElement('a');
-      a.className = 'mrow';
-
-      if (safePath(m.path)) {
-        a.href = m.path;
-      } else {
-        a.href = '#';
-        a.addEventListener('click', function (e) {
-          e.preventDefault();
-          showError(new ManifestError(
-            'The entry "' + (m.title || m.id) + '" has an unusable path.',
-            'Paths must point inside this folder, like "m/apush/fifty-states.html". Found: ' + String(m.path)));
-        });
-      }
+      var a = document.createElement('button');
+      a.type = 'button';
+      a.className = 'mrow' + (lockedForMe ? ' islocked' : '');
 
       var left = document.createElement('span');
       left.className = 'mleft';
-      var t = document.createElement('span');
-      t.className = 'mtitle';
-      t.textContent = m.title || m.id || 'Untitled';
-      left.appendChild(t);
+      var title = document.createElement('span');
+      title.className = 'mtitle';
+      title.textContent = m.title;
+      if (m.locked) title.appendChild(flag('locked', 'Locked'));
+      if (m.hidden) title.appendChild(flag('hidden', 'Hidden'));
+      left.appendChild(title);
       if (m.blurb) {
         var b = document.createElement('span');
-        b.className = 'mblurb';
-        b.textContent = m.blurb;
+        b.className = 'mblurb'; b.textContent = m.blurb;
         left.appendChild(b);
       }
 
@@ -134,23 +143,18 @@ function renderAll(needle) {
       right.className = 'mright';
       if (m.tags && m.tags.length) {
         var tg = document.createElement('span');
-        tg.className = 'mtags';
-        tg.textContent = m.tags.join(' · ');
+        tg.className = 'mtags'; tg.textContent = m.tags.join(' · ');
         right.appendChild(tg);
       }
       if (m.added) {
         var ad = document.createElement('span');
-        ad.className = 'madded';
-        ad.textContent = m.added;
+        ad.className = 'madded'; ad.textContent = m.added;
         right.appendChild(ad);
       }
 
-      a.appendChild(left);
-      a.appendChild(right);
-      a.addEventListener('click', function () { recordRecent(m); });
-
-      li.appendChild(a);
-      ul.appendChild(li);
+      a.appendChild(left); a.appendChild(right);
+      a.addEventListener('click', function () { open(m); });
+      li.appendChild(a); ul.appendChild(li);
       shown++;
     });
 
@@ -159,21 +163,33 @@ function renderAll(needle) {
   });
 
   $('noresults').hidden = shown > 0;
-  var total = (manifest.classes || []).reduce(function (n, c) { return n + ((c.materials || []).length); }, 0);
-  $('subline').textContent = total
-    ? total + ' material' + (total === 1 ? '' : 's') + ' across ' + manifest.classes.length +
-      ' class' + (manifest.classes.length === 1 ? '' : 'es') + '.'
-    : 'No materials listed yet.';
+  var n = items.length;
+  var classes = groupByClass(items).length;
+  $('subline').textContent = n
+    ? n + ' material' + (n === 1 ? '' : 's') + ' across ' + classes + ' class' + (classes === 1 ? '' : 'es') + '.'
+    : 'No materials yet.';
+}
+
+function flag(cls, text) {
+  var s = document.createElement('span');
+  s.className = 'flag ' + cls;
+  s.textContent = text;
+  return s;
+}
+
+function open(m) {
+  recordRecent(m);
+  location.href = 'view.html?m=' + encodeURIComponent(m.id);
 }
 
 /* ============================================================ recents */
 
 function recordRecent(m) {
-  if (!window.StudyStore || !safePath(m.path)) return;
+  if (!window.StudyStore) return;
   StudyStore.get('recent').then(function (list) {
     list = Array.isArray(list) ? list : [];
-    list = list.filter(function (r) { return r && r.path !== m.path; });
-    list.unshift({ path: m.path, title: m.title || m.id, ts: Date.now() });
+    list = list.filter(function (r) { return r && r.id !== m.id; });
+    list.unshift({ id: m.id, title: m.title, ts: Date.now() });
     StudyStore.set('recent', list.slice(0, 8));
   });
 }
@@ -182,21 +198,23 @@ function renderRecents() {
   if (!window.StudyStore) return;
   StudyStore.get('recent').then(function (list) {
     if (!Array.isArray(list) || !list.length) return;
+    var known = {};
+    items.forEach(function (i) { known[i.id] = i; });
     var box = $('recent');
     box.innerHTML = '';
     list.forEach(function (r) {
-      if (!r || !safePath(r.path)) return;
-      var a = document.createElement('a');
-      a.className = 'chip';
-      a.href = r.path;
-      a.textContent = r.title || r.path;
-      box.appendChild(a);
+      if (!r || !known[r.id]) return;         // drop anything hidden from this role
+      var b = document.createElement('button');
+      b.type = 'button'; b.className = 'chip';
+      b.textContent = r.title || r.id;
+      b.addEventListener('click', function () { open(known[r.id]); });
+      box.appendChild(b);
     });
     $('recentwrap').hidden = !box.children.length;
   });
 }
 
-/* ============================================================ hash routing */
+/* ============================================================ hash route */
 
 function handleHash() {
   var h = (location.hash || '').replace(/^#/, '');
@@ -204,11 +222,9 @@ function handleHash() {
 
   if (h.indexOf('pair=') === 0) {
     var code = decodeURIComponent(h.slice(5));
-    var panel = $('syncpanel');
-    panel.open = true;
+    $('syncpanel').open = true;
     $('paircode').value = code;
-    panel.scrollIntoView({ block: 'start' });
-    $('pairerr').hidden = true;
+    $('syncpanel').scrollIntoView({ block: 'start' });
     if (window.confirm('Pair this device with code ' + code + '?')) doPair();
     history.replaceState(null, '', location.pathname + location.search);
     return;
@@ -238,37 +254,26 @@ function relTime(ms) {
 }
 
 function paintStatus(st) {
-  var dot = $('syncdot');
-  var line = $('statusline');
-  var sum = $('syncsum');
+  var dot = $('syncdot'), line = $('statusline'), sum = $('syncsum');
   dot.className = 'dot';
-
   if (!st.configured) {
-    dot.classList.add('off');
-    sum.textContent = 'local only';
-    line.textContent = 'Sync is not configured yet. Everything still saves on this device, and the copy-and-paste backup below works with no server at all.';
+    dot.classList.add('off'); sum.textContent = 'local only';
+    line.textContent = 'Sync is not configured. Everything still saves on this device, and the backup below needs no server.';
   } else if (!st.paired) {
-    dot.classList.add('off');
-    sum.textContent = 'not paired';
+    dot.classList.add('off'); sum.textContent = 'not paired';
     line.textContent = 'Saved on this device. Pair with a code to keep your other devices in step.';
   } else if (st.state === 'syncing') {
-    dot.classList.add('busy');
-    sum.textContent = 'syncing';
-    line.textContent = 'Syncing…';
+    dot.classList.add('busy'); sum.textContent = 'syncing'; line.textContent = 'Syncing…';
   } else if (st.state === 'offline') {
-    dot.classList.add('off');
-    sum.textContent = 'offline';
-    line.textContent = 'Offline — changes are saved on this device and will sync when you are back online.';
+    dot.classList.add('off'); sum.textContent = 'offline';
+    line.textContent = 'Offline — changes are saved here and will sync when you are back online.';
   } else if (st.state === 'error') {
-    dot.classList.add('bad');
-    sum.textContent = 'retrying';
+    dot.classList.add('bad'); sum.textContent = 'retrying';
     line.textContent = st.message || 'Sync hit a problem. It will try again.';
   } else {
-    dot.classList.add('ok');
-    sum.textContent = 'synced';
+    dot.classList.add('ok'); sum.textContent = 'synced';
     line.textContent = 'Synced ' + relTime(st.lastSyncedAt) + (st.dirty ? ' · changes pending' : '') + '.';
   }
-
   $('unpaired').hidden = st.paired;
   $('paired').hidden = !st.paired;
   if (st.paired && st.codeDisplay) {
@@ -276,36 +281,29 @@ function paintStatus(st) {
     $('maskedcode').dataset.code = st.codeDisplay;
   }
   $('pairnote').textContent = st.configured
-    ? 'One code links your devices. Keep it to yourself — it is the only thing guarding your progress.'
-    : 'Add your Supabase URL and anon key at the top of assets/sync.js to switch this on.';
+    ? 'One code links your devices. It is separate from your access code.'
+    : 'Not configured.';
 }
 
 function doPair() {
-  var val = $('paircode').value;
   var errEl = $('pairerr');
   errEl.hidden = true;
   try {
-    StudyStore.pair(val).then(function (formatted) {
+    StudyStore.pair($('paircode').value).then(function (f) {
       $('paircode').value = '';
-      errEl.hidden = true;
-      window.alert('Paired. Your progress will merge with code ' + formatted + '.');
+      window.alert('Paired. Your progress will merge with code ' + f + '.');
     });
   } catch (e) {
-    errEl.textContent = e.message;
-    errEl.hidden = false;
+    errEl.textContent = e.message; errEl.hidden = false;
   }
 }
 
 function initSyncPanel() {
   if (!window.StudyStore) {
-    $('statusline').textContent = 'Sync module did not load, so this device is on its own. Materials still save locally.';
+    $('statusline').textContent = 'The sync module did not load. Materials still save on this device.';
     $('syncsum').textContent = 'unavailable';
-    ['makecode', 'dopair', 'doexport', 'doimport'].forEach(function (id) {
-      var el = $(id); if (el) el.disabled = true;
-    });
     return;
   }
-
   StudyStore.on('status', paintStatus);
   setInterval(function () { paintStatus(StudyStore.status()); }, 30000);
 
@@ -314,14 +312,11 @@ function initSyncPanel() {
     $('bigcode').textContent = code;
     $('codeout').hidden = false;
     $('unpaired').hidden = true;
-    var url = location.href.split('#')[0] + '#pair=' + encodeURIComponent(code);
-    renderQR(url, $('qr'));
+    renderQR(location.href.split('#')[0] + '#pair=' + encodeURIComponent(code), $('qr'));
   });
   $('codedone').addEventListener('click', function () {
-    $('codeout').hidden = true;
-    paintStatus(StudyStore.status());
+    $('codeout').hidden = true; paintStatus(StudyStore.status());
   });
-
   $('dopair').addEventListener('click', doPair);
   $('paircode').addEventListener('keydown', function (e) { if (e.key === 'Enter') doPair(); });
 
@@ -331,18 +326,13 @@ function initSyncPanel() {
     $('maskedcode').textContent = showing ? full.slice(0, 4) + '-••••-••••' : full;
     this.textContent = showing ? 'Show code' : 'Hide code';
   });
-
   $('showqr').addEventListener('click', function () {
     var wrap = $('pairedqrwrap');
     if (!wrap.hidden) { wrap.hidden = true; this.textContent = 'Show square'; return; }
-    var full = $('maskedcode').dataset.code || '';
-    renderQR(location.href.split('#')[0] + '#pair=' + encodeURIComponent(full), $('pairedqr'));
-    wrap.hidden = false;
-    this.textContent = 'Hide square';
+    renderQR(location.href.split('#')[0] + '#pair=' + encodeURIComponent($('maskedcode').dataset.code || ''), $('pairedqr'));
+    wrap.hidden = false; this.textContent = 'Hide square';
   });
-
   $('syncnow').addEventListener('click', function () { StudyStore.syncNow('manual'); });
-
   $('unpair').addEventListener('click', function () {
     if (!window.confirm('Unpair this device? Your progress stays here; it just stops syncing.')) return;
     StudyStore.unpair();
@@ -350,49 +340,32 @@ function initSyncPanel() {
     paintStatus(StudyStore.status());
   });
 
-  /* -------- export / import -------- */
-
   $('doexport').addEventListener('click', function () {
     StudyStore.exportCode().then(function (code) {
       var box = $('iobox');
-      box.value = code;
-      box.hidden = false;
-      box.readOnly = true;
-      $('iorow').hidden = false;
-      $('copyout').hidden = false;
-      $('preview').hidden = true;
-      $('importpreview').hidden = true;
-      box.focus();
-      box.select();
+      box.value = code; box.hidden = false; box.readOnly = true;
+      $('iorow').hidden = false; $('copyout').hidden = false;
+      $('preview').hidden = true; $('importpreview').hidden = true;
+      box.focus(); box.select();
     });
   });
-
   $('copyout').addEventListener('click', function () {
-    var box = $('iobox');
-    var done = function () { $('copyout').textContent = 'Copied'; setTimeout(function () { $('copyout').textContent = 'Copy'; }, 1800); };
+    var box = $('iobox'), self = this;
+    var done = function () { self.textContent = 'Copied'; setTimeout(function () { self.textContent = 'Copy'; }, 1800); };
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(box.value).then(done, function () { box.select(); document.execCommand('copy'); done(); });
-    } else {
-      box.select(); document.execCommand('copy'); done();
-    }
+    } else { box.select(); document.execCommand('copy'); done(); }
   });
-
   $('doimport').addEventListener('click', function () {
     var box = $('iobox');
-    box.value = '';
-    box.hidden = false;
-    box.readOnly = false;
-    $('iorow').hidden = false;
-    $('copyout').hidden = true;
-    $('preview').hidden = false;
-    $('importpreview').hidden = true;
+    box.value = ''; box.hidden = false; box.readOnly = false;
+    $('iorow').hidden = false; $('copyout').hidden = true;
+    $('preview').hidden = false; $('importpreview').hidden = true;
     box.focus();
   });
-
   $('preview').addEventListener('click', function () {
     var out = $('importpreview');
-    out.hidden = false;
-    out.textContent = 'Reading…';
+    out.hidden = false; out.textContent = 'Reading…';
     StudyStore.previewImport($('iobox').value).then(function (p) {
       out.innerHTML = '';
       var h = document.createElement('h4');
@@ -400,31 +373,22 @@ function initSyncPanel() {
       out.appendChild(h);
       var ul = document.createElement('ul');
       p.summary.forEach(function (line) {
-        var li = document.createElement('li');
-        li.textContent = line;
-        ul.appendChild(li);
+        var li = document.createElement('li'); li.textContent = line; ul.appendChild(li);
       });
       out.appendChild(ul);
-
       if (p.totalChanged) {
-        var row = document.createElement('div');
-        row.className = 'row wrap';
+        var row = document.createElement('div'); row.className = 'row wrap';
         var apply = document.createElement('button');
-        apply.className = 'btn';
-        apply.type = 'button';
-        apply.textContent = 'Apply';
+        apply.className = 'btn'; apply.type = 'button'; apply.textContent = 'Apply';
         apply.addEventListener('click', function () {
           p.commit();
-          out.innerHTML = '<h4>Imported</h4><p>Merged into this device. Reload a material to see it.</p>';
+          out.innerHTML = '<h4>Imported</h4><p>Merged into this device.</p>';
           renderRecents();
         });
         var cancel = document.createElement('button');
-        cancel.className = 'btn ghost';
-        cancel.type = 'button';
-        cancel.textContent = 'Cancel';
+        cancel.className = 'btn ghost'; cancel.type = 'button'; cancel.textContent = 'Cancel';
         cancel.addEventListener('click', function () { p.discard(); out.hidden = true; });
-        row.appendChild(apply);
-        row.appendChild(cancel);
+        row.appendChild(apply); row.appendChild(cancel);
         out.appendChild(row);
       }
     }).catch(function (e) {
@@ -435,27 +399,128 @@ function initSyncPanel() {
       out.appendChild(p);
     });
   });
+
+  $('signout').addEventListener('click', function () {
+    if (!window.confirm('Sign out of this device? Your study progress stays; you will need your code to get back in.')) return;
+    StudyAuth.signOut();
+    location.reload();
+  });
 }
 
-/* ============================================================ offline cache controls */
+/* ============================================================ admin */
 
-function initSWUpdateUI() {
-  var note = $('swnote');
-  var updateBtn = $('doupdate');
+function renderAdminItems() {
+  var box = $('adminitems');
+  box.innerHTML = '';
+  if (!items.length) { box.innerHTML = '<p class="note">Nothing published yet.</p>'; return; }
+
+  items.forEach(function (m) {
+    var row = document.createElement('div');
+    row.className = 'adminrow';
+
+    var name = document.createElement('div');
+    name.className = 'an';
+    name.innerHTML = '<span></span><small></small>';
+    name.firstChild.textContent = m.title;
+    name.lastChild.textContent = m.id;
+
+    var togs = document.createElement('div');
+    togs.className = 'toggles';
+
+    function mk(label, on, apply) {
+      var b = document.createElement('button');
+      b.type = 'button'; b.className = 'tog';
+      b.textContent = label;
+      b.setAttribute('aria-pressed', String(!!on));
+      b.addEventListener('click', function () {
+        var next = b.getAttribute('aria-pressed') !== 'true';
+        b.disabled = true;
+        apply(next).then(function (r) {
+          b.disabled = false;
+          if (r && r.ok) { b.setAttribute('aria-pressed', String(next)); loadCatalog().then(function () { renderAll($('filter').value.trim().toLowerCase()); }); }
+        }, function () { b.disabled = false; });
+      });
+      return b;
+    }
+
+    togs.appendChild(mk('Hidden', m.hidden, function (v) {
+      m.hidden = v; return StudyAuth.admin.setItem(m.id, v, null);
+    }));
+    togs.appendChild(mk('Locked', m.locked, function (v) {
+      m.locked = v; return StudyAuth.admin.setItem(m.id, null, v);
+    }));
+
+    row.appendChild(name); row.appendChild(togs);
+    box.appendChild(row);
+  });
+}
+
+function initAdmin() {
+  if (StudyAuth.role() !== 'admin') return;
+  var target = 'admin';
+  function paintRole() {
+    $('roleAdmin').setAttribute('aria-pressed', String(target === 'admin'));
+    $('roleViewer').setAttribute('aria-pressed', String(target === 'viewer'));
+  }
+  $('roleAdmin').addEventListener('click', function () { target = 'admin'; paintRole(); });
+  $('roleViewer').addEventListener('click', function () { target = 'viewer'; paintRole(); });
+
+  $('savecode').addEventListener('click', function () {
+    var msg = $('codemsg'), val = $('newcode').value;
+    msg.hidden = true;
+    if (val.length < 10) { msg.textContent = 'At least 10 characters.'; msg.hidden = false; return; }
+    if (!window.confirm('Change the ' + target + ' code? Every other device using it is signed out.')) return;
+    StudyAuth.admin.setCode(target, val).then(function (r) {
+      if (r && r.ok) {
+        $('newcode').value = '';
+        msg.style.color = 'var(--ok)';
+        msg.textContent = 'The ' + target + ' code is changed. Write it down now.';
+      } else {
+        msg.style.color = '';
+        msg.textContent = r && r.error === 'codes_must_differ'
+          ? 'That is already the other role’s code.' : 'Could not change it.';
+      }
+      msg.hidden = false;
+    });
+  });
+
+  $('revokeothers').addEventListener('click', function () {
+    if (!window.confirm('Sign out every other device, including your own phone?')) return;
+    StudyAuth.admin.revokeOthers().then(function (r) {
+      $('sessnote').textContent = r && r.ok ? 'Signed out ' + r.revoked + ' other device(s).' : 'Could not do that.';
+    });
+  });
+
+  StudyAuth.admin.sessions().then(function (r) {
+    if (r && r.ok) {
+      var n = r.sessions.length;
+      var admins = r.sessions.filter(function (s) { return s.role === 'admin'; }).length;
+      $('sessnote').textContent = n + ' active device' + (n === 1 ? '' : 's') +
+        ' (' + admins + ' admin, ' + (n - admins) + ' viewer).';
+    }
+  });
+
+  renderAdminItems();
+}
+
+/* ============================================================ offline cache */
+
+function applyUpdate(worker) {
+  worker.postMessage({ type: 'SKIP_WAITING' });
+}
+
+function initSW() {
+  var note = $('swnote'), updateBtn = $('doupdate');
 
   $('clearcache').addEventListener('click', function () {
     var self = this;
-    self.disabled = true;
-    self.textContent = 'Clearing…';
+    self.disabled = true; self.textContent = 'Clearing…';
     caches.keys().then(function (keys) {
       return Promise.all(keys.map(function (k) { return caches.delete(k); }));
     }).catch(function () {}).then(function () {
       return navigator.serviceWorker ? navigator.serviceWorker.getRegistration() : null;
-    }).then(function (reg) {
-      return reg ? reg.unregister() : null;
-    }).catch(function () {}).then(function () {
-      location.reload();
-    });
+    }).then(function (reg) { return reg ? reg.unregister() : null; })
+      .catch(function () {}).then(function () { location.reload(); });
   });
 
   if (!('serviceWorker' in navigator)) {
@@ -464,82 +529,68 @@ function initSWUpdateUI() {
   }
 
   navigator.serviceWorker.getRegistration().then(function (reg) {
-    swRegistration = reg;
-    if (!reg) {
-      note.textContent = 'No offline copy yet. Reload once while online to store one.';
-      return;
-    }
+    if (!reg) { note.textContent = 'No offline copy yet. Reload once while online.'; return; }
     note.textContent = 'The hub and the materials you have opened work offline.';
 
-    var offerUpdate = function (worker) {
+    var offer = function (worker) {
       if (!worker) return;
-      note.textContent = 'A newer version is ready to install.';
+      note.textContent = 'A newer version is ready.';
       updateBtn.hidden = false;
       updateBtn.onclick = function () {
-        updateBtn.disabled = true;
-        updateBtn.textContent = 'Updating…';
-        worker.postMessage({ type: 'SKIP_WAITING' });
+        updateBtn.disabled = true; updateBtn.textContent = 'Updating…';
+        applyUpdate(worker);
       };
     };
-
-    if (reg.waiting) offerUpdate(reg.waiting);
+    if (reg.waiting) offer(reg.waiting);
     reg.addEventListener('updatefound', function () {
       var nw = reg.installing;
       if (!nw) return;
       nw.addEventListener('statechange', function () {
-        if (nw.state === 'installed' && navigator.serviceWorker.controller) offerUpdate(nw);
+        if (nw.state === 'installed' && navigator.serviceWorker.controller) offer(nw);
       });
     });
-
-    var reloaded = false;
-    navigator.serviceWorker.addEventListener('controllerchange', function () {
-      if (reloaded) return;
-      reloaded = true;
-      location.reload();
-    });
-
-    reg.update().catch(function () {});
-  }).catch(function () {
-    note.textContent = 'Could not check the offline copy.';
-  });
+  }).catch(function () { note.textContent = 'Could not check the offline copy.'; });
 }
 
 /* ============================================================ boot */
 
 function boot() {
-  if (window.StudyStore) {
-    try { StudyStore.init({ namespace: 'hub' }); } catch (e) {}
-  }
-
+  if (window.StudyStore) { try { StudyStore.init({ namespace: 'hub' }); } catch (e) {} }
   initSyncPanel();
-  initSWUpdateUI();
-  renderRecents();
+  initSW();
 
-  loadManifest().then(function (data) {
-    manifest = data;
+  loadCatalog().then(function () {
     $('err').hidden = true;
     renderAll('');
+    renderRecents();
+    initAdmin();
     handleHash();
   }).catch(function (err) {
-    showError(err);
-    $('subline').textContent = 'The material list could not be read.';
+    if (String(err.message) === 'no_session') { StudyAuth.signOut(); showGate('Your session expired. Enter your code again.'); return; }
+    showError('Could not load your materials',
+      'The server could not be reached and this device has no saved copy of the list yet.');
   });
 
-  var filter = $('filter');
-  var t = null;
+  var filter = $('filter'), t = null;
   filter.addEventListener('input', function () {
     clearTimeout(t);
-    t = setTimeout(function () {
-      if (manifest) renderAll(filter.value.trim().toLowerCase());
-    }, 90);
+    t = setTimeout(function () { renderAll(filter.value.trim().toLowerCase()); }, 90);
   });
-
   window.addEventListener('hashchange', handleHash);
-  window.addEventListener('pageshow', renderRecents);
 }
 
-if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
-else boot();
+function start() {
+  initGate();
+  if (!StudyAuth.signedIn()) { showGate(); return; }
+  showApp();
+  boot();
+  StudyAuth.verify().then(function (r) {
+    if (!r) showGate('Your session expired. Enter your code again.');
+  });
+}
+
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+else start();
 
 /* ============================================================================
  * Minimal QR encoder — byte mode, error correction level L, versions 1–10.

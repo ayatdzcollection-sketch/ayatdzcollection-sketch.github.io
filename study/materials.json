@@ -1,4 +1,5 @@
 {
+  "_comment": "Source list for the publisher. Edit this, put the HTML in src/m/<class>/, then run: node study/tools/publish.mjs. Hidden/locked flags are not here — those are live switches in the hub's admin panel.",
   "classes": [
     {
       "id": "apush",
@@ -9,9 +10,24 @@
           "id": "fifty-states",
           "title": "The Fifty States — name and locate",
           "blurb": "Numbered blank-map quiz with spaced repetition and a readiness score.",
-          "path": "m/apush/fifty-states.html",
           "tags": ["map", "quiz", "spaced-repetition"],
-          "added": "2026-08-30"
+          "added": "2026-08-30",
+          "sort": 10
+        }
+      ]
+    },
+    {
+      "id": "chem",
+      "name": "Chemistry",
+      "term": "2026-27",
+      "materials": [
+        {
+          "id": "periodic-table",
+          "title": "The Elements — symbol and name",
+          "blurb": "Sets of ten, drilled both ways: name to symbol and symbol to name.",
+          "tags": ["elements", "quiz", "spaced-repetition"],
+          "added": "2026-08-30",
+          "sort": 10
         }
       ]
     }

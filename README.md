@@ -7,22 +7,24 @@ untouched, including self-contained HTML with inline scripts.
 
 | Path | What it is |
 |---|---|
-| `index.html` | Root landing page, behind a code prompt |
-| `study/` | [Study Hub](study/README.md) — class materials, offline-capable, synced |
+| `index.html` | Root landing page, behind the same code prompt as the hub |
+| `study/` | [Study Hub](study/README.md) — encrypted class materials, offline-capable, synced |
 
-## The root code prompt
+## Access
 
-`index.html` asks for a code before listing what is published here. It stores only the
-code's SHA-256 hash, never the code.
+Both this page and the hub share one session. Enter a code once and this browser stays
+signed in; other browsers do not. Codes are verified by Supabase, never by this page, and
+exist there only as bcrypt hashes.
 
-**It is a curtain, not a lock.** GitHub Pages serves every file publicly; anyone with a
-direct URL reaches it without ever seeing the prompt. It only keeps the root page from
-advertising what exists. Never put anything in this repository that must not be
-world-readable.
+There are two: a **viewer** code, and an **admin** code that can additionally hide or lock
+materials, change either code, and sign every other device out.
 
-To change the code, replace the `CODE_HASH` value in `index.html` with a new SHA-256 hex
-digest of the uppercased, dash-stripped code:
+**What the code does and does not do.** GitHub Pages serves every file publicly, so the
+prompt cannot stop anyone reaching a URL. What protects the study materials is that they
+are published as AES-256-GCM ciphertext and the key is released only to a signed-in
+browser. The prompt on this page just decides whether to show you the list.
 
-```bash
-printf '%s' 'YOURNEWCODE' | shasum -a 256
-```
+Do not put anything in this repository that would be damaging if it leaked. Files that
+were ever committed in plaintext remain in the git history.
+
+Setup and day-to-day instructions live in [study/README.md](study/README.md).

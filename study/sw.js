@@ -2,49 +2,39 @@
  *
  * Lives at the hub root on purpose. A worker's scope cannot exceed its own directory
  * unless the server sends a Service-Worker-Allowed header, and GitHub Pages cannot, so
- * a worker under assets/ could never control m/**.
+ * a worker under assets/ could never control view.html or m/**.
  *
- * Bump VERSION whenever you change a shell file (index.html, hub.css, hub.js, sync.js).
- * Without a bump, browsers keep serving the cached copy.
+ * Bump VERSION whenever you change a shell file (index.html, view.html, hub.css, hub.js,
+ * sync.js, auth.js). Devices check for a new version on every load and whenever they
+ * regain a connection, so a bump reaches them without anyone having to think about it.
  */
-const VERSION = 'v2';
+const VERSION = 'v3';
 const SHELL_CACHE = 'studyhub-' + VERSION;
-const FONT_CACHE  = 'studyhub-fonts';          // unversioned: fonts are immutable, keep them across updates
+const FONT_CACHE  = 'studyhub-fonts';          // unversioned: fonts are immutable
+const MAT_CACHE   = 'studyhub-materials';      // ciphertext; survives shell updates
 const SCOPE = self.registration.scope;
 
 const SHELL = [
-  './', 'index.html',
-  'assets/hub.css', 'assets/hub.js', 'assets/sync.js',
-  'assets/app.webmanifest', 'assets/icon.svg',
-  'materials.json'
+  './', 'index.html', 'view.html',
+  'assets/hub.css', 'assets/hub.js', 'assets/sync.js', 'assets/auth.js',
+  'assets/app.webmanifest', 'assets/icon.svg'
 ].map(p => new URL(p, SCOPE).href);
 
-const MANIFEST_URL = new URL('materials.json', SCOPE).href;
 const MATERIALS_PREFIX = new URL('m/', SCOPE).href;
 
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
     const cache = await caches.open(SHELL_CACHE);
     await cache.addAll(SHELL);
-    // Pre-warm every listed material so one that was never opened still works offline.
-    // Entirely best effort — a bad path must not fail the install.
-    try {
-      const res = await fetch(MANIFEST_URL, { cache: 'no-cache' });
-      if (res.ok) {
-        const data = await res.json();
-        const paths = (data.classes || []).flatMap(c => (c.materials || []).map(m => m.path)).filter(Boolean);
-        await Promise.allSettled(paths.map(p => cache.add(new URL(p, SCOPE).href)));
-      }
-    } catch (e) { /* offline install, or manifest not ready yet */ }
   })());
-  // No skipWaiting here: updates are taken deliberately from the hub's Sync panel.
+  // No skipWaiting here — the page decides when to swap, so it never happens mid-keystroke.
 });
 
 self.addEventListener('activate', event => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
     await Promise.all(keys
-      .filter(k => k.startsWith('studyhub-') && k !== SHELL_CACHE && k !== FONT_CACHE)
+      .filter(k => k.startsWith('studyhub-') && k !== SHELL_CACHE && k !== FONT_CACHE && k !== MAT_CACHE)
       .map(k => caches.delete(k)));
     await self.clients.claim();
   })());
@@ -54,23 +44,8 @@ self.addEventListener('message', event => {
   if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting();
 });
 
-async function networkFirst(request) {
-  try {
-    const res = await fetch(request);
-    if (res && res.ok) {
-      const cache = await caches.open(SHELL_CACHE);
-      cache.put(request, res.clone());
-    }
-    return res;
-  } catch (e) {
-    const cached = await caches.match(request);
-    if (cached) return cached;
-    throw e;
-  }
-}
-
 /* Answer from cache at once, refresh in the background. Plain cache-first would pin the
- * first copy of a material forever, since a git push reuses the same URL. */
+   first copy of a file forever, since a republish reuses the same URL. */
 async function staleWhileRevalidate(request, cacheName) {
   const cache = await caches.open(cacheName);
   const cached = await cache.match(request);
@@ -100,24 +75,20 @@ self.addEventListener('fetch', event => {
   let url;
   try { url = new URL(req.url); } catch (e) { return; }
 
-  // Google Fonts, so the quiz keeps its typography offline after one online visit.
-  // The stylesheet arrives opaque (a plain <link> is a no-cors request); that is fine to
-  // store and replay for the identical request. The woff2 files are CORS-clean.
+  // Google Fonts, so materials keep their typography offline after one online visit.
   if (url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com') {
     event.respondWith(cacheFirst(req, FONT_CACHE).catch(() => fetch(req)));
     return;
   }
 
+  // Never cache Supabase. Sessions, keys and sync must always be a live decision.
+  if (url.hostname.endsWith('.supabase.co')) return;
+
   if (url.origin !== location.origin || !req.url.startsWith(SCOPE)) return;
 
-  // The manifest is the one file that must be fresh, or new materials never appear.
-  if (req.url.split('?')[0] === MANIFEST_URL) {
-    event.respondWith(networkFirst(req));
-    return;
-  }
-
+  // Encrypted materials. Safe to cache: without a key they are noise.
   if (req.url.startsWith(MATERIALS_PREFIX)) {
-    event.respondWith(staleWhileRevalidate(req, SHELL_CACHE));
+    event.respondWith(staleWhileRevalidate(req, MAT_CACHE));
     return;
   }
 
@@ -132,7 +103,6 @@ self.addEventListener('fetch', event => {
       }
       return res;
     } catch (e) {
-      // An offline navigation with nothing cached should land on the hub, not a browser error.
       if (req.mode === 'navigate') {
         const shell = await caches.match(new URL('./', SCOPE).href);
         if (shell) return shell;

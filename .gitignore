@@ -1,1 +1,5 @@
 .DS_Store
+
+# Plaintext study materials. Only the encrypted .enc files are published.
+# Recoverable at any time with: node study/tools/publish.mjs --pull
+study/src/
