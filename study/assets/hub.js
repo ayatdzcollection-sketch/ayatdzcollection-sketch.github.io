@@ -1,4 +1,4 @@
-/* Study Hub — gate, catalog, sync panel, admin controls. */
+/* Study Hub: gate, catalog, sync panel, admin controls. */
 (function () {
 'use strict';
 
@@ -298,7 +298,7 @@ function paintStatus(st) {
     dot.classList.add('busy'); sum.textContent = 'syncing'; line.textContent = 'Syncing…';
   } else if (st.state === 'offline') {
     dot.classList.add('off'); sum.textContent = 'offline';
-    line.textContent = 'Offline — changes are saved here and will sync when you are back online.';
+    line.textContent = 'Offline: changes are saved here and will sync when you are back online.';
   } else if (st.state === 'error') {
     dot.classList.add('bad'); sum.textContent = 'retrying';
     line.textContent = st.message || 'Sync hit a problem. It will try again.';
@@ -621,7 +621,7 @@ if (document.readyState === 'loading') document.addEventListener('DOMContentLoad
 else start();
 
 /* ============================================================================
- * Minimal QR encoder — byte mode, error correction level L, versions 1–10.
+ * Minimal QR encoder: byte mode, error correction level L, versions 1-10.
  * Enough for a hub URL plus a pairing code. Written for this file so the hub has
  * no external dependency and works offline.
  * ========================================================================== */
@@ -900,7 +900,7 @@ function renderQR(text, el) {
   catch (e) {
     var p = document.createElement('p');
     p.className = 'note';
-    p.textContent = 'Could not draw the square — use the code above instead.';
+    p.textContent = 'Could not draw the square. Use the code above instead.';
     el.appendChild(p);
     return;
   }

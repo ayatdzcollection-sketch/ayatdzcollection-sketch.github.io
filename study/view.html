@@ -50,7 +50,7 @@ p{margin:10px 0 0;color:var(--ink2);font-size:15.5px}
 /* Materials ship as ciphertext. This page fetches the .enc, asks the server for the key
    (which it only gets with a valid session), decrypts in the browser, and hands the
    document over to the material itself.
-   It lives at /study/ so the material's own relative asset paths resolve — the publisher
+   It lives at /study/ so the material's own relative asset paths resolve: the publisher
    rewrites "../../assets/" to "assets/" for exactly this reason. */
 (function () {
   var q = new URLSearchParams(location.search);
@@ -108,7 +108,7 @@ p{margin:10px 0 0;color:var(--ink2);font-size:15.5px}
     }
     if (k === 'decrypt_failed') {
       return fail('Could not decrypt',
-        'The key did not fit this file. It was probably republished with a new key — reload the hub and try again.');
+        'The key did not fit this file. It was probably republished with a new key. Reload the hub and try again.');
     }
     return fail('Could not open it', 'Something went wrong fetching this material. Check your connection and try again.');
   });

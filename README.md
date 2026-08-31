@@ -2,13 +2,13 @@
 
 Personal site, served at `https://ayatdzcollection-sketch.github.io/`.
 
-Plain static files — no Jekyll, no build step. `.nojekyll` is present so files pass through
+Plain static files: no Jekyll, no build step. `.nojekyll` is present so files pass through
 untouched, including self-contained HTML with inline scripts.
 
 | Path | What it is |
 |---|---|
 | `index.html` | Root landing page, behind the same code prompt as the hub |
-| `study/` | [Study Hub](study/README.md) — encrypted class materials, offline-capable, synced |
+| `study/` | [Study Hub](study/README.md): encrypted class materials, offline-capable, synced |
 
 ## Access
 

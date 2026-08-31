@@ -12,7 +12,7 @@
 --   panel withholds the key immediately, with no republish and no file to delete. A
 --   locked or hidden item needs an admin session, exactly as before.
 --
---   So the encryption is no longer hiding the material from the public — it is what makes
+--   So the encryption is no longer hiding the material from the public; it is what makes
 --   the lock a real lock for the ones you do hold back.
 
 create or replace function public.auth_catalog(p_token text)

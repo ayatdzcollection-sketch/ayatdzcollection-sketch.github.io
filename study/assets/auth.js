@@ -1,4 +1,4 @@
-/* StudyAuth — server-checked access, per browser.
+/* StudyAuth: server-checked access, per browser.
  *
  * The code is verified by Supabase (bcrypt, rate limited); this file never sees a hash
  * and cannot be tricked into saying yes. A successful login stores a random token issued
@@ -86,8 +86,8 @@ var StudyAuth = {
     });
   },
 
-  /* Confirms the stored token with the server. Offline, the stored session is kept —
-     it is not evidence of anything, but signing someone out mid-flight helps nobody. */
+  /* Confirms the stored token with the server. Offline, the stored session is kept.
+     It is not evidence of anything, but signing someone out mid-flight helps nobody. */
   verify: function () {
     var t = ls(TOKEN_KEY);
     if (!t) return Promise.resolve(null);
@@ -140,7 +140,7 @@ var StudyAuth = {
      a first visit the worker is often still installing and not yet controlling the page,
      so its fetch handler never sees this request. Caching it directly means a material
      you have opened once is genuinely available offline, whatever the worker was doing at
-     the time. Safe to store — without the key it is noise. */
+     the time. Safe to store: without the key it is noise. */
   openMaterial: function (path, id) {
     var fetched = fetch(path).then(function (r) {
       if (!r.ok) throw new Error('missing_file');
