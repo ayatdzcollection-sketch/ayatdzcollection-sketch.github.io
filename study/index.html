@@ -16,29 +16,7 @@
 </head>
 <body>
 
-<!-- ============ locked ============ -->
-<section class="gate" id="gate" hidden>
-  <p class="eyebrow">Study hub</p>
-  <h1>Enter your code</h1>
-  <p class="lede">This unlocks the hub on this device and stays unlocked.</p>
-  <form id="gateform">
-    <label for="code">Access code</label>
-    <div class="row">
-      <input id="code" type="password" autocomplete="current-password"
-             autocorrect="off" autocapitalize="characters" spellcheck="false"
-             enterkeyhint="go" placeholder="XXXX-XXXX-XXXX">
-      <button class="btn ghost" type="button" id="peek" aria-label="Show the code">Show</button>
-      <button class="btn" type="submit" id="gatebtn">Open</button>
-    </div>
-    <p class="msg" id="gatemsg"></p>
-  </form>
-  <p class="fine">Dashes and capitals do not matter — type it however you like.
-     Codes are checked on the server and never stored in this page. Materials are
-     published encrypted, so the files are unreadable without one.</p>
-</section>
-
-<!-- ============ unlocked ============ -->
-<div id="app" hidden>
+<div id="app">
 
   <header class="collar">
     <div class="collar-in">
@@ -136,11 +114,35 @@
           </div>
         </section>
 
-        <section class="block">
-          <h3 class="rubric">This device</h3>
+      </div>
+    </details>
+
+    <!-- ---- owner sign-in ---- -->
+    <details id="ownerpanel" class="panel">
+      <summary>
+        <span class="dot off" id="ownerdot" aria-hidden="true"></span>
+        <span class="sumtext">Owner</span>
+        <span class="sumstate" id="ownersum">signed out</span>
+      </summary>
+      <div class="panelbody">
+        <p class="note" id="ownernote">Sign in with the admin code to hide or lock
+           materials, change codes, or open anything you have locked. Studying needs
+           no code at all.</p>
+        <form id="ownerform">
+          <label class="lbl" for="ocode">Admin code</label>
+          <div class="row">
+            <input id="ocode" type="password" autocomplete="current-password"
+                   autocorrect="off" autocapitalize="characters" spellcheck="false"
+                   enterkeyhint="go" placeholder="XXXX-XXXX-XXXX-XXXX">
+            <button class="btn ghost" type="button" id="peek">Show</button>
+            <button class="btn" type="submit" id="ownerbtn">Sign in</button>
+          </div>
+          <p class="err-inline" id="ownermsg" hidden></p>
+        </form>
+        <div id="ownerout" hidden>
           <p class="note" id="whonote"></p>
-          <button class="btn ghost danger" id="signout" type="button">Sign out of this device</button>
-        </section>
+          <button class="btn ghost danger" id="signout" type="button">Sign out</button>
+        </div>
       </div>
     </details>
 
@@ -191,7 +193,7 @@
     </details>
 
     <footer class="foot">
-      <p>Materials are encrypted at rest. Keep your codes to yourself.</p>
+      <p>Open to anyone with the link. Locked items need the owner’s code.</p>
     </footer>
 
   </main>

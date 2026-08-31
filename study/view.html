@@ -68,7 +68,7 @@ p{margin:10px 0 0;color:var(--ink2);font-size:15.5px}
     back.className = 'btn ghost'; back.href = './'; back.textContent = 'Back to the hub';
     if (showLogin) {
       var a = document.createElement('a');
-      a.className = 'btn'; a.href = './'; a.textContent = 'Enter your code';
+      a.className = 'btn'; a.href = './'; a.textContent = 'Sign in as owner';
       acts.appendChild(a);
       acts.appendChild(document.createTextNode(' '));
     }
@@ -76,8 +76,8 @@ p{margin:10px 0 0;color:var(--ink2);font-size:15.5px}
   }
 
   if (!id) return fail('Nothing to open', 'No material was named in the address.');
-  if (!window.StudyAuth || !StudyAuth.signedIn()) {
-    return fail('Locked', 'This device is not signed in. Open the hub and enter your code.', true);
+  if (!window.StudyAuth) {
+    return fail('Could not start', 'A required script did not load. Reload the page.');
   }
   if (!window.crypto || !crypto.subtle) {
     return fail('Cannot decrypt here',
@@ -100,12 +100,8 @@ p{margin:10px 0 0;color:var(--ink2);font-size:15.5px}
     });
   }).catch(function (e) {
     var k = String(e && e.message);
-    if (k === 'no_session') {
-      StudyAuth.signOut();
-      return fail('Session expired', 'Open the hub and enter your code again.', true);
-    }
     if (k === 'locked') {
-      return fail('Locked', 'This one needs an admin code. Yours does not open it.');
+      return fail('Locked', 'The owner has held this one back. It opens with the admin code.', true);
     }
     if (k === 'missing_file') {
       return fail('Not published', 'The encrypted file for this material is not on the server yet.');

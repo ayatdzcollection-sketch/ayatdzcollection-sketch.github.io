@@ -5,8 +5,7 @@
 <meta name="color-scheme" content="light only">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#F2F1ED">
-<meta name="robots" content="noindex,nofollow">
-<title>Private</title>
+<title>Youcef</title>
 <link rel="icon" href="study/assets/icon.svg" type="image/svg+xml">
 <style>
 :root{
@@ -58,24 +57,11 @@ button[disabled]{opacity:.45;cursor:default}
 <body>
 <main class="card">
 
-  <p class="eyebrow">Private</p>
-  <h1 id="head">Enter your code</h1>
-  <p class="lede" id="lede">Not indexed, not linked anywhere.</p>
+  <p class="eyebrow">Youcef</p>
+  <h1 id="head">Contents<span class="role" id="role" hidden>Owner</span></h1>
+  <p class="lede" id="lede">Everything published here.</p>
 
-  <form id="gate">
-    <label for="code">Access code</label>
-    <div class="row">
-      <input id="code" type="password" autocomplete="current-password" autocorrect="off"
-             autocapitalize="characters" spellcheck="false" enterkeyhint="go"
-             placeholder="XXXX-XXXX-XXXX">
-      <button type="button" class="ghost" id="peek" aria-label="Show the code">Show</button>
-      <button type="submit" id="go">Open</button>
-    </div>
-    <p class="msg" id="msg"></p>
-    <p class="foot" style="margin-top:12px">Dashes and capitals do not matter.</p>
-  </form>
-
-  <div id="inside" hidden>
+  <div id="inside">
     <ul class="links">
       <li>
         <a href="study/">
@@ -85,10 +71,28 @@ button[disabled]{opacity:.45;cursor:default}
       </li>
     </ul>
     <p class="foot">
-      Your code is checked on the server, and this browser stays signed in.
-      Study materials are published encrypted; these links are a convenience, not the lock.
+      Open to anyone with the link. Anything the owner has locked stays encrypted
+      and needs the admin code.
     </p>
-    <button type="button" id="lock" class="ghost lock">Sign out of this device</button>
+
+    <details id="ownerbox" style="margin-top:22px">
+      <summary style="cursor:pointer;font-family:var(--mono);font-size:11px;
+                      letter-spacing:.12em;text-transform:uppercase;color:var(--ink3);
+                      min-height:44px;display:flex;align-items:center">Owner sign-in</summary>
+      <form id="gate" style="margin-top:10px">
+        <label for="code">Admin code</label>
+        <div class="row">
+          <input id="code" type="password" autocomplete="current-password" autocorrect="off"
+                 autocapitalize="characters" spellcheck="false" enterkeyhint="go"
+                 placeholder="XXXX-XXXX-XXXX-XXXX">
+          <button type="button" class="ghost" id="peek" aria-label="Show the code">Show</button>
+          <button type="submit" id="go">Sign in</button>
+        </div>
+        <p class="msg" id="msg"></p>
+        <p class="foot" style="margin-top:10px">Dashes and capitals do not matter.</p>
+      </form>
+      <button type="button" id="lock" class="ghost lock" hidden>Sign out</button>
+    </details>
   </div>
 
 </main>
@@ -104,18 +108,18 @@ button[disabled]{opacity:.45;cursor:default}
   var msg = document.getElementById('msg');
   var go = document.getElementById('go');
 
-  function reveal(role) {
-    gate.hidden = true;
-    inside.hidden = false;
-    document.getElementById('head').innerHTML =
-      'Contents<span class="role">' + (role === 'admin' ? 'Admin' : 'Viewer') + '</span>';
-    document.getElementById('lede').textContent = 'Everything published here.';
+  function paint() {
+    var owner = StudyAuth.isAdmin();
+    document.getElementById('role').hidden = !owner;
+    gate.hidden = owner;
+    document.getElementById('lock').hidden = !owner;
+    document.getElementById('lede').textContent = owner
+      ? 'Everything published here, including anything you have locked.'
+      : 'Everything published here.';
   }
 
-  if (StudyAuth.signedIn()) {
-    reveal(StudyAuth.role());
-    StudyAuth.verify().then(function (r) { if (!r) location.reload(); });
-  }
+  paint();
+  if (StudyAuth.signedIn()) StudyAuth.verify().then(paint);
 
   gate.addEventListener('submit', function (e) {
     e.preventDefault();
@@ -124,11 +128,12 @@ button[disabled]{opacity:.45;cursor:default}
     if (!code.trim()) { msg.textContent = 'Enter your code.'; return; }
     go.disabled = true; go.textContent = 'Checking…';
     StudyAuth.login(code).then(function (role) {
-      go.disabled = false; go.textContent = 'Open';
+      go.disabled = false; go.textContent = 'Sign in';
       document.getElementById('code').value = '';
-      reveal(role);
+      if (role !== 'admin') msg.textContent = 'That is not the admin code.';
+      paint();
     }, function (err) {
-      go.disabled = false; go.textContent = 'Open';
+      go.disabled = false; go.textContent = 'Sign in';
       msg.textContent = err.friendly || 'That code was not recognised.';
       document.getElementById('code').select();
     });

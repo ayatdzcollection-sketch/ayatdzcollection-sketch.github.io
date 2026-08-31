@@ -104,12 +104,12 @@ var StudyAuth = {
     if (t) { try { rpc('auth_logout', { p_token: t }).catch(function () {}); } catch (e) {} }
   },
 
+  /* No token needed: the server returns everything that is not hidden. An owner session
+     just widens what comes back. */
   catalog: function () {
-    var t = ls(TOKEN_KEY);
-    if (!t) return Promise.reject(new Error('no_session'));
-    return rpc('auth_catalog', { p_token: t }).then(function (r) {
-      if (!r || !r.ok) throw new Error('no_session');
-      lsSet(ROLE_KEY, r.role);
+    return rpc('auth_catalog', { p_token: ls(TOKEN_KEY) }).then(function (r) {
+      if (!r || !r.ok) throw new Error('catalog_failed');
+      if (r.role) lsSet(ROLE_KEY, r.role); else lsDel(ROLE_KEY);
       lsSet('studyhub:auth:catalog', JSON.stringify(r.items));   // so the hub lists offline
       return r.items;
     }, function (err) {
@@ -122,13 +122,11 @@ var StudyAuth = {
   materialKey: function (id) {
     var cached = readKeys()[id];
     if (cached) return Promise.resolve(cached);
-    var t = ls(TOKEN_KEY);
-    if (!t) return Promise.reject(new Error('no_session'));
-    return rpc('auth_material_key', { p_token: t, p_id: id }).then(function (r) {
+    return rpc('auth_material_key', { p_token: ls(TOKEN_KEY), p_id: id }).then(function (r) {
       if (!r || !r.ok) {
         var e = new Error(r && r.error || 'denied');
         e.friendly = (r && r.error === 'locked')
-          ? 'This one is locked. An admin code opens it.'
+          ? 'This one is locked. The owner\'s admin code opens it.'
           : 'Could not get access to this material.';
         throw e;
       }

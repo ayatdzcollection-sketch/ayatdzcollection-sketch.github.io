@@ -8,42 +8,46 @@ Live at `https://ayatdzcollection-sketch.github.io/study/`.
 
 ---
 
-## How access actually works
+## How access works
 
-GitHub Pages hands every file to anyone who asks for it. There is no server standing in
-front of it that could check a password first. So the protection here is **cryptographic,
-not positional**:
+**The hub is open.** Anyone with the link can browse and study, no code, no account. That
+is the default state of every material.
 
-- Every material is published as **AES-256-GCM ciphertext** (`m/<class>/<name>.enc`).
-  Fetching that URL without a key gives you noise.
-- The key lives in Supabase and is released only to a browser holding a valid session.
-- A session comes from entering a code. Codes are checked **on the server** (bcrypt, cost
-  12) and stored only as hashes. Ten wrong tries from one address in fifteen minutes and
-  that address is locked out for a while.
-- Signing in stores a 256-bit token the server generated. Only its SHA-256 is kept in the
-  database, so a database leak cannot be replayed as a login. The session lasts 180 days
-  and renews itself whenever you use it, so a device you use stays signed in.
+Materials are still published as **AES-256-GCM ciphertext** (`m/<class>/<name>.enc`) and
+the key still comes from the server. That is not to hide them from visitors — the server
+hands the key to anyone who asks for an unlocked item. It is what makes **locking** real
+and instant: flipping the switch withholds the key immediately, with no republish and no
+file to delete, and a stranger holding the `.enc` has nothing but noise.
 
-### Two codes
+### The owner
 
-| Role | Can do |
+One admin code, entered under **Owner** in the hub, gives you:
+
+| | |
 |---|---|
-| **Viewer** | Open everything that is neither hidden nor locked. |
-| **Admin** | Everything a viewer can, plus: hide or lock any item, change either code, see how many devices are signed in, and sign them all out. |
+| **Hidden** | The item disappears from everyone else's list. |
+| **Locked** | The item stays listed and marked locked, but its key is withheld from everyone but you. This is the one that actually protects it, and the database enforces it — not the page. |
 
-**Hidden** keeps an item off the list. **Locked** additionally withholds its decryption
-key — that is the one that actually stops someone reading it, and it is enforced by the
-database, not by the page.
+Plus changing codes, seeing how many devices are signed in, and signing them all out.
+
+Codes are checked on the server (bcrypt, cost 12) and stored only as hashes. Ten wrong
+tries from one address in fifteen minutes locks that address out for a while. Signing in
+stores a 256-bit token the server generated; only its SHA-256 is kept, so a database leak
+cannot be replayed as a login. Sessions last 180 days and renew as you use them.
+
+Dashes and capitals in a code are ignored, so type it however is easiest.
+
+The **viewer** code still exists and still works, but grants nothing beyond what a visitor
+already gets. It is there if you ever want to close the hub again.
 
 ### What this does *not* protect
 
+- **Anything not locked.** That is the point: the default is open.
 - **Anything published in plaintext before encryption existed.** The fifty-states quiz was
-  served in the clear for a while, and this repository's git history still contains it.
-  Locking a material now hides it going forward; it cannot un-publish what was already out.
-- **Which materials exist.** Ids, file sizes and timings are visible to anyone.
-- **An unlocked device.** Once a material is opened, its key is cached locally so it works
-  offline. Whoever holds that phone holds that material. "Sign out of this device" in the
-  Sync panel clears the cached keys.
+  served in the clear for a while and remains in this repository's git history. Locking a
+  material now cannot un-publish what was already out.
+- **A device that already opened a locked item.** Its key is cached there so it works
+  offline. Signing out clears the cached keys.
 - Never put anything here that would be damaging if it leaked. This is a study site, not a
   vault.
 
@@ -108,8 +112,9 @@ materials do exactly that.
 ## Sync
 
 Local-first. Every write lands in `localStorage` immediately and nothing waits on the
-network. Supabase is a background replica, never the source of truth. Pairing is separate
-from your access code: one links your devices, the other unlocks the hub.
+network. Supabase is a background replica, never the source of truth. The pairing code is a
+separate thing from the admin code: one links your own devices, the other is how you sign
+in as the owner.
 
 Merging is per field, because last-write-wins would destroy progress the moment a stale
 device synced.
@@ -153,7 +158,7 @@ refresh on their own.
 
 Only needed for a new Supabase project.
 
-1. Run `supabase/migrations/0001_study_sync.sql`, then `0002_auth.sql`, in the SQL editor.
+1. Run the migrations in order: `0001_study_sync.sql`, `0002_auth.sql`, `0003_public_by_default.sql`.
 2. Put the project URL and **publishable** key into the constants at the top of both
    `assets/sync.js` and `assets/auth.js`.
 3. Set the two codes, once:
@@ -183,7 +188,7 @@ behaviour; release it with `StudyStore._debug.setOffline(false)` in the console.
 
 | Path | What it is |
 |---|---|
-| `index.html` | The hub, behind the code prompt |
+| `index.html` | The hub — open to anyone |
 | `view.html` | Fetches, decrypts and runs a material |
 | `materials.json` | Source list for the publisher |
 | `sw.js` | Service worker: offline cache and self-updating |

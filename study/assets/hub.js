@@ -6,55 +6,71 @@ var $ = function (id) { return document.getElementById(id); };
 var items = [];
 var role = null;
 
-/* ============================================================ gate */
+/* ============================================================ owner sign-in */
 
-function showGate(msg) {
-  $('gate').hidden = false;
-  $('app').hidden = true;
-  if (msg) $('gatemsg').textContent = msg;
-  var f = $('code');
-  if (f) setTimeout(function () { f.focus(); }, 60);
-}
+/* Studying needs no code. Signing in is only for the person who owns the site: it reveals
+   the admin controls and the key to anything they have locked. */
 
-function showApp() {
-  $('gate').hidden = true;
-  $('app').hidden = false;
-  role = StudyAuth.role();
+function paintOwner() {
+  var admin = StudyAuth.isAdmin();
   var chip = $('rolechip');
-  chip.textContent = role === 'admin' ? 'Admin' : 'Viewer';
-  chip.hidden = false;
-  $('adminpanel').hidden = role !== 'admin';
-  $('whonote').textContent = 'Signed in as ' + (role === 'admin' ? 'admin' : 'viewer') +
-    ' on this browser. Signing out also clears the material keys cached here.';
+  chip.textContent = 'Owner';
+  chip.hidden = !admin;
+  $('adminpanel').hidden = !admin;
+  $('ownerform').hidden = admin;
+  $('ownerout').hidden = !admin;
+  $('ownersum').textContent = admin ? 'signed in' : 'signed out';
+  $('ownerdot').className = 'dot' + (admin ? ' ok' : ' off');
+  $('ownernote').textContent = admin
+    ? 'Signed in on this browser. Locked and hidden materials open for you here.'
+    : 'Sign in with the admin code to hide or lock materials, change codes, or open anything you have locked. Studying needs no code at all.';
+  if (admin) {
+    $('whonote').textContent = 'This browser is signed in as the owner. Signing out also clears any keys cached for locked materials.';
+  }
+  role = StudyAuth.role();
 }
 
-function initGate() {
-
+function initOwner() {
   var peek = $('peek');
   if (peek) peek.addEventListener('click', function () {
-    var f = $('code');
+    var f = $('ocode');
     var hidden = f.type === 'password';
     f.type = hidden ? 'text' : 'password';
     peek.textContent = hidden ? 'Hide' : 'Show';
     f.focus();
   });
-  $('gateform').addEventListener('submit', function (e) {
+
+  $('ownerform').addEventListener('submit', function (e) {
     e.preventDefault();
-    var btn = $('gatebtn'), msg = $('gatemsg');
-    msg.textContent = '';
-    var code = $('code').value;
-    if (!code.trim()) { msg.textContent = 'Enter your code.'; return; }
+    var btn = $('ownerbtn'), msg = $('ownermsg');
+    msg.hidden = true;
+    var code = $('ocode').value;
+    if (!code.trim()) { msg.textContent = 'Enter the admin code.'; msg.hidden = false; return; }
     btn.disabled = true; btn.textContent = 'Checking…';
-    StudyAuth.login(code).then(function () {
-      $('code').value = '';
-      btn.disabled = false; btn.textContent = 'Open';
-      showApp();
-      boot();
+    StudyAuth.login(code).then(function (r) {
+      btn.disabled = false; btn.textContent = 'Sign in';
+      $('ocode').value = '';
+      if (r !== 'admin') {
+        msg.textContent = 'That code works, but it is not the admin code.';
+        msg.hidden = false;
+      }
+      paintOwner();
+      loadCatalog().then(function () {
+        renderAll($('filter').value.trim().toLowerCase());
+        renderRecents();
+        initAdmin();
+      });
     }, function (err) {
-      btn.disabled = false; btn.textContent = 'Open';
+      btn.disabled = false; btn.textContent = 'Sign in';
       msg.textContent = err.friendly || 'That code was not recognised.';
-      $('code').select();
+      msg.hidden = false;
+      $('ocode').select();
     });
+  });
+
+  $('signout').addEventListener('click', function () {
+    StudyAuth.signOut();
+    location.reload();
   });
 }
 
@@ -187,6 +203,13 @@ function flag(cls, text) {
 }
 
 function open(m) {
+  if (m.locked && !StudyAuth.isAdmin()) {
+    $('ownerpanel').open = true;
+    $('ownerpanel').scrollIntoView({ block: 'center' });
+    $('ownermsg').textContent = '"' + m.title + '" is locked. Sign in as the owner to open it.';
+    $('ownermsg').hidden = false;
+    return;
+  }
   recordRecent(m);
   location.href = 'view.html?m=' + encodeURIComponent(m.id);
 }
@@ -409,11 +432,6 @@ function initSyncPanel() {
     });
   });
 
-  $('signout').addEventListener('click', function () {
-    if (!window.confirm('Sign out of this device? Your study progress stays; you will need your code to get back in.')) return;
-    StudyAuth.signOut();
-    location.reload();
-  });
 }
 
 /* ============================================================ admin */
@@ -574,10 +592,9 @@ function boot() {
     renderRecents();
     initAdmin();
     handleHash();
-  }).catch(function (err) {
-    if (String(err.message) === 'no_session') { StudyAuth.signOut(); showGate('Your session expired. Enter your code again.'); return; }
-    showError('Could not load your materials',
-      'The server could not be reached and this device has no saved copy of the list yet.');
+  }).catch(function () {
+    showError('Could not load the material list',
+      'The server could not be reached and this device has no saved copy yet. Try again once you are online.');
   });
 
   var filter = $('filter'), t = null;
@@ -589,13 +606,15 @@ function boot() {
 }
 
 function start() {
-  initGate();
-  if (!StudyAuth.signedIn()) { showGate(); return; }
-  showApp();
+  initOwner();
+  paintOwner();
   boot();
-  StudyAuth.verify().then(function (r) {
-    if (!r) showGate('Your session expired. Enter your code again.');
-  });
+  // Confirm an owner session in the background; a lapsed one just drops the controls.
+  if (StudyAuth.signedIn()) {
+    StudyAuth.verify().then(function (r) {
+      if (!r) { paintOwner(); renderAll($('filter').value.trim().toLowerCase()); }
+    });
+  }
 }
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
