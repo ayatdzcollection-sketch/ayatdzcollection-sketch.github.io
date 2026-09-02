@@ -17,8 +17,8 @@
         {
           "id": "fraser-ch1-2",
           "title": "Fraser Ch 1-2: reading quiz prep",
-          "blurb": "Guide, 14-question practice set (identifications and short answer) with rubric marking after Submit, and printable question pages with a separate key.",
-          "tags": ["fraser", "reading-quiz", "practice-test", "chapters-1-2"],
+          "blurb": "Guide with the chapters' own review questions, a 10-question multiple-choice quiz (5 per chapter, excerpt-based), fresh mocks from an 81-item bank, a typed recall drill, the written set, and printable sheets.",
+          "tags": ["fraser", "reading-quiz", "multiple-choice", "mock-quiz", "recall", "chapters-1-2"],
           "added": "2026-09-02",
           "sort": 20
         }
@@ -47,8 +47,8 @@
         {
           "id": "u1-sequences",
           "title": "Unit 1 Sequences: checkpoint prep",
-          "blurb": "Guide, 14-problem practice set in the teacher's style (marked only after Submit, with full working), and printable question pages with a separate key.",
-          "tags": ["sequences", "arithmetic", "geometric", "recursive", "practice-test", "checkpoint"],
+          "blurb": "Guide by skill, instant-feedback drill, the 14-problem practice set in the teacher's style, timed mock quizzes with fresh numbers, a focus box that tracks weak skills, and printable sheets with separate keys.",
+          "tags": ["sequences", "arithmetic", "geometric", "recursive", "practice-test", "mock-quiz", "drill", "checkpoint"],
           "added": "2026-09-02",
           "sort": 10
         }
