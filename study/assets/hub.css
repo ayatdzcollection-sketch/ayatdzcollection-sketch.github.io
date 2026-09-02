@@ -26,6 +26,10 @@
 [data-subject="lang"]    { --accent:#7A3E52; }
 
 *{box-sizing:border-box}
+/* The hidden attribute has to beat every display rule below, or a chip with
+   display:inline-block, or a button with display:inline-flex, stays visible while the
+   script believes it is hidden. The owner chip did exactly that. */
+[hidden]{display:none!important}
 html{-webkit-text-size-adjust:100%}
 body{
   margin:0;
@@ -112,7 +116,15 @@ body{
   border:1px solid currentColor}
 .flag.locked{color:var(--bad)}
 .flag.hidden{color:var(--warn)}
+.flag.retired{color:var(--ink3)}
 .mrow.islocked .mtitle{color:var(--ink2)}
+.mrow.isretired .mtitle{color:var(--ink2)}
+.retiredwrap{margin:34px 0 0;border-top:1px solid var(--rule);padding-top:6px}
+.retiredwrap summary{display:flex;align-items:baseline;justify-content:space-between;gap:12px;
+  min-height:48px;cursor:pointer;list-style:none;padding:8px 0;border-bottom:2px solid var(--rule)}
+.retiredwrap summary::-webkit-details-marker{display:none}
+.retiredwrap summary .kname{color:var(--ink3)}
+.retiredwrap[open] summary{border-bottom-color:var(--accent)}
 
 .empty{margin:26px 0;font-size:15px;color:var(--ink2)}
 

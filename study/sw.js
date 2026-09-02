@@ -8,7 +8,7 @@
  * sync.js, auth.js). Devices check for a new version on every load and whenever they
  * regain a connection, so a bump reaches them without anyone having to think about it.
  */
-const VERSION = 'v8';
+const VERSION = 'v9';
 const SHELL_CACHE = 'studyhub-' + VERSION;
 const FONT_CACHE  = 'studyhub-fonts';          // unversioned: fonts are immutable
 const MAT_CACHE   = 'studyhub-materials';      // ciphertext; survives shell updates
@@ -25,7 +25,11 @@ const MATERIALS_PREFIX = new URL('m/', SCOPE).href;
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
     const cache = await caches.open(SHELL_CACHE);
-    await cache.addAll(SHELL);
+    /* cache: 'reload' skips the browser's HTTP cache. GitHub Pages serves every file with a
+       ten minute max-age, and a plain addAll was answered from that cache, so a bumped
+       worker could install the previous build's hub.js under the new version and then
+       serve it, cache-first, until the next bump. */
+    await cache.addAll(SHELL.map(u => new Request(u, { cache: 'reload' })));
   })());
   // No skipWaiting here: the page decides when to swap, so it never happens mid-keystroke.
 });
@@ -49,7 +53,10 @@ self.addEventListener('message', event => {
 async function staleWhileRevalidate(request, cacheName) {
   const cache = await caches.open(cacheName);
   const cached = await cache.match(request);
-  const network = fetch(request).then(res => {
+  /* 'no-cache' revalidates with the server instead of the HTTP cache: a conditional GET
+     that costs a 304 when nothing changed, and brings a republished material in on the
+     next open rather than up to ten minutes later. */
+  const network = fetch(new Request(request, { cache: 'no-cache' })).then(res => {
     if (res && (res.ok || res.type === 'opaque')) cache.put(request, res.clone());
     return res;
   }).catch(() => null);
@@ -93,7 +100,10 @@ self.addEventListener('fetch', event => {
   }
 
   event.respondWith((async () => {
-    const cached = await caches.match(req);
+    /* A material opens as view.html?m=<id>. The query is for the page's script, not the
+       server, so it must match the precached view.html; without ignoreSearch it never did,
+       and an offline open of a material fell through to the hub shell instead. */
+    const cached = await caches.match(req, { ignoreSearch: req.mode === 'navigate' });
     if (cached) return cached;
     try {
       const res = await fetch(req);

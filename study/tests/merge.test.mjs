@@ -376,3 +376,51 @@ test('the import preview counts periodic cards, not only fifty-states states', (
   assert.equal(describeFsrsChange({ states: {} }, { states: { Ohio: rec(1, 5, 1, 1, 0) } }),
     '1 state added', 'fifty-states still says states');
 });
+
+/* ---------- credentials never sync ----------
+   The auth namespace shares the store prefix with progress, so it was swept into the
+   envelope with everything else: the owner's session and the cached decryption keys went
+   up to the sync row and down to every paired device, and a sign-out was undone by the
+   next merge. */
+
+test('the whole auth namespace is excluded, whatever the key', () => {
+  const { isExcluded, SYNC_EXCLUDE_NS } = require('../assets/sync.js');
+  assert.equal(SYNC_EXCLUDE_NS.auth, true);
+  for (const k of ['token', 'role', 'keys', 'catalog', 'anything-new']) {
+    assert.equal(isExcluded('auth', k), true, `auth:${k} must stay on the device`);
+  }
+  assert.equal(isExcluded('hub', 'telemetry'), false, 'the telemetry preference still syncs');
+  assert.equal(isExcluded('hub', 'installId'), true, 'the install id does not');
+});
+
+test('building an envelope drops auth keys', () => {
+  const e = buildEnvelopeFrom(
+    { 'auth:keys': { 'chem/periodic-table': 'c2VjcmV0' }, 'auth:catalog': [], 'periodic:fsrs': { cards: {} } },
+    { 'auth:keys': 1, 'auth:catalog': 1, 'periodic:fsrs': 1 },
+    true
+  );
+  assert.equal(e.ns.auth, undefined, 'no auth namespace at all');
+  assert.ok(e.ns.periodic.fsrs, 'progress still goes');
+});
+
+test('a server row written by an older build is cleaned before merging', () => {
+  const { stripExcluded } = require('../assets/sync.js');
+  const remote = env({
+    'auth:keys': [{ 'chem/periodic-table': 'c2VjcmV0' }, 50],
+    'hub:installId': ['abc', 50],
+    'hub:telemetry': [true, 50],
+    'periodic:started': [[1, 2], 50]
+  });
+  const clean = stripExcluded(remote);
+  assert.equal(clean.ns.auth, undefined);
+  assert.equal(clean.ns.hub.installId, undefined);
+  assert.equal(clean.ns.hub.telemetry.value, true);
+  assert.deepEqual(clean.ns.periodic.started.value, [1, 2]);
+  assert.equal(remote.ns.auth.keys.value['chem/periodic-table'], 'c2VjcmV0', 'input untouched');
+
+  // and the merge against a local envelope that lacks them does not bring them back
+  const local = env({ 'periodic:started': [[3], 60] });
+  const m = merge(local, clean);
+  assert.equal(m.ns.auth, undefined, 'a signed-out device stays signed out');
+  assert.deepEqual(m.ns.periodic.started.value, [1, 2, 3]);
+});

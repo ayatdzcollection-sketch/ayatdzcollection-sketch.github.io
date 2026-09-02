@@ -47,6 +47,14 @@ var SYNC_EXCLUDE = {
   'hub': ['recent', 'telemetryQueue', 'installId']
 };
 
+/* Whole namespaces that never leave the device, whatever the key. 'auth' holds the session
+ * token, the role, the cached decryption keys and the cached catalog: credentials and
+ * server state, not progress. They share the store prefix, so without this they were swept
+ * into the envelope like everything else. That carried an owner sign-in onto every paired
+ * device, parked material keys in the sync row, and undid every sign-out: the next merge
+ * found the keys on the server and put them back. */
+var SYNC_EXCLUDE_NS = { 'auth': true };
+
 /* Captured at parse time: document.currentScript is only valid while this script runs. */
 var SCRIPT_URL = (typeof document !== 'undefined' && document.currentScript)
   ? document.currentScript.src
@@ -336,8 +344,29 @@ function mergeEnvelopes(a, b, registry) {
 }
 
 function isExcluded(ns, key) {
+  if (SYNC_EXCLUDE_NS[ns]) return true;
   var list = SYNC_EXCLUDE[ns];
   return !!(list && list.indexOf(key) !== -1);
+}
+
+/* A copy of an envelope with every excluded key removed. Applied to whatever arrives from
+ * the server or from a pasted backup, so a row written by an older build (which synced the
+ * auth namespace) is cleaned on the next push rather than carried forever. Pure. */
+function stripExcluded(env) {
+  var out = emptyEnvelope();
+  var src = (env && env.ns) || {};
+  for (var ns in src) {
+    if (!Object.prototype.hasOwnProperty.call(src, ns)) continue;
+    var keys = src[ns] || {};
+    for (var k in keys) {
+      if (!Object.prototype.hasOwnProperty.call(keys, k)) continue;
+      if (isExcluded(ns, k)) continue;
+      if (!out.ns[ns]) out.ns[ns] = {};
+      out.ns[ns][k] = keys[k];
+    }
+  }
+  if (env && typeof env.v === 'number') out.v = env.v;
+  return out;
 }
 
 /* entries: { "<ns>:<key>": value }, mtimes: { "<ns>:<key>": ms } */
@@ -426,12 +455,15 @@ if (typeof module !== 'undefined' && module.exports) {
     pickStateRecord: pickStateRecord,
     mergeEnvelopes: mergeEnvelopes,
     buildEnvelopeFrom: buildEnvelopeFrom,
+    stripExcluded: stripExcluded,
+    isExcluded: isExcluded,
     diffEnvelopes: diffEnvelopes,
     describeFsrsChange: describeFsrsChange,
     emptyEnvelope: emptyEnvelope,
     deepEqual: deepEqual,
     canonicalJson: canonicalJson,
     SYNC_EXCLUDE: SYNC_EXCLUDE,
+    SYNC_EXCLUDE_NS: SYNC_EXCLUDE_NS,
     BUILTIN_MERGES: BUILTIN_MERGES,
     CODE_ALPHABET: CODE_ALPHABET,
     CODE_LEN: CODE_LEN
@@ -513,8 +545,13 @@ function readMeta() {
 }
 function writeMeta(meta) { rawSet(META_KEY, JSON.stringify(meta)); }
 
+/* dirtyEpoch counts local writes. A sync captures it when it reads the store, and only
+ * clears the flag if nothing was written while the request was in the air. Otherwise a
+ * review made mid-sync was marked clean, the closing flush saw nothing to send, and the
+ * review waited on the device until the next visit. */
+var dirtyEpoch = 0;
 function isDirty() { return rawGet(DIRTY_KEY) === '1'; }
-function markDirty() { rawSet(DIRTY_KEY, '1'); }
+function markDirty() { dirtyEpoch++; rawSet(DIRTY_KEY, '1'); }
 function clearDirty() { rawRemove(DIRTY_KEY); }
 
 function storageKey(ns, key) { return STORE_PREFIX + ns + ':' + key; }
@@ -531,7 +568,11 @@ function collectEntries() {
     if (!k || k.indexOf(STORE_PREFIX) !== 0) continue;
     if (k === META_KEY || k === DIRTY_KEY) continue;
     var full = k.slice(STORE_PREFIX.length);
-    if (full.indexOf(':') <= 0) continue;
+    var split = full.indexOf(':');
+    if (split <= 0) continue;
+    /* Excluded namespaces are skipped before parsing: the auth token is a bare string, not
+     * JSON, and parsing it only produced a warning about an "unreadable entry". */
+    if (isExcluded(full.slice(0, split), full.slice(split + 1))) continue;
     var raw = rawGet(k);
     if (raw === null) continue;
     try {
@@ -589,7 +630,9 @@ function adoptOrphanMtimes() {
     if (!k || k.indexOf(STORE_PREFIX) !== 0) continue;
     if (k === META_KEY || k === DIRTY_KEY) continue;
     var full = k.slice(STORE_PREFIX.length);
-    if (full.indexOf(':') <= 0) continue;
+    var split = full.indexOf(':');
+    if (split <= 0) continue;
+    if (isExcluded(full.slice(0, split), full.slice(split + 1))) continue;
     if (typeof meta.mtimes[full] !== 'number') { meta.mtimes[full] = now; changed = true; }
   }
   if (changed) writeMeta(meta);
@@ -715,26 +758,27 @@ function syncNow(reason) {
     });
 
     return step.then(function (remote) {
+      var epoch = dirtyEpoch;
       var local = buildEnvelope();
-      var merged = remote ? mergeEnvelopes(local, remote.payload, MERGE_REGISTRY).merged : local;
+      /* The server row is cleaned of anything that should never have been in it, so the
+       * push that follows drops it from the row rather than carrying it forever. */
+      var remoteEnv = remote ? stripExcluded(remote.payload) : null;
+      var merged = remote ? mergeEnvelopes(local, remoteEnv, MERGE_REGISTRY).merged : local;
       applyEnvelope(merged);
 
-      if (remote && deepEqual(merged, remote.payload)) {
-        var m1 = readMeta();
-        m1.seenUpdatedAt = remote.updated_at;
-        writeMeta(m1);
-        clearDirty();
+      function settled(updatedAt) {
+        var m = readMeta();
+        m.seenUpdatedAt = updatedAt;
+        writeMeta(m);
+        if (dirtyEpoch === epoch) clearDirty();
+        else schedulePush();          // something landed mid-flight; send it soon
         return true;
       }
 
+      if (remote && deepEqual(merged, remote.payload)) return settled(remote.updated_at);
+
       return rpcPush(code, merged, remote ? remote.updated_at : null).then(function (res) {
-        if (res && res.ok) {
-          var m2 = readMeta();
-          m2.seenUpdatedAt = res.updated_at;
-          writeMeta(m2);
-          clearDirty();
-          return true;
-        }
+        if (res && res.ok) return settled(res.updated_at);
         // Someone pushed between our pull and our push. The server handed back the
         // current row, so re-merge against it instead of pulling again.
         if (n + 1 >= MAX_SYNC_ATTEMPTS) return false;
@@ -761,9 +805,14 @@ function syncNow(reason) {
     if (!err || !err.status) {
       setState('offline', 'No connection: changes are saved here and will send themselves.');
     } else {
+      var detail = String(err.detail || '');
       setState('error', err.status === 404
         ? 'Sync functions missing on the server: run the migration.'
-        : 'Sync error. Will retry.');
+        : /payload_rejected/.test(detail)
+          ? 'Too much data to sync in one go. Everything is still saved on this device.'
+          : /rate_limited/.test(detail)
+            ? 'Too many attempts from this network. Will retry in a while.'
+            : 'Sync error. Will retry.');
     }
     scheduleRetry();
     return false;
@@ -857,6 +906,7 @@ function previewImport(str) {
     if (!env || env.v !== ENVELOPE_V || !env.ns || typeof env.ns !== 'object') {
       throw new Error('Unrecognised backup format (expected version ' + ENVELOPE_V + ').');
     }
+    env = stripExcluded(env);   // a backup made by an older build may carry credentials
     var local = buildEnvelope();
     var merged = mergeEnvelopes(local, env, MERGE_REGISTRY).merged;
     var diff = diffEnvelopes(local, merged);
@@ -944,8 +994,16 @@ function registerServiceWorker() {
     /* updateViaCache 'none' matters here: GitHub Pages serves sw.js with a max-age, and
      * without this the browser would answer an update check from its HTTP cache and the
      * poll above would be looking at a stale copy of the worker for ten minutes at a time. */
+    /* Whether a worker was already in charge when this page loaded. On the very first
+     * visit there is none: the new worker claims the page as it activates, which fires
+     * controllerchange, and treating that as "a new build arrived" reloaded every first
+     * visit for nothing, mid-material included. */
+    var hadController = !!navigator.serviceWorker.controller;
+
     navigator.serviceWorker.register(swUrl, { updateViaCache: 'none' }).then(function (reg) {
-      checkForUpdate(reg, true);
+      /* register() has just fetched sw.js and compared it, so a second check here would
+       * only repeat that request. Start the clock instead. */
+      lastUpdateCheck = Date.now();
 
       if (reg.waiting && navigator.serviceWorker.controller) adoptWhenIdle(reg.waiting);
       reg.addEventListener('updatefound', function () {
@@ -972,11 +1030,23 @@ function registerServiceWorker() {
       }, UPDATE_POLL_MS);
     }).catch(function () {});
 
+    /* A new build has taken over. Every open tab hears this, including a material sitting
+     * in a background tab: that one waits until it is looked at again, so the reload
+     * never lands on a page nobody can see. */
     var reloaded = false;
-    navigator.serviceWorker.addEventListener('controllerchange', function () {
+    var reloadNow = function () {
       if (reloaded) return;
       reloaded = true;
       location.reload();
+    };
+    navigator.serviceWorker.addEventListener('controllerchange', function () {
+      if (!hadController && !swReloading) { hadController = true; return; }   // first install
+      if (document.visibilityState === 'visible') return reloadNow();
+      document.addEventListener('visibilitychange', function onVis() {
+        if (document.visibilityState !== 'visible') return;
+        document.removeEventListener('visibilitychange', onVis);
+        reloadNow();
+      });
     });
   } catch (e) {}
 }
@@ -1000,7 +1070,11 @@ function registerServiceWorker() {
 var TELEMETRY_MAX   = 1000;   // events held on the device before the oldest are dropped
 var TELEMETRY_BATCH = 200;    // events per request
 var TELEMETRY_FLUSH_MS = 5 * 60 * 1000;
-var telemetryQueue = null;    // lazily read; null means 'not loaded yet'
+/* The queue itself lives in storage and is read back every time it is needed. Holding a
+ * copy in memory looked cheaper, but the hub and a material can be open in two tabs at
+ * once, and two copies of one queue meant whichever tab wrote last erased the other's
+ * reviews. What this tab has recorded and not yet written is all that is kept here. */
+var telemetryPending = [];
 var telemetryWriteT = 0;
 var telemetryBusy = false;
 /* Set when the server has no telemetry_ingest function, which is the state of a project
@@ -1032,7 +1106,7 @@ function telemetrySetEnabled(on) {
   } catch (e) {}
   /* Turning it off discards what has not been sent. Keeping a queue you have just opted
    * out of, in the hope you opt back in, is not a decision this should make for you. */
-  if (!on) { telemetryQueue = []; rawRemove(TEL_QUEUE_KEY); }
+  if (!on) { telemetryPending = []; clearTimeout(telemetryWriteT); rawRemove(TEL_QUEUE_KEY); }
   return on;
 }
 
@@ -1056,48 +1130,62 @@ function installId() {
   return id;
 }
 
-function telemetryLoad() {
-  if (telemetryQueue) return telemetryQueue;
-  var raw = rawGet(TEL_QUEUE_KEY);
-  try { telemetryQueue = raw ? JSON.parse(raw) : []; } catch (e) { telemetryQueue = []; }
-  if (!Array.isArray(telemetryQueue)) telemetryQueue = [];
-  return telemetryQueue;
+function telemetryRead() {
+  var raw = rawGet(TEL_QUEUE_KEY), q = [];
+  try { q = raw ? JSON.parse(raw) : []; } catch (e) { q = []; }
+  return Array.isArray(q) ? q : [];
+}
+function telemetryWrite(q) {
+  try { rawSet(TEL_QUEUE_KEY, JSON.stringify(q)); } catch (e) {}
+}
+/* One review is identified by what was asked and when. The server dedupes on the same
+ * three fields, so a batch sent twice (a dropped response, two tabs flushing at once) is
+ * counted once there too. */
+function telemetryKey(e) { return String(e.m) + '|' + String(e.c) + '|' + String(e.t); }
+
+/* Appends this tab's unwritten reviews to whatever is in storage now, rather than replacing
+ * it, so a second tab's reviews are never overwritten. */
+function telemetryPersistNow() {
+  clearTimeout(telemetryWriteT);
+  if (!telemetryPending.length) return;
+  var q = telemetryRead().concat(telemetryPending);
+  telemetryPending = [];
+  if (q.length > TELEMETRY_MAX) q.splice(0, q.length - TELEMETRY_MAX);
+  telemetryWrite(q);
 }
 /* Debounced: a speed round writes an event every couple of seconds and there is no reason
  * for each one to serialise the whole queue. */
 function telemetryPersist() {
   clearTimeout(telemetryWriteT);
-  telemetryWriteT = setTimeout(function () {
-    try { rawSet(TEL_QUEUE_KEY, JSON.stringify(telemetryQueue || [])); } catch (e) {}
-  }, 2000);
-}
-function telemetryPersistNow() {
-  clearTimeout(telemetryWriteT);
-  try { rawSet(TEL_QUEUE_KEY, JSON.stringify(telemetryQueue || [])); } catch (e) {}
+  telemetryWriteT = setTimeout(telemetryPersistNow, 2000);
 }
 
 function telemetryRecord(ev) {
   if (!telemetryEnabled() || !ev || typeof ev !== 'object') return;
-  var q = telemetryLoad();
-  q.push(ev);
-  if (q.length > TELEMETRY_MAX) q.splice(0, q.length - TELEMETRY_MAX);
+  telemetryPending.push(ev);
   telemetryPersist();
+}
+
+function telemetryPendingCount() {
+  return telemetryRead().length + telemetryPending.length;
 }
 
 function telemetryFlush(useKeepalive) {
   if (telemetryBusy || telemetryUnavailable || !telemetryEnabled()) return Promise.resolve(0);
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return Promise.resolve(0);
   if (isOffline()) return Promise.resolve(0);
-  var q = telemetryLoad();
+  telemetryPersistNow();
+  var q = telemetryRead();
   if (!q.length) return Promise.resolve(0);
   var batch = q.slice(0, TELEMETRY_BATCH);
   telemetryBusy = true;
   return rpc('telemetry_ingest', { p_install: installId(), p_events: batch }, !!useKeepalive)
     .then(function () {
-      /* Splice by count rather than replacing the array: reviews can be recorded while the
-       * request is in flight, and they must not be dropped along with the batch. */
-      telemetryQueue.splice(0, batch.length);
-      telemetryPersistNow();
+      /* Remove exactly what was sent from whatever storage holds now. Reviews recorded while
+       * the request was in flight, here or in another tab, stay in the queue. */
+      var sent = {};
+      for (var i = 0; i < batch.length; i++) sent[telemetryKey(batch[i])] = true;
+      telemetryWrite(telemetryRead().filter(function (e) { return !sent[telemetryKey(e)]; }));
       telemetryBusy = false;
       return batch.length;
     })
@@ -1111,14 +1199,40 @@ function telemetryFlush(useKeepalive) {
 function telemetryStart() {
   try {
     window.addEventListener('online', function () { telemetryFlush(); });
+    /* Hidden is the moment that matters on a phone: an app swiped away from the switcher
+     * often never fires pagehide at all, so the send has to go out here, with keepalive so
+     * it outlives the page. pagehide is kept as the second chance. */
     document.addEventListener('visibilitychange', function () {
       if (document.visibilityState === 'visible') telemetryFlush();
-      else telemetryPersistNow();
+      else telemetryFlush(true);
     });
-    window.addEventListener('pagehide', function () { telemetryPersistNow(); telemetryFlush(true); });
+    window.addEventListener('pagehide', function () { telemetryFlush(true); });
     setInterval(function () { telemetryFlush(); }, TELEMETRY_FLUSH_MS);
   } catch (e) {}
   setTimeout(function () { telemetryFlush(); }, 8000);
+}
+
+/* -------------------------------------------------- other tabs */
+/* The hub and a material can be open side by side, and a sync in one writes progress the
+ * other is holding in memory. Without this the material kept its stale copy and wrote it
+ * straight back over what had just merged in. localStorage announces writes from other
+ * tabs, so they are turned into the same 'change' events a sync in this tab would raise. */
+function watchOtherTabs() {
+  try {
+    window.addEventListener('storage', function (e) {
+      if (!e || !e.key || e.key.indexOf(STORE_PREFIX) !== 0) return;
+      if (e.key === META_KEY || e.key === DIRTY_KEY || e.newValue === null) return;
+      var full = e.key.slice(STORE_PREFIX.length);
+      var split = full.indexOf(':');
+      if (split <= 0) return;
+      var ns = full.slice(0, split), key = full.slice(split + 1);
+      if (isExcluded(ns, key)) return;
+      var value;
+      try { value = JSON.parse(e.newValue); } catch (err) { return; }
+      memFallback[e.key] = e.newValue;
+      emit('change', { ns: ns, key: key, value: value });
+    });
+  } catch (e) {}
 }
 
 /* -------------------------------------------------- public API */
@@ -1135,6 +1249,7 @@ var StudyStore = {
     adoptOrphanMtimes();
     registerServiceWorker();
     telemetryStart();
+    watchOtherTabs();
 
     try {
       document.addEventListener('visibilitychange', function () {
@@ -1198,6 +1313,10 @@ var StudyStore = {
     return formatCode(code);
   },
 
+  /* Resolves with { code, found }. found is false when the server holds nothing under that
+   * code, which after a typo is the only clue: the sync itself succeeds either way, it just
+   * starts a fresh row that the other device will never see. null means it could not be
+   * checked (offline); the code is kept and tried again. */
   pair: function (input) {
     var code = normalizeCode(input);   // throws with a readable message on bad input
     var meta = readMeta();
@@ -1205,7 +1324,12 @@ var StudyStore = {
     meta.seenUpdatedAt = null;
     writeMeta(meta);
     markDirty();
-    return syncNow('pair').then(function () { return formatCode(code); });
+    var probe = (SUPABASE_URL && SUPABASE_ANON_KEY && !isOffline())
+      ? rpcPull(code).then(function (r) { return !!(r && r.found); }, function () { return null; })
+      : Promise.resolve(null);
+    return probe.then(function (found) {
+      return syncNow('pair').then(function () { return { code: formatCode(code), found: found }; });
+    });
   },
 
   unpair: function () {
@@ -1235,7 +1359,11 @@ var StudyStore = {
     setEnabled: telemetrySetEnabled,
     record: telemetryRecord,
     flush: telemetryFlush,
-    pending: function () { return telemetryLoad().length; },
+    pending: telemetryPendingCount,
+    /* True once this page load has been told the server has no ingest function. The hub
+       shows it, because a queue that only ever grows looks exactly like one that is
+       waiting for a connection, and the owner is the one who can fix it. */
+    unavailable: function () { return telemetryUnavailable; },
     installId: installId
   },
   exportCode: exportCode,

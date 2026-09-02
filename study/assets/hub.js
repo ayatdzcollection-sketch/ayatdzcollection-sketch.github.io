@@ -23,7 +23,7 @@ function paintOwner() {
   $('ownerdot').className = 'dot' + (admin ? ' ok' : ' off');
   $('ownernote').textContent = admin
     ? 'Signed in on this browser. Locked and hidden materials open for you here.'
-    : 'Sign in with the admin code to hide or lock materials, change codes, or open anything you have locked. Studying needs no code at all.';
+    : 'Sign in with the admin code to hide, lock or retire materials, change codes, or open anything you have locked. Studying needs no code at all.';
   if (admin) {
     $('whonote').textContent = 'This browser is signed in as the owner. Signing out also clears any keys cached for locked materials.';
   }
@@ -113,10 +113,55 @@ function matches(m, klass, needle) {
   return needle.split(/\s+/).every(function (w) { return hay.indexOf(w) !== -1; });
 }
 
+var isRetired = function (m) { return (m.tags || []).indexOf('retired') !== -1; };
+
+function makeRow(m) {
+  var lockedForMe = m.locked && role !== 'admin';
+  var li = document.createElement('li');
+  var a = document.createElement('button');
+  a.type = 'button';
+  a.className = 'mrow' + (lockedForMe ? ' islocked' : '') + (isRetired(m) ? ' isretired' : '');
+
+  var left = document.createElement('span');
+  left.className = 'mleft';
+  var title = document.createElement('span');
+  title.className = 'mtitle';
+  title.textContent = m.title;
+  if (m.locked) title.appendChild(flag('locked', 'Locked'));
+  if (m.hidden) title.appendChild(flag('hidden', 'Hidden'));
+  if (isRetired(m)) title.appendChild(flag('retired', 'Retired'));
+  left.appendChild(title);
+  if (m.blurb) {
+    var b = document.createElement('span');
+    b.className = 'mblurb'; b.textContent = m.blurb;
+    left.appendChild(b);
+  }
+
+  var right = document.createElement('span');
+  right.className = 'mright';
+  var tags = (m.tags || []).filter(function (t) { return t !== 'retired'; });
+  if (tags.length) {
+    var tg = document.createElement('span');
+    tg.className = 'mtags'; tg.textContent = tags.join(' · ');
+    right.appendChild(tg);
+  }
+  if (m.added) {
+    var ad = document.createElement('span');
+    ad.className = 'madded'; ad.textContent = m.added;
+    right.appendChild(ad);
+  }
+
+  a.appendChild(left); a.appendChild(right);
+  a.addEventListener('click', function () { open(m); });
+  li.appendChild(a);
+  return li;
+}
+
 function renderAll(needle) {
   var wrap = $('classes');
   wrap.innerHTML = '';
   var shown = 0;
+  var retired = [];
 
   groupByClass(items).forEach(function (klass) {
     var mats = klass.materials.filter(function (m) { return matches(m, klass, needle); });
@@ -144,48 +189,30 @@ function renderAll(needle) {
     ul.className = 'rows';
 
     mats.forEach(function (m) {
-      var lockedForMe = m.locked && role !== 'admin';
-      var li = document.createElement('li');
-      var a = document.createElement('button');
-      a.type = 'button';
-      a.className = 'mrow' + (lockedForMe ? ' islocked' : '');
-
-      var left = document.createElement('span');
-      left.className = 'mleft';
-      var title = document.createElement('span');
-      title.className = 'mtitle';
-      title.textContent = m.title;
-      if (m.locked) title.appendChild(flag('locked', 'Locked'));
-      if (m.hidden) title.appendChild(flag('hidden', 'Hidden'));
-      left.appendChild(title);
-      if (m.blurb) {
-        var b = document.createElement('span');
-        b.className = 'mblurb'; b.textContent = m.blurb;
-        left.appendChild(b);
-      }
-
-      var right = document.createElement('span');
-      right.className = 'mright';
-      if (m.tags && m.tags.length) {
-        var tg = document.createElement('span');
-        tg.className = 'mtags'; tg.textContent = m.tags.join(' · ');
-        right.appendChild(tg);
-      }
-      if (m.added) {
-        var ad = document.createElement('span');
-        ad.className = 'madded'; ad.textContent = m.added;
-        right.appendChild(ad);
-      }
-
-      a.appendChild(left); a.appendChild(right);
-      a.addEventListener('click', function () { open(m); });
-      li.appendChild(a); ul.appendChild(li);
+      if (isRetired(m)) { retired.push(m); shown++; return; }
+      ul.appendChild(makeRow(m));
       shown++;
     });
 
-    sec.appendChild(ul);
-    wrap.appendChild(sec);
+    if (ul.children.length) { sec.appendChild(ul); wrap.appendChild(sec); }
   });
+
+  /* Retired things stay openable (an old quiz's material is still a good review) but sit
+     under one collapsed heading at the bottom, out of the way of what is current. */
+  if (retired.length) {
+    var det = document.createElement('details');
+    det.className = 'retiredwrap';
+    det.open = !!needle;
+    var sum = document.createElement('summary');
+    sum.innerHTML = '<span class="kname">Retired</span><span class="kterm"></span>';
+    sum.lastChild.textContent = retired.length + ' from earlier quizzes and assignments';
+    det.appendChild(sum);
+    var rul = document.createElement('ul');
+    rul.className = 'rows';
+    retired.forEach(function (m) { rul.appendChild(makeRow(m)); });
+    det.appendChild(rul);
+    wrap.appendChild(det);
+  }
 
   $('noresults').hidden = shown > 0;
   var n = items.length;
@@ -321,9 +348,17 @@ function doPair() {
   var errEl = $('pairerr');
   errEl.hidden = true;
   try {
-    StudyStore.pair($('paircode').value).then(function (f) {
+    StudyStore.pair($('paircode').value).then(function (r) {
       $('paircode').value = '';
-      window.alert('Paired. Your progress will merge with code ' + f + '.');
+      if (r.found === false) {
+        /* A mistyped code does not fail: it quietly starts a new, empty sync group that the
+           other device is not in. The absence of any stored progress is the only tell. */
+        window.alert('Paired with ' + r.code + ', but nothing is stored under that code yet. ' +
+          'If your other device already has progress, check the code against it and pair again. ' +
+          'Otherwise this device\'s progress will be the first to go up.');
+      } else {
+        window.alert('Paired. Your progress will merge with code ' + r.code + '.');
+      }
     });
   } catch (e) {
     errEl.textContent = e.message; errEl.hidden = false;
@@ -476,6 +511,12 @@ function renderAdminItems() {
     togs.appendChild(mk('Locked', m.locked, function (v) {
       m.locked = v; return StudyAuth.admin.setItem(m.id, null, v);
     }));
+    togs.appendChild(mk('Retired', isRetired(m), function (v) {
+      return StudyAuth.admin.setRetired(m, v).then(function (r) {
+        if (r && r.ok) m.tags = (m.tags || []).filter(function (x) { return x !== 'retired'; }).concat(v ? ['retired'] : []);
+        return r;
+      });
+    }));
 
     row.appendChild(name); row.appendChild(togs);
     box.appendChild(row);
@@ -548,9 +589,13 @@ function initTelemetry() {
     state.textContent = on ? 'On' : 'Off';
     if (!on) { note.textContent = 'Off. Nothing is logged, and anything still waiting has been discarded.'; return; }
     var q = StudyStore.telemetry.pending();
-    note.textContent = q
-      ? q + ' review' + (q === 1 ? '' : 's') + ' waiting for a connection.'
-      : 'Nothing waiting to send.';
+    var stuck = StudyStore.telemetry.unavailable && StudyStore.telemetry.unavailable();
+    note.textContent = stuck
+      ? 'The server is not accepting review logs yet (run 0004_telemetry.sql in Supabase). ' +
+        q + ' review' + (q === 1 ? '' : 's') + ' waiting on this device.'
+      : q
+        ? q + ' review' + (q === 1 ? '' : 's') + ' queued to send.'
+        : 'Nothing waiting to send.';
   }
   box.addEventListener('change', function () {
     StudyStore.telemetry.setEnabled(box.checked);
@@ -579,7 +624,13 @@ function initSW() {
     return;
   }
 
-  navigator.serviceWorker.getRegistration().then(function (reg) {
+  /* sync.js has just called register(); on a first visit that has not finished, and
+     getRegistration() would answer "no offline copy yet" while one was being made. ready
+     resolves once a worker is active. If nothing is active within a few seconds
+     (registration refused, or a browser that blocks it) say so instead of waiting forever. */
+  var ready = navigator.serviceWorker.ready.then(function (reg) { return reg; });
+  var timeout = new Promise(function (resolve) { setTimeout(function () { resolve(null); }, 8000); });
+  Promise.race([ready, timeout]).then(function (reg) {
     if (!reg) { note.textContent = 'No offline copy yet. Reload once while online.'; return; }
     note.textContent = 'The hub and the materials you have opened work offline.';
 
@@ -613,6 +664,10 @@ function boot() {
 
   loadCatalog().then(function () {
     $('err').hidden = true;
+    /* The catalog call is also the server's word on this session: it drops the stored
+       role when the token is gone or lapsed. Repaint so the owner chip and the admin
+       panel follow the verdict rather than whatever was in storage at boot. */
+    paintOwner();
     renderAll('');
     renderRecents();
     initAdmin();
@@ -628,6 +683,21 @@ function boot() {
     t = setTimeout(function () { renderAll(filter.value.trim().toLowerCase()); }, 90);
   });
   window.addEventListener('hashchange', handleHash);
+
+  /* A lock or hide flipped on another device, or a newly published material, should show
+     up when the tab is looked at again, not only after a reload. Floored at a minute so
+     flicking between apps does not hammer the catalog. */
+  var lastCatalog = Date.now();
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState !== 'visible') return;
+    if (Date.now() - lastCatalog < 60000) return;
+    lastCatalog = Date.now();
+    loadCatalog().then(function () {
+      renderAll(filter.value.trim().toLowerCase());
+      renderRecents();
+      if (StudyAuth.isAdmin()) renderAdminItems();
+    }).catch(function () {});
+  });
 }
 
 function start() {

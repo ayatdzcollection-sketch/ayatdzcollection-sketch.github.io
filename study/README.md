@@ -27,6 +27,7 @@ One admin code, entered under **Owner** in the hub, gives you:
 |---|---|
 | **Hidden** | The item disappears from everyone else's list. |
 | **Locked** | The item stays listed and marked locked, but its key is withheld from everyone but you. This is the one that actually protects it, and the database enforces it, not the page. |
+| **Retired** | Still openable, but filed under a collapsed *Retired* heading at the bottom of the hub, for material from an older quiz or assignment. Stored as a `retired` tag on the item (no column, no migration), so it can be set live from the admin panel or with `"retired": true` in `materials.json` before publishing. |
 
 Plus changing codes, seeing how many devices are signed in, and signing them all out.
 
@@ -47,7 +48,9 @@ already gets. It is there if you ever want to close the hub again.
   served in the clear for a while and remains in this repository's git history. Locking a
   material now cannot un-publish what was already out.
 - **A device that already opened a locked item.** Its key is cached there so it works
-  offline. Signing out clears the cached keys.
+  offline. Signing out clears the cached keys. The session, the role and the cached keys
+  live under `studyhub:auth:*` and are excluded from sync and from backups as a whole
+  namespace, so pairing never carries a sign-in or a key to another device.
 - Never put anything here that would be damaging if it leaked. This is a study site, not a
   vault.
 
@@ -132,7 +135,18 @@ device synced.
 
 Syncs happen on load, when a tab becomes visible, on reconnect, as the page closes, and on
 a 25 second throttle while you are studying. Offline changes are flagged and pushed on the
-next success.
+next success. A failed attempt schedules its own retry, backing off from fifteen seconds to
+five minutes, because `navigator.onLine` is a hint and not evidence: some devices report
+offline while the network is fine, and a device that trusted that would hold its work
+forever. A write that lands while a sync is in flight keeps the dirty flag and is sent on
+the next pass.
+
+If the hub and a material are open in two tabs, a sync in one raises `change` events in the
+other through the `storage` event, so the material never writes a stale copy back over what
+just merged in.
+
+Pairing with a code that the server has never seen does not fail; it starts a fresh, empty
+sync group. That is what a typo looks like, so the hub says so when it happens.
 
 ```bash
 node --test "study/tests/*.test.mjs"
@@ -159,8 +173,12 @@ separable from another's without anyone being named. Clearing site data throws i
 
 Local-first, like the rest. Events sit in `studyhub:hub:telemetryQueue` (device-local, never
 synced, because copying a queue between devices would send the same reviews twice) and are
-flushed in batches of 200 when online, on load, on becoming visible, on reconnect and every
-five minutes. The queue holds 1000 events and drops the **oldest** when it overflows: a
+flushed in batches of 200 on load, on becoming visible, on being hidden (with keepalive, since
+a phone that swipes the app away rarely fires anything later), on reconnect and every five
+minutes. The queue is read from storage every time rather than held in memory, so two open
+tabs append to one queue instead of overwriting each other; after a send, exactly the events
+sent are removed, and the server dedupes on (install, material, card, time) in case two tabs
+sent the same batch. The queue holds 1000 events and drops the **oldest** when it overflows: a
 queue that has overflowed has not reached the server in a long while, and the recent reviews
 are the ones still worth keeping. The preference itself does sync, because a decision about
 your own data should hold on every device you study on.
@@ -198,7 +216,12 @@ and a *Clear cache & reload* that recovers from any stuck state.
 
 **Bump `VERSION` in `sw.js` whenever you change a shell file** (`index.html`, `view.html`,
 `hub.css`, `hub.js`, `sync.js`, `auth.js`). Material `.enc` files do not need it; they
-refresh on their own.
+refresh on their own. The install step fetches the shell with `cache: 'reload'` so a new
+worker never precaches the previous build out of the browser's ten minute HTTP cache, and
+material revalidation uses `no-cache` so a republish shows up on the next open. A first
+visit does not reload itself: `controllerchange` also fires when the first worker claims the
+page, and only a change of controller counts as an update. A background tab that hears
+about an update waits to reload until it is looked at.
 
 ---
 

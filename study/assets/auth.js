@@ -53,8 +53,10 @@ function cacheKey(id, key) {
 
 var StudyAuth = {
   token: function () { return ls(TOKEN_KEY); },
-  role: function () { return ls(ROLE_KEY); },
-  isAdmin: function () { return ls(ROLE_KEY) === 'admin'; },
+  /* A role without a token is a leftover, not a session: nothing can be done with it and
+     the hub would only paint controls that every call then refuses. */
+  role: function () { return ls(TOKEN_KEY) ? ls(ROLE_KEY) : null; },
+  isAdmin: function () { return !!ls(TOKEN_KEY) && ls(ROLE_KEY) === 'admin'; },
   /* Signed in as far as this device knows. Deliberately optimistic so an unlocked phone
      keeps working on a train; the server is still the authority whenever it is reachable,
      and it is the only source of decryption keys for anything not yet opened. */
@@ -191,6 +193,23 @@ var StudyAuth = {
     },
     setItem: function (id, hidden, locked) {
       return rpc('admin_set_item', { p_token: ls(TOKEN_KEY), p_id: id, p_hidden: hidden, p_locked: locked });
+    },
+    /* Retired is a tag, not a column, so it needs no migration. Flipping it means writing
+       the whole item back through the publisher's upsert, which wants the key; an admin
+       session can fetch that. hidden and locked are not in the upsert's column list, so
+       they survive the round trip. */
+    setRetired: function (m, retired) {
+      var t = ls(TOKEN_KEY);
+      return rpc('auth_material_key', { p_token: t, p_id: m.id }).then(function (r) {
+        if (!r || !r.ok) throw new Error(r && r.error ? r.error : 'no key');
+        var tags = (m.tags || []).filter(function (x) { return x !== 'retired'; });
+        if (retired) tags.push('retired');
+        return rpc('admin_upsert_item', { p_token: t, p_item: {
+          id: m.id, kind: m.kind || 'material', class_id: m.class_id, class_name: m.class_name,
+          term: m.term, title: m.title, blurb: m.blurb, path: m.path, tags: tags,
+          added: m.added || null, sort: m.sort == null ? 100 : m.sort, enc_key: r.key
+        } });
+      });
     },
     sessions: function () {
       return rpc('admin_sessions', { p_token: ls(TOKEN_KEY) });

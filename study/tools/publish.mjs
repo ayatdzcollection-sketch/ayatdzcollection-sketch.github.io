@@ -158,7 +158,9 @@ async function push() {
         title: mat.title,
         blurb: mat.blurb,
         path: `m/${s.cls}/${s.file.replace(/\.html$/, '.enc')}`,
-        tags: mat.tags || [],
+        /* 'retired' rides along as a tag so no column or migration is needed; the hub
+           reads it back out and the admin panel can flip it live. */
+        tags: (mat.tags || []).filter(t => t !== 'retired').concat(mat.retired ? ['retired'] : []),
         added: mat.added || null,
         sort: mat.sort ?? 100,
         enc_key: keyB64

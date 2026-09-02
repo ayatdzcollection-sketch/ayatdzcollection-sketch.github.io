@@ -12,7 +12,8 @@
           "blurb": "Numbered blank-map quiz with spaced repetition and a readiness score.",
           "tags": ["map", "quiz", "spaced-repetition"],
           "added": "2026-08-30",
-          "sort": 10
+          "sort": 10,
+          "retired": true
         },
         {
           "id": "fraser-ch1-2",
@@ -50,7 +51,8 @@
           "blurb": "Guide by skill, instant-feedback drill, the 14-problem practice set in the teacher's style, timed mock quizzes with fresh numbers, a focus box that tracks weak skills, and printable sheets with separate keys.",
           "tags": ["sequences", "arithmetic", "geometric", "recursive", "practice-test", "mock-quiz", "drill", "checkpoint"],
           "added": "2026-09-02",
-          "sort": 10
+          "sort": 10,
+          "retired": true
         }
       ]
     }
