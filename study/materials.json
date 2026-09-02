@@ -13,6 +13,14 @@
           "tags": ["map", "quiz", "spaced-repetition"],
           "added": "2026-08-30",
           "sort": 10
+        },
+        {
+          "id": "fraser-ch1-2",
+          "title": "Fraser Ch 1-2: reading quiz prep",
+          "blurb": "Guide, 14-question practice set (identifications and short answer) with rubric marking after Submit, and printable question pages with a separate key.",
+          "tags": ["fraser", "reading-quiz", "practice-test", "chapters-1-2"],
+          "added": "2026-09-02",
+          "sort": 20
         }
       ]
     },
@@ -27,6 +35,21 @@
           "blurb": "Sets of ten drilled both ways, on a live periodic table, with a settings page and a mastery rule that wants evidence over several days.",
           "tags": ["elements", "quiz", "spaced-repetition", "periodic-table", "customisable"],
           "added": "2026-08-30",
+          "sort": 10
+        }
+      ]
+    },
+    {
+      "id": "math",
+      "name": "Algebra 2",
+      "term": "2026-27",
+      "materials": [
+        {
+          "id": "u1-sequences",
+          "title": "Unit 1 Sequences: checkpoint prep",
+          "blurb": "Guide, 14-problem practice set in the teacher's style (marked only after Submit, with full working), and printable question pages with a separate key.",
+          "tags": ["sequences", "arithmetic", "geometric", "recursive", "practice-test", "checkpoint"],
+          "added": "2026-09-02",
           "sort": 10
         }
       ]
