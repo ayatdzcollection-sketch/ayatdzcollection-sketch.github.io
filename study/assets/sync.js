@@ -666,9 +666,33 @@ function canSync() {
   return !!(meta.pairCode && SUPABASE_URL && SUPABASE_ANON_KEY);
 }
 
+/* navigator.onLine is a hint, never evidence. On ChromeOS in particular it reports false
+ * while the network is perfectly fine, and treating that as proof strands sync forever:
+ * the 'online' event only fires on a transition, so a device that was never "offline" in
+ * the browser's eyes never gets told to try again. The only trustworthy signal that we
+ * cannot reach the server is a request that actually failed, so that is what we use. */
 function isOffline() {
-  if (FORCE_OFFLINE) return true;
+  return FORCE_OFFLINE;
+}
+function looksOffline() {
   try { return navigator.onLine === false; } catch (e) { return false; }
+}
+
+/* Keep trying by ourselves. Without this, a device that guessed wrong about the network
+ * would sit there holding unsent work until someone happened to switch tabs. */
+var retryTimer = null, retryDelay = 15000;
+var RETRY_MIN = 15000, RETRY_MAX = 300000;
+function scheduleRetry() {
+  if (retryTimer || !canSync()) return;
+  retryTimer = setTimeout(function () {
+    retryTimer = null;
+    retryDelay = Math.min(retryDelay * 2, RETRY_MAX);
+    syncNow('retry');
+  }, retryDelay);
+}
+function clearRetry() {
+  if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+  retryDelay = RETRY_MIN;
 }
 
 function syncNow(reason) {
@@ -724,16 +748,24 @@ function syncNow(reason) {
       var m = readMeta();
       m.lastSyncedAt = Date.now();
       writeMeta(m);
+      clearRetry();
       setState('idle', '');
     } else {
       setState('error', 'Could not settle with the server. Will retry.');
+      scheduleRetry();
     }
     return ok;
   }).catch(function (err) {
-    if (isOffline()) setState('offline', 'Offline: changes saved on this device.');
-    else setState('error', (err && err.status === 404)
-      ? 'Sync functions missing on the server: run the migration.'
-      : 'Sync error. Will retry.');
+    // A rejected fetch has no status: that is a real network failure. An HTTP status
+    // means we reached the server and it objected, which is a different problem.
+    if (!err || !err.status) {
+      setState('offline', 'No connection: changes are saved here and will send themselves.');
+    } else {
+      setState('error', err.status === 404
+        ? 'Sync functions missing on the server: run the migration.'
+        : 'Sync error. Will retry.');
+    }
+    scheduleRetry();
     return false;
   }).then(function (ok) {
     inFlight = false;
@@ -875,7 +907,6 @@ var swReloading = false;
    that was opened on mobile data or out of range. */
 function checkForUpdate(reg, force) {
   if (!reg) return;
-  try { if (navigator.onLine === false) return; } catch (e) {}
   var now = Date.now();
   if (!force && now - lastUpdateCheck < UPDATE_MIN_GAP) return;
   lastUpdateCheck = now;
@@ -1112,13 +1143,14 @@ var StudyStore = {
       });
       window.addEventListener('online', function () { syncNow('online'); });
       window.addEventListener('offline', function () {
-        setState('offline', 'Offline: changes saved on this device.');
+        setState('offline', 'No connection: changes are saved here and will send themselves.');
+        scheduleRetry();          // the browser may simply be wrong
       });
       window.addEventListener('pagehide', finalFlush);
     } catch (e) {}
 
-    if (isOffline()) setState('offline', 'Offline: changes saved on this device.');
-    syncNow('load');
+    if (looksOffline()) setState('offline', 'No connection: changes are saved here and will send themselves.');
+    syncNow('load');   // try regardless; the attempt is what tells us the truth
     return StudyStore;
   },
 
