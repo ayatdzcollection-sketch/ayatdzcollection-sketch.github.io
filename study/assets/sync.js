@@ -39,6 +39,7 @@ var KEEPALIVE_LIMIT = 60000;   // browsers cap keepalive bodies at ~64KB
 var SYNC_EXCLUDE = {
   'fifty-states': ['deck', 'followFocus', 'mapPrefs'],
   'periodic': ['ui'],
+  'fraser12': ['ui'],
   /* 'telemetryQueue' and 'installId' are per device by definition: copying a queue between
    * devices would send the same reviews twice, and the install id is what keeps one
    * device's stream separable from another's without naming anybody. The 'telemetry'
@@ -197,8 +198,8 @@ function makeFsrsMerge(mapField) {
   };
 }
 
-var mergeFsrsValue    = makeFsrsMerge('states');   // fifty-states
-var mergePeriodicFsrs = makeFsrsMerge('cards');    // periodic table
+var mergeFsrsValue  = makeFsrsMerge('states');   // fifty-states
+var mergeCardsFsrs  = makeFsrsMerge('cards');    // periodic table, Fraser reading quiz
 
 function mergeRegionsDone(aVal, bVal) {
   var seen = {};
@@ -287,7 +288,12 @@ function mergeSettings(aVal, bVal, aM, bM) {
 var BUILTIN_MERGES = {
   'fifty-states:fsrs': mergeFsrsValue,
   'fifty-states:regionsDone': mergeRegionsDone,
-  'periodic:fsrs': mergePeriodicFsrs,
+  'periodic:fsrs': mergeCardsFsrs,
+  /* The Fraser reading quiz schedules both its quiz questions and its names, and stores
+   * them in the same { cards, quizDate, exams } shape, so it reuses the rule rather than
+   * defining a third one. Without this entry a phone's reviews would be overwritten
+   * wholesale by whichever device wrote last. */
+  'fraser12:fsrs': mergeCardsFsrs,
   'periodic:setsDone': mergeRegionsDone,     // legacy ids; kept so an old device loses nothing
   'periodic:started': mergeNumberSet,        // set-size-independent successor to setsDone
   'periodic:settings': mergeSettings,
@@ -445,7 +451,7 @@ if (typeof module !== 'undefined' && module.exports) {
     formatCode: formatCode,
     defaultMerge: defaultMerge,
     mergeFsrsValue: mergeFsrsValue,
-    mergePeriodicFsrs: mergePeriodicFsrs,
+    mergeCardsFsrs: mergeCardsFsrs,
     makeFsrsMerge: makeFsrsMerge,
     mergeRegionsDone: mergeRegionsDone,
     mergeNumberSet: mergeNumberSet,

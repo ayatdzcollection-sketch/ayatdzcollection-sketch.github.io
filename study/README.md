@@ -107,8 +107,14 @@ StudyStore.registerMerge('your-material', 'progress', function (a, b, aMtime, bM
 **One caveat.** `registerMerge` only applies on pages where your material is loaded. The
 hub also merges (on load, on focus, and during a copy-paste import) when your page is
 not open. If losing data in that window matters (it does for anything spaced-repetition),
-put the rule in `BUILTIN_MERGES` at the top of `assets/sync.js` instead. Both existing
-materials do exactly that.
+put the rule in `BUILTIN_MERGES` at the top of `assets/sync.js` instead. Every material
+that schedules anything does exactly that.
+
+Anything that keeps FSRS records should store them under one `fsrs` key shaped
+`{ cards, quizDate, exams }` and register `makeFsrsMerge('cards')` for it, as the periodic
+table and the Fraser reading quiz both do. That buys the per-record merge, the exam-log
+dedupe and the import preview's summary line with no new code. Editing `sync.js` is a
+shell change, so bump `VERSION` in `sw.js` in the same commit.
 
 ---
 
@@ -148,6 +154,17 @@ just merged in.
 Pairing with a code that the server has never seen does not fail; it starts a fresh, empty
 sync group. That is what a typo looks like, so the hub says so when it happens.
 
+### What the progress bar can honestly say
+
+A sync is not a stream, so there is no fraction of one to measure. It is three steps: read
+the row on the server, merge it with what is on this device, send the result back. The bar
+in the sync panel moves in thirds and the line under it names the step, plus the attempt
+number when a push conflicted and the merge is being retried. The words are the measurement;
+the bar is only a picture of them.
+
+The review-log queue is the opposite case, and genuinely countable, so it reports a real
+`sent of total` while it drains.
+
 ```bash
 node --test "study/tests/*.test.mjs"
 ```
@@ -178,7 +195,10 @@ a phone that swipes the app away rarely fires anything later), on reconnect and 
 minutes. The queue is read from storage every time rather than held in memory, so two open
 tabs append to one queue instead of overwriting each other; after a send, exactly the events
 sent are removed, and the server dedupes on (install, material, card, time) in case two tabs
-sent the same batch. The queue holds 1000 events and drops the **oldest** when it overflows: a
+sent the same batch. A flush keeps sending batches while they succeed rather than stopping
+after one: a backlog that built up while `telemetry_ingest` was missing would otherwise have
+drained at 200 events per five minutes. A flush triggered by the page going away sends one
+batch only, since keepalive buys a single request past the unload and not a conversation. The queue holds 1000 events and drops the **oldest** when it overflows: a
 queue that has overflowed has not reached the server in a long while, and the recent reviews
 are the ones still worth keeping. The preference itself does sync, because a decision about
 your own data should hold on every device you study on.

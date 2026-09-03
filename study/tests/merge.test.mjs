@@ -183,11 +183,11 @@ test('the import summary describes fsrs changes in words', () => {
    drilling different element sets must end up with both. */
 
 test('periodic: cards from both devices survive, newer review wins a shared card', () => {
-  const { mergePeriodicFsrs } = require('../assets/sync.js');
+  const { mergeCardsFsrs } = require('../assets/sync.js');
   const a = { cards: { 'He|n2s': rec(9, 4, 5000, 6, 0), 'Li|s2n': rec(2, 6, 4000, 2, 0) }, quizDate: null, exams: [] };
   const b = { cards: { 'He|n2s': rec(1, 7, 9000, 1, 0), 'Be|n2s': rec(3, 5, 4500, 3, 0) }, quizDate: null, exams: [] };
 
-  const m = mergePeriodicFsrs(a, b, 10, 10);
+  const m = mergeCardsFsrs(a, b, 10, 10);
   assert.deepEqual(Object.keys(m.cards).sort(), ['Be|n2s', 'He|n2s', 'Li|s2n']);
   assert.deepEqual(m.cards['He|n2s'], rec(1, 7, 9000, 1, 0), 'newer last wins the whole record');
   assert.deepEqual(m.cards['Li|s2n'], rec(2, 6, 4000, 2, 0), 'device A keeps its own card');
@@ -195,10 +195,10 @@ test('periodic: cards from both devices survive, newer review wins a shared card
 });
 
 test('periodic: the two directions of one element are independent cards', () => {
-  const { mergePeriodicFsrs } = require('../assets/sync.js');
+  const { mergeCardsFsrs } = require('../assets/sync.js');
   const a = { cards: { 'Na|n2s': rec(8, 3, 9000, 5, 0) }, exams: [], quizDate: null };
   const b = { cards: { 'Na|s2n': rec(1, 8, 100, 1, 2) }, exams: [], quizDate: null };
-  const m = mergePeriodicFsrs(a, b, 1, 1);
+  const m = mergeCardsFsrs(a, b, 1, 1);
   assert.equal(Object.keys(m.cards).length, 2, 'name->symbol and symbol->name do not collide');
 });
 
@@ -423,4 +423,37 @@ test('a server row written by an older build is cleaned before merging', () => {
   const m = merge(local, clean);
   assert.equal(m.ns.auth, undefined, 'a signed-out device stays signed out');
   assert.deepEqual(m.ns.periodic.started.value, [1, 2, 3]);
+});
+
+/* ---------- fraser12: the reading quiz shares the cards rule ---------- */
+
+test('fraser12 fsrs merges per card, not whole-object newest-wins', () => {
+  // The phone answered a name; the laptop answered a quiz question. Both must survive.
+  const a = env({ 'fraser12:fsrs': [{ cards: { nabc: rec(3, 5, 2000, 2, 0) }, quizDate: null, exams: [] }, 100] });
+  const b = env({ 'fraser12:fsrs': [{ cards: { qxyz: rec(9, 4, 3000, 1, 0) }, quizDate: null, exams: [] }, 900] });
+  const cards = fsrsOf(merge(a, b), 'fraser12').cards;
+  assert.deepEqual(Object.keys(cards).sort(), ['nabc', 'qxyz']);
+  assert.deepEqual(cards.nabc, rec(3, 5, 2000, 2, 0));
+  assert.deepEqual(cards.qxyz, rec(9, 4, 3000, 1, 0));
+});
+
+test('fraser12: the later review of one card wins that whole record', () => {
+  const a = env({ 'fraser12:fsrs': [{ cards: { q1: rec(12, 3, 5000, 9, 0) }, quizDate: null, exams: [] }, 50] });
+  const b = env({ 'fraser12:fsrs': [{ cards: { q1: rec(0.4, 8, 9000, 2, 3) }, quizDate: null, exams: [] }, 50] });
+  assert.deepEqual(fsrsOf(merge(a, b), 'fraser12').cards.q1, rec(0.4, 8, 9000, 2, 3));
+});
+
+test('fraser12: quiz attempts in exams are unioned and deduped by ts', () => {
+  const a = env({ 'fraser12:fsrs': [{ cards: {}, quizDate: null, exams: [{ ts: 1, pts: 6, of: 10 }] }, 1] });
+  const b = env({ 'fraser12:fsrs': [{ cards: {}, quizDate: null, exams: [{ ts: 1, pts: 6, of: 10 }, { ts: 2, pts: 9, of: 10 }] }, 1] });
+  assert.deepEqual(fsrsOf(merge(a, b), 'fraser12').exams, [{ ts: 1, pts: 6, of: 10 }, { ts: 2, pts: 9, of: 10 }]);
+});
+
+test('fraser12: the open tab never leaves the device', () => {
+  const built = buildEnvelopeFrom({
+    'fraser12:ui': { tab: 'names' },
+    'fraser12:fsrs': { cards: { q1: rec(3, 5, 100, 1, 0) }, quizDate: null, exams: [] }
+  }, { 'fraser12:ui': 5, 'fraser12:fsrs': 5 });
+  assert.equal(built.ns.fraser12.ui, undefined, 'which tab is open is per device');
+  assert.ok(built.ns.fraser12.fsrs, 'the schedule does sync');
 });

@@ -8,7 +8,7 @@
  * sync.js, auth.js). Devices check for a new version on every load and whenever they
  * regain a connection, so a bump reaches them without anyone having to think about it.
  */
-const VERSION = 'v9';
+const VERSION = 'v10';
 const SHELL_CACHE = 'studyhub-' + VERSION;
 const FONT_CACHE  = 'studyhub-fonts';          // unversioned: fonts are immutable
 const MAT_CACHE   = 'studyhub-materials';      // ciphertext; survives shell updates

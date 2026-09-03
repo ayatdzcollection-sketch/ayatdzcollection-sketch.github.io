@@ -18,8 +18,8 @@
         {
           "id": "fraser-ch1-2",
           "title": "Fraser Ch 1-2: reading quiz prep",
-          "blurb": "For you tab that picks the next step, a fresh 10-question multiple-choice quiz each time (5 per chapter, excerpt-based, bank of 103), a typed recall drill, the written set, a collapsible guide, and printable sheets.",
-          "tags": ["fraser", "reading-quiz", "multiple-choice", "recall", "chapters-1-2"],
+          "blurb": "For you tab that picks the next step, a rotating 10-question quiz (5 per chapter, some on excerpts) drawn from a bank of 103, and 106 names learned in groups: shown, picked out of four, then written. Both are scheduled with FSRS.",
+          "tags": ["fraser", "reading-quiz", "multiple-choice", "spaced-repetition", "chapters-1-2"],
           "added": "2026-09-02",
           "sort": 20
         }
