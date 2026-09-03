@@ -18,7 +18,7 @@
         {
           "id": "fraser-ch1-2",
           "title": "Fraser Ch 1-2: reading quiz prep",
-          "blurb": "For you tab that picks the next step, a rotating 10-question quiz (5 per chapter, some on excerpts) drawn from a bank of 103, and 106 names learned in groups: shown, picked out of four, then written. Both are scheduled with FSRS.",
+          "blurb": "For you tab with an endless feed that lays one card down at a time, questions and names mixed and marked as you answer, a rotating 10-question quiz (5 per chapter, some on excerpts) drawn from a bank of 103, and 106 names learned in groups: shown, picked out of four, then written.",
           "tags": ["fraser", "reading-quiz", "multiple-choice", "spaced-repetition", "chapters-1-2"],
           "added": "2026-09-02",
           "sort": 20
@@ -33,7 +33,7 @@
         {
           "id": "periodic-table",
           "title": "The Elements: symbol and name",
-          "blurb": "Sets of ten drilled both ways, on a live periodic table, with a settings page and a mastery rule that wants evidence over several days.",
+          "blurb": "Sets of ten drilled both ways on a live periodic table, a For you feed that hands you one card at a time and opens new elements as it goes, a settings page, and a mastery rule that wants evidence over several days.",
           "tags": ["elements", "quiz", "spaced-repetition", "periodic-table", "customisable"],
           "added": "2026-08-30",
           "sort": 10
@@ -48,7 +48,7 @@
         {
           "id": "u1-sequences",
           "title": "Unit 1 Sequences: checkpoint prep",
-          "blurb": "For you tab, guide by skill, focused instant-feedback drill, the 14-problem practice set in the teacher's style, timed mock quizzes with fresh numbers, and printable sheets with separate keys.",
+          "blurb": "For you tab with an endless feed of single questions on fresh numbers, picked by weakest skill and stopped when you miss the same one three times running, plus the guide by skill, a focused drill, the 14-problem practice set in the teacher's style, timed mock quizzes, and printable sheets with separate keys.",
           "tags": ["sequences", "arithmetic", "geometric", "recursive", "practice-test", "mock-quiz", "drill", "checkpoint"],
           "added": "2026-09-02",
           "sort": 10,

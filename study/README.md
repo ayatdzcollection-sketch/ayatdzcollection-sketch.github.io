@@ -118,6 +118,47 @@ shell change, so bump `VERSION` in `sw.js` in the same commit.
 
 ---
 
+## The For you feed
+
+Every material with a **For you** tab ends that tab with a feed: a column of single cards,
+marked the moment you answer, where the next card is not chosen until the last one has been
+graded. It is a third door onto the scheduler that material already has, never a second
+scheduler, so a run in the feed moves the same numbers a drill session does.
+
+The shape is deliberately the same in all three, and worth keeping that way.
+
+- **Debts first.** A card you miss is queued to come back a few cards later. New material is
+  queued up its ladder: shown, then recognised out of four, then produced cold. Queued
+  returns outrank the scoring below, so the ladder cannot be starved by whatever happens to
+  look urgent.
+- **Then urgency.** How far the model's forecast has fallen under the retention target.
+  Something never asked enters at a fixed value deliberately placed between *forgetting*
+  and *holding*: unseen material beats material that is holding, and loses to material you
+  are actively forgetting.
+- **Minus interleaving.** Repeating a chapter, a name group, an element, a direction or a
+  skill costs points on a sliding scale across the last two to four cards. Prices, not
+  prohibitions, so a genuinely urgent card still comes through one.
+- **Soft guards.** No card twice inside a window, and a cap on how much new material may
+  arrive in a row. Both give way when nothing else qualifies. A guard that can starve the
+  feed is worse than no guard: it makes the picker fall back on the card from four minutes
+  ago while two hundred unseen ones sit there.
+- **A breather every ten answers**, with the tally and a choice to take ten more or stop. A
+  feed that never stops is one you scroll rather than answer.
+- **Nothing is persisted but the reviews.** The column is in memory. Close the page and the
+  cards are gone; what you taught the scheduler is not.
+
+Every card carries the reason it was picked — *Forecast 62% · under the 90% line*, *Never
+asked*, *Missed a few cards back*, *Met once · now write it cold*. That line is the feature.
+A scheduler that cannot say why it chose something is indistinguishable from a shuffle, and
+this one can afford to say.
+
+Algebra 2 adds one rule the others do not need, because its cards are generated rather than
+drawn from a bank: three misses in a row on one skill and the feed stops asking, says so,
+and points at the guide section for it. A fourth attempt at a skill you have failed three
+times is not spaced repetition, it is just failing again.
+
+---
+
 ## Sync
 
 Local-first. Every write lands in `localStorage` immediately and nothing waits on the
