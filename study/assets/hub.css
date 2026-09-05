@@ -54,6 +54,22 @@ body{
   color:var(--accent);border-radius:2px;font-family:var(--mono);font-size:9.5px;
   letter-spacing:.14em;text-transform:uppercase;vertical-align:2px}
 
+/* The header status line. An app should say where it stands without being asked, and the
+   sync state used to live inside a collapsed panel: the only way to learn whether your work
+   had reached the server was to go looking for it. It reads as one quiet line, and tapping
+   it opens the panel it summarises. */
+.syncstrip{display:flex;align-items:center;gap:8px;width:100%;min-height:36px;
+  margin:4px 0 0;padding:6px 0;border:0;background:none;color:var(--ink3);
+  font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+  text-align:left;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.syncstrip:hover .striptext,.syncstrip:focus-visible .striptext{color:var(--ink2)}
+.striptext{flex:0 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stripbar{flex:1 1 auto;min-width:36px;max-width:180px;height:2px;
+  background:var(--rule2);border-radius:2px;overflow:hidden}
+.stripbar-fill{display:block;height:100%;width:0;background:var(--accent);
+  transition:width .25s ease}
+@media (prefers-reduced-motion:reduce){ .stripbar-fill{transition:none} }
+
 .sheet{max-width:720px;margin:0 auto;
   padding:0 calc(20px + env(safe-area-inset-left,0px)) 0 calc(20px + env(safe-area-inset-right,0px))}
 
@@ -148,6 +164,15 @@ body{
 .dot.off{background:var(--ink3)} .dot.bad{background:var(--bad)}
 .panelbody{padding:4px 4px 24px}
 .statusline{margin:0 0 6px;font-size:15px;color:var(--ink2)}
+
+/* Sync progress. Three steps, so the bar moves in thirds and the label underneath says
+   which step in words: the sentence is the measurement, the bar is only the picture of it. */
+.syncbar{margin:0 0 10px}
+.syncbar-track{height:3px;background:var(--rule2);border-radius:2px;overflow:hidden}
+.syncbar-fill{height:100%;width:0;background:var(--accent);transition:width .25s ease}
+.syncbar-label{margin:6px 0 0;font-family:var(--mono);font-size:11px;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--ink3)}
+@media (prefers-reduced-motion:reduce){ .syncbar-fill{transition:none} }
 .block{margin-top:20px}
 .note{margin:4px 0 10px;font-size:14px;color:var(--ink2)}
 .lbl{margin:10px 0 6px;font-family:var(--mono);font-size:11px;letter-spacing:.1em;

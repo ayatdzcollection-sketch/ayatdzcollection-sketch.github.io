@@ -312,8 +312,82 @@ function relTime(ms) {
   return d + ' day' + (d === 1 ? '' : 's') + ' ago';
 }
 
+/* A sync is three steps, not a stream, so there is no fraction of it to measure and the
+   step number is what gets reported. The review queue is the one genuinely countable thing
+   here: a known number of events going up 200 at a time. */
+function paintProgress(st) {
+  var wrap = $('syncbar');
+  if (!wrap) return;
+  var pct = null, text = '';
+
+  if (st.progress) {
+    pct = Math.round(st.progress.index / st.progress.of * 100);
+    text = 'Step ' + st.progress.index + ' of ' + st.progress.of + ' · ' + st.progress.label;
+    if (st.progress.attempt > 1) {
+      text += ' · try ' + st.progress.attempt + ' of ' + st.progress.attempts;
+    }
+  } else if (st.telemetry && st.telemetry.total) {
+    pct = Math.round(st.telemetry.sent / st.telemetry.total * 100);
+    text = 'Sending review logs · ' + st.telemetry.sent + ' of ' + st.telemetry.total;
+  }
+
+  if (pct === null) { wrap.hidden = true; return; }
+  wrap.hidden = false;
+  $('syncbarfill').style.width = pct + '%';
+  $('syncbarlabel').textContent = text;
+  wrap.setAttribute('aria-valuenow', String(pct));
+  wrap.setAttribute('aria-valuetext', text);
+}
+
+/* The one line in the header, always on.
+ *
+ * Everything it says was already known to the page, but it lived inside a panel that is
+ * shut by default, so the answer to "did my work actually go up, and when" was three taps
+ * away. This is the same state as a sentence, and it stays legible while a sync runs
+ * because the step bar is mirrored into it. */
+function paintStrip(st) {
+  var strip = $('syncstrip');
+  if (!strip) return;
+  var dot = $('stripdot'), bar = $('stripbar');
+  var msg;
+
+  dot.className = 'dot';
+  if (!st.configured) {
+    dot.classList.add('off'); msg = 'Saved on this device';
+  } else if (!st.paired) {
+    dot.classList.add('off'); msg = 'Saved here · not paired';
+  } else if (st.state === 'syncing') {
+    dot.classList.add('busy');
+    msg = st.progress
+      ? 'Syncing · step ' + st.progress.index + ' of ' + st.progress.of
+      : 'Syncing';
+  } else if (st.state === 'offline') {
+    dot.classList.add('off'); msg = 'No connection · saved here';
+  } else if (st.state === 'error') {
+    dot.classList.add('bad'); msg = 'Sync problem · will retry';
+  } else {
+    dot.classList.add('ok');
+    msg = st.lastSyncedAt ? 'Synced ' + relTime(st.lastSyncedAt) : 'Paired · not synced yet';
+    if (st.dirty) msg += ' · changes pending';
+  }
+  $('striptext').textContent = msg;
+
+  /* The same measurements the panel shows: sync steps first, then the review queue, which
+     is the one genuinely countable thing here. */
+  var pct = null;
+  if (st.progress) pct = Math.round(st.progress.index / st.progress.of * 100);
+  else if (st.telemetry && st.telemetry.total) {
+    pct = Math.round(st.telemetry.sent / st.telemetry.total * 100);
+  }
+  if (pct === null) { bar.hidden = true; return; }
+  bar.hidden = false;
+  $('stripbarfill').style.width = pct + '%';
+}
+
 function paintStatus(st) {
   var dot = $('syncdot'), line = $('statusline'), sum = $('syncsum');
+  paintProgress(st);
+  paintStrip(st);
   dot.className = 'dot';
   if (!st.configured) {
     dot.classList.add('off'); sum.textContent = 'local only';
@@ -366,13 +440,30 @@ function doPair() {
 }
 
 function initSyncPanel() {
+  /* Wired before the guard below: the header line has to open the panel even on a device
+     where sync.js failed to load, or tapping it would do nothing at all. */
+  var strip = $('syncstrip');
+  if (strip) strip.addEventListener('click', function () {
+    var panel = $('syncpanel');
+    panel.open = true;
+    panel.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  });
+
   if (!window.StudyStore) {
     $('statusline').textContent = 'The sync module did not load. Materials still save on this device.';
     $('syncsum').textContent = 'unavailable';
+    $('striptext').textContent = 'Saved on this device';
     return;
   }
   StudyStore.on('status', paintStatus);
-  setInterval(function () { paintStatus(StudyStore.status()); }, 30000);
+  /* "Synced 2 minutes ago" has to keep being true while you sit there, so the line is
+     repainted on a timer as well as on every state change. */
+  setInterval(function () { paintStatus(StudyStore.status()); }, 20000);
+  /* And immediately on coming back to the app, so a phone picked up after an hour is not
+     showing the sentence it went to sleep with. */
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible') paintStatus(StudyStore.status());
+  });
 
   $('makecode').addEventListener('click', function () {
     var code = StudyStore.createPairCode();

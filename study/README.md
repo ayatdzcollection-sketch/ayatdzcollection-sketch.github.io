@@ -206,6 +206,13 @@ the bar is only a picture of them.
 The review-log queue is the opposite case, and genuinely countable, so it reports a real
 `sent of total` while it drains.
 
+The same state also reads as one line in the header, always visible, because the panel is
+shut by default and "did my work actually reach the server, and when" should not be three
+taps away. It says when the last sync landed, whether anything is still pending, and which
+step is running while one is in flight. It re-times itself every twenty seconds and repaints
+on becoming visible, so a phone picked up after an hour is not showing the sentence it went
+to sleep with. Tapping it opens the panel it summarises.
+
 ```bash
 node --test "study/tests/*.test.mjs"
 ```

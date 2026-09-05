@@ -23,6 +23,13 @@
       <p class="eyebrow">Study hub</p>
       <h1 class="wordmark">Materials<span class="rolechip" id="rolechip" hidden></span></h1>
       <p class="sub" id="subline">Loading…</p>
+      <button class="syncstrip" id="syncstrip" type="button" title="Open sync and backup">
+        <span class="dot" id="stripdot" aria-hidden="true"></span>
+        <span class="striptext" id="striptext">Checking…</span>
+        <span class="stripbar" id="stripbar" hidden aria-hidden="true">
+          <span class="stripbar-fill" id="stripbarfill"></span>
+        </span>
+      </button>
     </div>
   </header>
 
@@ -52,6 +59,12 @@
       </summary>
       <div class="panelbody">
         <p class="statusline" id="statusline">Checking…</p>
+
+        <div class="syncbar" id="syncbar" hidden role="progressbar"
+             aria-valuemin="0" aria-valuemax="100" aria-label="Sync progress">
+          <div class="syncbar-track"><div class="syncbar-fill" id="syncbarfill"></div></div>
+          <p class="syncbar-label" id="syncbarlabel"></p>
+        </div>
 
         <section class="block" id="pairblock">
           <h3 class="rubric">Pairing</h3>

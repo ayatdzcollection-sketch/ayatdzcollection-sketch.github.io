@@ -653,6 +653,38 @@ function emit(evt, payload) {
   }
 }
 
+/* What a sync is actually doing, so the panel can report real progress.
+ *
+ * A sync is not a stream. It is a short fixed sequence: read the row on the server, merge
+ * it with what is on this device, send the result back. So the honest thing to publish is
+ * which of those three steps is running, and there is no percentage of anything to measure
+ * underneath it. The bar in the hub is drawn from the step number, and the label says
+ * "step 2 of 3" in words so the number, not the width, is what the reader trusts.
+ *
+ * The review-log queue is the opposite case and genuinely countable: a known number of
+ * events, sent 200 at a time, so "420 of 900" is a measurement. */
+var SYNC_STEPS = ['pull', 'merge', 'push'];
+var SYNC_STEP_LABELS = {
+  pull:  'Reading the server copy',
+  merge: 'Merging with this device',
+  push:  'Sending your changes'
+};
+var progress = null;            // sync steps, or null when no sync is running
+var telemetryProgress = null;   // { sent, total } while the review queue is draining
+
+function setProgress(step, attempt) {
+  var i = SYNC_STEPS.indexOf(step);
+  progress = (i === -1) ? null : {
+    step: step,
+    index: i + 1,
+    of: SYNC_STEPS.length,
+    label: SYNC_STEP_LABELS[step] || '',
+    attempt: attempt || 1,
+    attempts: MAX_SYNC_ATTEMPTS
+  };
+  emit('status', statusSnapshot());
+}
+
 function statusSnapshot() {
   var meta = readMeta();
   return {
@@ -662,13 +694,18 @@ function statusSnapshot() {
     codeDisplay: meta.pairCode ? formatCode(meta.pairCode) : null,
     configured: !!(SUPABASE_URL && SUPABASE_ANON_KEY),
     lastSyncedAt: meta.lastSyncedAt,
-    dirty: isDirty()
+    dirty: isDirty(),
+    progress: progress,
+    telemetry: telemetryProgress
   };
 }
 
 function setState(next, message) {
   state.state = next;
   state.message = message || '';
+  /* Leaving the syncing state ends the sequence, whichever way it ended, so the steps go
+   * with it. Forgetting this would strand a half-drawn bar on screen after a failure. */
+  if (next !== 'syncing') progress = null;
   emit('status', statusSnapshot());
 }
 
@@ -759,11 +796,13 @@ function syncNow(reason) {
 
   function attempt(n, known) {
     // known = server row we already hold ({payload, updated_at}) or null to pull fresh.
+    setProgress('pull', n + 1);
     var step = known ? Promise.resolve(known) : rpcPull(code).then(function (r) {
       return (r && r.found) ? { payload: r.payload, updated_at: r.updated_at } : null;
     });
 
     return step.then(function (remote) {
+      setProgress('merge', n + 1);
       var epoch = dirtyEpoch;
       var local = buildEnvelope();
       /* The server row is cleaned of anything that should never have been in it, so the
@@ -783,6 +822,7 @@ function syncNow(reason) {
 
       if (remote && deepEqual(merged, remote.payload)) return settled(remote.updated_at);
 
+      setProgress('push', n + 1);
       return rpcPush(code, merged, remote ? remote.updated_at : null).then(function (res) {
         if (res && res.ok) return settled(res.updated_at);
         // Someone pushed between our pull and our push. The server handed back the
@@ -1176,30 +1216,59 @@ function telemetryPendingCount() {
   return telemetryRead().length + telemetryPending.length;
 }
 
+/* Sends the whole queue, a batch at a time, and reports how far through it is.
+ *
+ * It used to send one batch and stop until something asked again, which is five minutes
+ * away at worst. A device that built up a backlog while the server had no ingest function
+ * would then have drained 200 events per five minutes: a full queue of a thousand needed
+ * the best part of an hour with the tab open. Now it keeps going while it is working. */
 function telemetryFlush(useKeepalive) {
   if (telemetryBusy || telemetryUnavailable || !telemetryEnabled()) return Promise.resolve(0);
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return Promise.resolve(0);
   if (isOffline()) return Promise.resolve(0);
   telemetryPersistNow();
-  var q = telemetryRead();
-  if (!q.length) return Promise.resolve(0);
-  var batch = q.slice(0, TELEMETRY_BATCH);
+  var total = telemetryRead().length;
+  if (!total) return Promise.resolve(0);
+
   telemetryBusy = true;
-  return rpc('telemetry_ingest', { p_install: installId(), p_events: batch }, !!useKeepalive)
-    .then(function () {
-      /* Remove exactly what was sent from whatever storage holds now. Reviews recorded while
-       * the request was in flight, here or in another tab, stay in the queue. */
-      var sent = {};
-      for (var i = 0; i < batch.length; i++) sent[telemetryKey(batch[i])] = true;
-      telemetryWrite(telemetryRead().filter(function (e) { return !sent[telemetryKey(e)]; }));
-      telemetryBusy = false;
-      return batch.length;
-    })
-    .catch(function (err) {
-      telemetryBusy = false;
-      if (err && (err.status === 404 || err.status === 400)) telemetryUnavailable = true;
-      return 0;   // the queue is left alone, so nothing is lost by a failed send
-    });
+  telemetryProgress = { sent: 0, total: total };
+  emit('status', statusSnapshot());
+
+  var MAX_ROUNDS = Math.ceil(TELEMETRY_MAX / TELEMETRY_BATCH) + 2;   // belt and braces
+
+  function round(sent, n) {
+    var q = telemetryRead();
+    if (!q.length || n >= MAX_ROUNDS) return Promise.resolve(sent);
+    var batch = q.slice(0, TELEMETRY_BATCH);
+    return rpc('telemetry_ingest', { p_install: installId(), p_events: batch }, !!useKeepalive)
+      .then(function () {
+        /* Remove exactly what was sent from whatever storage holds now. Reviews recorded
+         * while the request was in flight, here or in another tab, stay in the queue. */
+        var done = {};
+        for (var i = 0; i < batch.length; i++) done[telemetryKey(batch[i])] = true;
+        telemetryWrite(telemetryRead().filter(function (e) { return !done[telemetryKey(e)]; }));
+        sent += batch.length;
+        telemetryProgress = { sent: sent, total: Math.max(total, sent) };
+        emit('status', statusSnapshot());
+        /* A page that is going away gets one request and no more: keepalive buys a single
+         * send past the unload, not a conversation. The rest waits for the next visit. */
+        if (useKeepalive) return sent;
+        return round(sent, n + 1);
+      });
+  }
+
+  function finish(n) {
+    telemetryBusy = false;
+    telemetryProgress = null;
+    emit('status', statusSnapshot());
+    return n;
+  }
+
+  return round(0, 0).then(finish).catch(function (err) {
+    if (err && (err.status === 404 || err.status === 400)) telemetryUnavailable = true;
+    finish(0);
+    return 0;   // whatever is left is left alone, so nothing is lost by a failed send
+  });
 }
 
 function telemetryStart() {
