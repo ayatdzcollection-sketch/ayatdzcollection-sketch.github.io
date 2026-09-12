@@ -34,6 +34,14 @@
           "retired": true
         },
         {
+          "id": "period1-2-test",
+          "title": "Periods 1 and 2: test prep",
+          "blurb": "For the test on Thursday 17 September: 26 stimulus based multiple choice questions in sets and one short answer question. Twenty three sources the way the exam gives them, excerpts, tables and a map, each with two to four questions that refer to it; a feed that hands you one question with its source and says why it was picked; a mock test built by sets, eleven from Period 1 and fifteen from Period 2, timed, then an SAQ in three parts written and marked against a model; eight SAQ prompts to practise; the seventeen arguments of chapters 1 to 4 as a review; notecards of every miss; and a printable test with the sources on the page and the key on its own.",
+          "tags": ["periods-1-2", "stimulus-based", "sbmcq", "saq", "test", "fraser"],
+          "added": "2026-09-12",
+          "sort": 35
+        },
+        {
           "id": "fraser-review",
           "title": "Fraser Ch 1-4: full study",
           "blurb": "The one APUSH material for chapters 1 to 4 now that both chapter quizzes are done, kept alive for the extra credit later quizzes carry. A full guide in seventeen sections, chapters 1 and 2 rewritten to match chapters 3 and 4, each with its argument, a timeline, cause and effect to cover and recite, what changed for whom and a question at the foot. 301 questions and 138 names, the real chapters 1 and 2 quiz among them. Twenty-card errands for any one chapter, mock quizzes across all four with three EXCEPT questions, Learn, and Cram. Progress from the two chapter materials carries over.",
