@@ -12,7 +12,8 @@
 -- What is protected, and what is not
 --   * Protected: the contents of every encrypted material.
 --   * NOT protected: which material ids exist, file sizes, and anything that was ever
---     published in plaintext (including in this repository's git history).
+--     published in plaintext (the repository history was reset on 2026-09-12, but earlier
+--     copies may survive outside it).
 --   * Once a device unlocks a material its key is cached locally so it works offline.
 --     Anyone with that unlocked device has that material.
 --

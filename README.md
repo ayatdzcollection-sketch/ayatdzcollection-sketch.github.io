@@ -24,7 +24,8 @@ prompt cannot stop anyone reaching a URL. What protects the study materials is t
 are published as AES-256-GCM ciphertext and the key is released only to a signed-in
 browser. The prompt on this page just decides whether to show you the list.
 
-Do not put anything in this repository that would be damaging if it leaked. Files that
-were ever committed in plaintext remain in the git history.
+Do not put anything in this repository that would be damaging if it leaked. Git history is
+permanent in practice: anything committed can be copied before it is removed. The history was
+reset to a single commit on 2026-09-12; treat every commit from here on as public forever.
 
 Setup and day-to-day instructions live in [study/README.md](study/README.md).

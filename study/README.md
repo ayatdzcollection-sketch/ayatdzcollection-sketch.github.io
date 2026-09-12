@@ -45,7 +45,8 @@ already gets. It is there if you ever want to close the hub again.
 
 - **Anything not locked.** That is the point: the default is open.
 - **Anything published in plaintext before encryption existed.** The fifty-states quiz was
-  served in the clear for a while and remains in this repository's git history. Locking a
+  served in the clear for a while. The git history that held it was reset on 2026-09-12, but
+  copies made before then (caches, archives, anyone who cloned) may survive. Locking a
   material now cannot un-publish what was already out.
 - **A device that already opened a locked item.** Its key is cached there so it works
   offline. Signing out clears the cached keys. The session, the role and the cached keys
@@ -147,7 +148,7 @@ The shape is deliberately the same in all three, and worth keeping that way.
 - **Nothing is persisted but the reviews.** The column is in memory. Close the page and the
   cards are gone; what you taught the scheduler is not.
 
-Every card carries the reason it was picked — *Forecast 62% · under the 90% line*, *Never
+Every card carries the reason it was picked: *Forecast 62% · under the 90% line*, *Never
 asked*, *Missed a few cards back*, *Met once · now write it cold*. That line is the feature.
 A scheduler that cannot say why it chose something is indistinguishable from a shuffle, and
 this one can afford to say.
