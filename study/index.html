@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="light only">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#F2F1ED">
+<meta name="robots" content="noindex,nofollow">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Study">
+<title>Study Hub</title>
+<link rel="manifest" href="assets/app.webmanifest">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/icon.svg">
+<link rel="stylesheet" href="assets/hub.css">
+</head>
+<body>
+
+<div id="app">
+
+  <header class="collar">
+    <div class="collar-in">
+      <p class="eyebrow">Study hub</p>
+      <h1 class="wordmark">Materials<span class="rolechip" id="rolechip" hidden></span></h1>
+      <p class="sub" id="subline">Loading…</p>
+      <button class="syncstrip" id="syncstrip" type="button" title="Open sync and backup">
+        <span class="dot" id="stripdot" aria-hidden="true"></span>
+        <span class="striptext" id="striptext">Checking…</span>
+        <span class="stripbar" id="stripbar" hidden aria-hidden="true">
+          <span class="stripbar-fill" id="stripbarfill"></span>
+        </span>
+      </button>
+    </div>
+  </header>
+
+  <main class="sheet">
+
+    <div class="findrow">
+      <input id="filter" type="search" placeholder="Filter by title, tag, or word"
+             autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+             aria-label="Filter materials">
+    </div>
+
+    <section id="recentwrap" class="recent" hidden>
+      <h2 class="rubric">Recently opened</h2>
+      <div id="recent" class="chips"></div>
+    </section>
+
+    <div id="err" class="err" hidden></div>
+    <div id="classes" class="classes" aria-live="polite"></div>
+    <p id="noresults" class="empty" hidden>Nothing matches that.</p>
+
+    <!-- ---- sync ---- -->
+    <details id="syncpanel" class="panel">
+      <summary>
+        <span class="dot" id="syncdot" aria-hidden="true"></span>
+        <span class="sumtext">Sync &amp; backup</span>
+        <span class="sumstate" id="syncsum">local only</span>
+      </summary>
+      <div class="panelbody">
+        <p class="statusline" id="statusline">Checking…</p>
+
+        <div class="syncbar" id="syncbar" hidden role="progressbar"
+             aria-valuemin="0" aria-valuemax="100" aria-label="Sync progress">
+          <div class="syncbar-track"><div class="syncbar-fill" id="syncbarfill"></div></div>
+          <p class="syncbar-label" id="syncbarlabel"></p>
+        </div>
+
+        <section class="block" id="pairblock">
+          <h3 class="rubric">Pairing</h3>
+          <p class="note" id="pairnote"></p>
+          <div id="unpaired">
+            <button class="btn" id="makecode" type="button">Create a pairing code</button>
+            <div class="joiner">
+              <label class="lbl" for="paircode">or enter the code from your other device</label>
+              <div class="row">
+                <input id="paircode" type="text" placeholder="K7Q2-9MXR-4B8T"
+                       autocomplete="off" autocorrect="off" autocapitalize="characters"
+                       spellcheck="false" maxlength="20">
+                <button class="btn" id="dopair" type="button">Pair</button>
+              </div>
+            </div>
+            <p class="err-inline" id="pairerr" hidden></p>
+          </div>
+          <div id="codeout" hidden>
+            <p class="lbl">On your other device, open this hub and enter:</p>
+            <p class="bigcode" id="bigcode"></p>
+            <div class="qrwrap"><div id="qr"></div></div>
+            <p class="note">Or point that device's camera at the square.</p>
+            <button class="btn ghost" id="codedone" type="button">Done</button>
+          </div>
+          <div id="paired" hidden>
+            <p class="lbl">Paired with code</p>
+            <p class="bigcode" id="maskedcode"></p>
+            <div class="row wrap">
+              <button class="btn ghost" id="reveal" type="button">Show code</button>
+              <button class="btn ghost" id="showqr" type="button">Show square</button>
+              <button class="btn ghost" id="syncnow" type="button">Sync now</button>
+              <button class="btn ghost danger" id="unpair" type="button">Unpair</button>
+            </div>
+            <div class="qrwrap" id="pairedqrwrap" hidden><div id="pairedqr"></div></div>
+          </div>
+        </section>
+
+        <section class="block">
+          <h3 class="rubric">Copy-and-paste backup</h3>
+          <p class="note">Works with no network at all. Import merges; it never wipes what is here.</p>
+          <div class="row wrap">
+            <button class="btn ghost" id="doexport" type="button">Export</button>
+            <button class="btn ghost" id="doimport" type="button">Import</button>
+          </div>
+          <textarea id="iobox" rows="4" spellcheck="false" hidden
+                    placeholder="Paste a backup code here, then press Preview"></textarea>
+          <div class="row wrap" id="iorow" hidden>
+            <button class="btn ghost" id="copyout" type="button" hidden>Copy</button>
+            <button class="btn" id="preview" type="button" hidden>Preview import</button>
+          </div>
+          <div id="importpreview" class="preview" hidden></div>
+        </section>
+
+        <section class="block">
+          <h3 class="rubric">Offline copy</h3>
+          <p class="note" id="swnote">Checking the offline cache…</p>
+          <div class="row wrap">
+            <button class="btn" id="doupdate" type="button" hidden>Update now</button>
+            <button class="btn ghost" id="clearcache" type="button">Clear cache &amp; reload</button>
+          </div>
+        </section>
+
+        <section class="block">
+          <h3 class="rubric">Help improve the scheduler</h3>
+          <p class="note">Every material here schedules you with a memory model, and the only
+            way to tell whether it is any good is to set what it predicted against what
+            actually happened. With this on, each review sends an anonymous line: which
+            question was asked, the grade, how long you took, and the model's own numbers at
+            that moment. It never sends your name, your codes, or anything you typed, and
+            reviews wait on this device until there is a connection.</p>
+          <div class="row wrap">
+            <label class="row" style="gap:8px;align-items:center;cursor:pointer">
+              <input type="checkbox" id="telon" checked>
+              <span id="telstate">On</span>
+            </label>
+          </div>
+          <p class="note" id="telnote"></p>
+        </section>
+
+      </div>
+    </details>
+
+    <!-- ---- owner sign-in ---- -->
+    <details id="ownerpanel" class="panel">
+      <summary>
+        <span class="dot off" id="ownerdot" aria-hidden="true"></span>
+        <span class="sumtext">Owner</span>
+        <span class="sumstate" id="ownersum">signed out</span>
+      </summary>
+      <div class="panelbody">
+        <p class="note" id="ownernote">Sign in with the admin code to hide or lock
+           lock or retire materials, change codes, or open anything you have locked. Studying needs
+           no code at all.</p>
+        <form id="ownerform">
+          <label class="lbl" for="ocode">Admin code</label>
+          <div class="row">
+            <input id="ocode" type="password" autocomplete="current-password"
+                   autocorrect="off" autocapitalize="characters" spellcheck="false"
+                   enterkeyhint="go" placeholder="XXXX-XXXX-XXXX-XXXX">
+            <button class="btn ghost" type="button" id="peek">Show</button>
+            <button class="btn" type="submit" id="ownerbtn">Sign in</button>
+          </div>
+          <p class="err-inline" id="ownermsg" hidden></p>
+        </form>
+        <div id="ownerout" hidden>
+          <p class="note" id="whonote"></p>
+          <button class="btn ghost danger" id="signout" type="button">Sign out</button>
+        </div>
+      </div>
+    </details>
+
+    <!-- ---- admin ---- -->
+    <details id="adminpanel" class="panel" hidden>
+      <summary>
+        <span class="dot ok" aria-hidden="true"></span>
+        <span class="sumtext">Admin</span>
+        <span class="sumstate">controls</span>
+      </summary>
+      <div class="panelbody">
+
+        <section class="block">
+          <h3 class="rubric">Visibility &amp; locks</h3>
+          <p class="note"><b>Hidden</b> keeps an item off the list for viewers.
+             <b>Locked</b> also withholds its decryption key, which is what actually
+             stops a viewer from reading it. <b>Retired</b> keeps it openable but moves it
+             under a collapsed heading at the bottom: for an older quiz or assignment.</p>
+          <div id="adminitems"></div>
+        </section>
+
+        <section class="block">
+          <h3 class="rubric">Change a code</h3>
+          <p class="note">Changing a code signs out every other device using it. At least
+             10 characters; use something long.</p>
+          <div class="row wrap">
+            <button class="tog" id="roleAdmin" aria-pressed="true" type="button">Admin</button>
+            <button class="tog" id="roleViewer" aria-pressed="false" type="button">Viewer</button>
+          </div>
+          <div class="row" style="margin-top:10px">
+            <input id="newcode" type="password" autocomplete="new-password"
+                   placeholder="New code" spellcheck="false">
+            <button class="btn" id="savecode" type="button">Set</button>
+          </div>
+          <p class="err-inline" id="codemsg" hidden></p>
+        </section>
+
+        <section class="block">
+          <h3 class="rubric">Sessions</h3>
+          <p class="note" id="sessnote"></p>
+          <button class="btn ghost danger" id="revokeothers" type="button">Sign out every other device</button>
+        </section>
+
+        <div class="warnbox">
+          Anything published before encryption was switched on may already be copied or
+          archived elsewhere. Locking it now hides it going forward; it cannot un-publish it.
+        </div>
+      </div>
+    </details>
+
+    <footer class="foot">
+      <p>Open to anyone with the link. Locked items need the owner’s code.</p>
+    </footer>
+
+  </main>
+</div>
+
+<script src="assets/auth.js"></script>
+<script src="assets/sync.js"></script>
+<script src="assets/hub.js"></script>
+</body>
+</html>

@@ -1,0 +1,101 @@
+{
+  "_comment": "Source list for the publisher. Edit this, put the HTML in src/m/<class>/, then run: node study/tools/publish.mjs. Hidden/locked flags are not here: those are live switches in the hub's admin panel.",
+  "classes": [
+    {
+      "id": "apush",
+      "name": "AP US History",
+      "term": "2026-27",
+      "materials": [
+        {
+          "id": "fifty-states",
+          "title": "The Fifty States: name and locate",
+          "blurb": "Numbered blank-map quiz with spaced repetition and a readiness score.",
+          "tags": ["map", "quiz", "spaced-repetition"],
+          "added": "2026-08-30",
+          "sort": 10,
+          "retired": true
+        },
+        {
+          "id": "fraser-ch1-2",
+          "title": "Fraser Ch 1-2: reading quiz prep",
+          "blurb": "Built for a 10-question general knowledge check, five from each chapter, no passages. A guide that covers both chapters in full, with a reading pass to suit the time you have, cover-and-recite tables and a question at the foot of every section; a rotating quiz drawn from 119 questions, six of every ten on cause, effect and significance; a full-screen Practice tab that hands you one card at a time, answerable from the number keys; and 62 names that matter, learned in groups.",
+          "tags": ["fraser", "reading-quiz", "cause-and-effect", "spaced-repetition", "chapters-1-2"],
+          "added": "2026-09-02",
+          "sort": 20,
+          "retired": true
+        },
+        {
+          "id": "fraser-ch3-4",
+          "title": "Fraser Ch 3-4: reading quiz prep",
+          "blurb": "Calibrated against the real chapters 1 and 2 quiz: every mock quiz has three EXCEPT questions, and 26 are written from the chapter Quick Reviews the teacher draws on. Learn works a set the Quizlet way, see it, pick it, then write it or answer it before the choices appear, with an order that adapts to how you are doing. Cram runs every concept question once, names skipped, fastest route first. Eight guide sections, notecards including everything you have missed, endless practice and the full quiz.",
+          "tags": ["fraser", "reading-quiz", "cause-and-effect", "except-questions", "spaced-repetition", "chapters-3-4", "learn-mode"],
+          "added": "2026-09-08",
+          "sort": 30,
+          "retired": true
+        },
+        {
+          "id": "fraser-review",
+          "title": "Fraser Ch 1-4: full study",
+          "blurb": "The one APUSH material for chapters 1 to 4 now that both chapter quizzes are done, kept alive for the extra credit later quizzes carry. A full guide in seventeen sections, chapters 1 and 2 rewritten to match chapters 3 and 4, each with its argument, a timeline, cause and effect to cover and recite, what changed for whom and a question at the foot. 301 questions and 138 names, the real chapters 1 and 2 quiz among them. Twenty-card errands for any one chapter, mock quizzes across all four with three EXCEPT questions, Learn, and Cram. Progress from the two chapter materials carries over.",
+          "tags": ["fraser", "cumulative", "full-study", "extra-credit", "spaced-repetition", "chapters-1-4", "learn-mode"],
+          "added": "2026-09-09",
+          "sort": 40
+        }
+      ]
+    },
+    {
+      "id": "chem",
+      "name": "Chemistry",
+      "term": "2026-27",
+      "materials": [
+        {
+          "id": "periodic-table",
+          "title": "The Elements: symbol and name",
+          "blurb": "Rebuilt around the table itself. Every cell carries its state at a glance, held, started, fading, untouched or out of range, with its family along the top edge, and on a phone a lens under the map shows the neighbours in true positions. The element range sits where you can see it and change it. Blocks show met and held as two bars that are never averaged. A drill card climbs three rungs, shown, picked out of four from real confusables, and written cold, with the keys 1 to 4, space and return. Board, Pairs and a keyed sixty-second Sprint, an endless feed, and settings that read as a summary.",
+          "tags": ["elements", "quiz", "spaced-repetition", "periodic-table", "customisable"],
+          "added": "2026-08-30",
+          "sort": 10
+        },
+        {
+          "id": "unit-measurement",
+          "title": "Measurement and calculations: unit test prep",
+          "blurb": "For the unit test on Tuesday 22 September. Worked problems on fresh numbers every time, twelve types from significant figures to factor-label conversions, with the working revealed a step at a time and the cancelled units struck through; a rule card for every topic with a drill under it; 110 concept cards; the teacher's own worked examples; notecards that keep every problem you miss; and a printable problem set with the key held back.",
+          "tags": ["measurement", "significant-figures", "scientific-notation", "dimensional-analysis", "density", "unit-test"],
+          "added": "2026-09-10",
+          "sort": 5
+        }
+      ]
+    },
+    {
+      "id": "math",
+      "name": "Algebra 2",
+      "term": "2026-27",
+      "materials": [
+        {
+          "id": "u1-sequences",
+          "title": "Unit 1 Sequences: checkpoint prep",
+          "blurb": "For you tab with an endless feed of single questions on fresh numbers, picked by weakest skill and stopped when you miss the same one three times running, plus the guide by skill, a focused drill, the 14-problem practice set in the teacher's style, timed mock quizzes, and printable sheets with separate keys.",
+          "tags": ["sequences", "arithmetic", "geometric", "recursive", "practice-test", "mock-quiz", "drill", "checkpoint"],
+          "added": "2026-09-02",
+          "sort": 10,
+          "retired": true
+        }
+      ]
+    },
+    {
+      "id": "acct",
+      "name": "Accounting 1",
+      "term": "2026-27",
+      "materials": [
+        {
+          "id": "topic1",
+          "title": "Topic 1: What is Accounting? Review quiz prep",
+          "blurb": "Built from the Topic 1 Review sheet and the Stukent lessons. A guide in four parts: the vocabulary as T-accounts, the career table with the course's own answers, market cap with a working calculator, and a card for each principle and assumption with the tell that gives it away. 115 questions including job and principle sorts, calculations judged as numbers, Learn, Cram, notecards and a 12-question mock quiz weighted like the sheet.",
+          "tags": ["accounting", "stukent", "review-quiz", "market-cap", "principles", "learn-mode"],
+          "added": "2026-09-11",
+          "sort": 10
+        }
+      ]
+    }
+  ]
+}
