@@ -523,3 +523,24 @@ test('acct1: the open tab and a Learn session stay on the device', () => {
   assert.equal(built.ns.acct1.ui, undefined, 'the tab and the Learn session are per device');
   assert.ok(built.ns.acct1.fsrs, 'the schedule does sync');
 });
+
+/* ---------- la10crucible and apushp12: the materials on the shared core ----------
+   Same { cards, quizDate, exams } shape, same per card rule; ui (tab, pace, open stretch)
+   is per device. */
+for (const ns of ['la10crucible', 'apushp12']) {
+  test(ns + ' fsrs merges per card', () => {
+    const a = env({ [ns + ':fsrs']: [{ cards: { 't1abc': rec(2, 5, 2200, 3, 0) }, quizDate: '2026-09-15', exams: [] }, 100] });
+    const b = env({ [ns + ':fsrs']: [{ cards: { 'q9xyz': rec(4, 4, 3300, 2, 0) }, quizDate: '2026-09-15', exams: [] }, 900] });
+    const cards = fsrsOf(merge(a, b), ns).cards;
+    assert.ok(cards['t1abc'], 'the card reviewed on one device survives');
+    assert.ok(cards['q9xyz'], 'the card reviewed on the other survives');
+  });
+  test(ns + ': ui stays on the device', () => {
+    const built = buildEnvelopeFrom({
+      [ns + ':ui']: { tab: 'home', pace: { tf: 3000 } },
+      [ns + ':fsrs']: { cards: { 't1abc': rec(3, 5, 100, 1, 0) }, quizDate: null, exams: [] }
+    }, { [ns + ':ui']: 5, [ns + ':fsrs']: 5 });
+    assert.equal(built.ns[ns].ui, undefined, 'ui is per device');
+    assert.ok(built.ns[ns].fsrs, 'the schedule does sync');
+  });
+}

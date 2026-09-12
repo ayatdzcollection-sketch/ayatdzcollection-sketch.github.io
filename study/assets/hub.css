@@ -25,6 +25,7 @@
 [data-subject="bio"]     { --accent:#3B6B45; }
 [data-subject="lang"]    { --accent:#7A3E52; }
 [data-subject="acct"]    { --accent:#27518C; }   /* accounting: ledger ink blue */
+[data-subject="la10"]    { --accent:#7A3E52; }   /* language arts: the plum lang already owned */
 
 *{box-sizing:border-box}
 /* The hidden attribute has to beat every display rule below, or a chip with

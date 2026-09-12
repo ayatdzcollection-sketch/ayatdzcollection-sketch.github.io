@@ -83,6 +83,21 @@
       ]
     },
     {
+      "id": "la10",
+      "name": "Language Arts 10",
+      "term": "2026-27",
+      "materials": [
+        {
+          "id": "crucible-1-2",
+          "title": "The Crucible, Acts 1 and 2: quiz prep",
+          "blurb": "For the quiz on Tuesday 15 September. The play in fourteen stretches with who is on stage, what happens, the lines that get quoted, and the teacher's study questions for both acts answered from the text. A feed of true or false and multiple choice cards that says why each one was picked and brings a miss back four cards later, the study questions as written cards, a People screen that draws who accuses whom act by act, a 20 question mock with a short answer, notecards of every miss, and a printable sheet with the key on its own page.",
+          "tags": ["crucible", "miller", "acts-1-2", "true-or-false", "study-questions", "quiz"],
+          "added": "2026-09-12",
+          "sort": 10
+        }
+      ]
+    },
+    {
       "id": "acct",
       "name": "Accounting 1",
       "term": "2026-27",

@@ -44,6 +44,8 @@ var SYNC_EXCLUDE = {
   'fraserall': ['ui'],
   'chemunit': ['ui'],
   'acct1': ['ui'],
+  'la10crucible': ['ui'],
+  'apushp12': ['ui'],
   /* 'telemetryQueue' and 'installId' are per device by definition: copying a queue between
    * devices would send the same reviews twice, and the install id is what keeps one
    * device's stream separable from another's without naming anybody. The 'telemetry'
@@ -302,6 +304,8 @@ var BUILTIN_MERGES = {
   'fraserall:fsrs': mergeCardsFsrs,
   'chemunit:fsrs': mergeCardsFsrs,             // chemistry unit test: problem types and concept cards
   'acct1:fsrs': mergeCardsFsrs,                // accounting 1, topic 1: the same card schedule
+  'la10crucible:fsrs': mergeCardsFsrs,         // The Crucible, acts 1 and 2: same record shape
+  'apushp12:fsrs': mergeCardsFsrs,             // APUSH period 1 and 2 test: same record shape
   'periodic:setsDone': mergeRegionsDone,     // legacy ids; kept so an old device loses nothing
   'periodic:started': mergeNumberSet,        // set-size-independent successor to setsDone
   'periodic:settings': mergeSettings,
