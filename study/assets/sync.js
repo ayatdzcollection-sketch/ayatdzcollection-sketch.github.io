@@ -26,7 +26,7 @@ var STORE_PREFIX = 'studyhub:';
 var META_KEY     = 'studyhub:meta';
 var DIRTY_KEY    = 'studyhub:dirty';
 var ENVELOPE_V   = 1;
-var PUSH_THROTTLE_MS = 25000;
+var PUSH_THROTTLE_MS = 12000;
 var MAX_SYNC_ATTEMPTS = 3;
 var KEEPALIVE_LIMIT = 60000;   // browsers cap keepalive bodies at ~64KB
 
@@ -46,6 +46,7 @@ var SYNC_EXCLUDE = {
   'acct1': ['ui'],
   'la10crucible': ['ui'],
   'apushp12': ['ui'],
+  'psychu0': ['ui'],
   /* 'telemetryQueue' and 'installId' are per device by definition: copying a queue between
    * devices would send the same reviews twice, and the install id is what keeps one
    * device's stream separable from another's without naming anybody. The 'telemetry'
@@ -306,11 +307,21 @@ var BUILTIN_MERGES = {
   'acct1:fsrs': mergeCardsFsrs,                // accounting 1, topic 1: the same card schedule
   'la10crucible:fsrs': mergeCardsFsrs,         // The Crucible, acts 1 and 2: same record shape
   'apushp12:fsrs': mergeCardsFsrs,             // APUSH period 1 and 2 test: same record shape
+  'psychu0:fsrs': mergeCardsFsrs,              // Unit 0 research and statistics: same record shape
+  'periodic:best': mergeMax,                   // sprint best: the higher score, from either device
   'periodic:setsDone': mergeRegionsDone,     // legacy ids; kept so an old device loses nothing
   'periodic:started': mergeNumberSet,        // set-size-independent successor to setsDone
   'periodic:settings': mergeSettings,
   'periodic:tests': makeEventMerge(40)
 };
+
+/* A best score is a maximum, not a document. Newest write wins would let a phone that
+ * scored 14 overwrite the laptop's 22 just because it saved later. */
+function mergeMax(aVal, bVal) {
+  var a = typeof aVal === 'number' && isFinite(aVal) ? aVal : 0;
+  var b = typeof bVal === 'number' && isFinite(bVal) ? bVal : 0;
+  return Math.max(a, b);
+}
 
 function mtimeOf(entry) {
   return (entry && typeof entry.mtime === 'number') ? entry.mtime : 0;
@@ -467,6 +478,7 @@ if (typeof module !== 'undefined' && module.exports) {
     makeFsrsMerge: makeFsrsMerge,
     mergeRegionsDone: mergeRegionsDone,
     mergeNumberSet: mergeNumberSet,
+    mergeMax: mergeMax,
     mergeSettings: mergeSettings,
     mergeExams: mergeExams,
     makeEventMerge: makeEventMerge,
@@ -886,13 +898,40 @@ function syncNow(reason) {
 
 /* Best-effort push as the page goes away. keepalive, not sendBeacon, because we must set
  * the apikey header. Never load-bearing: the dirty flag survives and the next load pushes. */
+/* It used to return without sending anything when the envelope was over the keepalive cap,
+ * and with several materials of card records that is the usual size. The last stretch of a
+ * session then waited on the device until it was next opened, which is exactly the "I did it
+ * on my phone and it is not on my laptop" report. When the body is too big for keepalive, a
+ * normal sync is started instead: on a tab switch or an app going to the background it has
+ * time to finish, and on a real unload it is no worse than sending nothing. */
 function finalFlush() {
   if (!canSync() || !isDirty() || isOffline()) return;
   var meta = readMeta();
   var env = buildEnvelope();
   var body = JSON.stringify(env);
-  if (body.length > KEEPALIVE_LIMIT) return;
+  if (body.length > KEEPALIVE_LIMIT) { syncNow('hidden'); return; }
   try { rpcPush(meta.pairCode, env, meta.seenUpdatedAt, true).catch(function () {}); } catch (e) {}
+}
+
+/* What this device would send, per namespace: which keys travel, which stay here, and how
+ * big it all is. The hub prints it so "does this save" has an answer on the page. */
+function syncSummary() {
+  var c = collectEntries();
+  var env = buildEnvelopeFrom(c.entries, c.mtimes, true);
+  var out = { bytes: JSON.stringify(env).length, limit: 1048576, namespaces: {} };
+  var keys = rawKeys();
+  for (var i = 0; i < keys.length; i++) {
+    var k = keys[i];
+    if (!k || k.indexOf(STORE_PREFIX) !== 0 || k === META_KEY || k === DIRTY_KEY) continue;
+    var full = k.slice(STORE_PREFIX.length), split = full.indexOf(':');
+    if (split <= 0) continue;
+    var ns = full.slice(0, split), key = full.slice(split + 1);
+    if (SYNC_EXCLUDE_NS[ns]) continue;
+    var row = out.namespaces[ns] || (out.namespaces[ns] = { synced: [], local: [], bytes: 0 });
+    if (isExcluded(ns, key)) row.local.push(key);
+    else { row.synced.push(key); row.bytes += (rawGet(k) || '').length; }
+  }
+  return out;
 }
 
 function schedulePush() {
@@ -1460,6 +1499,7 @@ var StudyStore = {
   },
 
   syncNow: syncNow,
+  syncSummary: syncSummary,
 
   _debug: {
     setOffline: function (v) {

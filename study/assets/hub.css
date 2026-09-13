@@ -26,6 +26,7 @@
 [data-subject="lang"]    { --accent:#7A3E52; }
 [data-subject="acct"]    { --accent:#27518C; }   /* accounting: ledger ink blue */
 [data-subject="la10"]    { --accent:#7A3E52; }   /* language arts: the plum lang already owned */
+[data-subject="other"]  { --accent:#6B6F5A; }
 
 *{box-sizing:border-box}
 /* The hidden attribute has to beat every display rule below, or a chip with
@@ -40,7 +41,7 @@ body{
   font-family:var(--serif);
   font-size:17px;
   line-height:1.5;
-  padding-bottom:calc(44px + env(safe-area-inset-bottom,0px));
+  padding-bottom:calc(64px + env(safe-area-inset-bottom,0px));
 }
 
 /* ---------- collar ---------- */
@@ -251,3 +252,59 @@ input[type=text],input[type=password],textarea{font-family:var(--mono);color:var
   .madded{margin:0 0 0 8px}
 }
 @media (prefers-reduced-motion:reduce){ .klass.flash{animation:none} }
+
+/* ---------- ask (discreet request button + sheet) ---------- */
+.asktrigger{position:fixed;right:calc(14px + env(safe-area-inset-right,0px));
+  bottom:calc(14px + env(safe-area-inset-bottom,0px));width:48px;height:48px;padding:0;
+  border:0;background:transparent;cursor:pointer;z-index:40;
+  -webkit-tap-highlight-color:transparent}
+.asktrigger::before{content:"";position:absolute;top:6px;left:6px;right:6px;bottom:6px;
+  border-radius:50%;background:var(--sheet);border:1px solid var(--rule)}
+.asktrigger::after{content:"";position:absolute;top:50%;left:50%;width:12px;height:12px;
+  transform:translate(-50%,-50%);
+  background:
+    linear-gradient(var(--ink3),var(--ink3)) center / 100% 1.5px no-repeat,
+    linear-gradient(var(--ink3),var(--ink3)) center / 1.5px 100% no-repeat}
+.asktrigger:active::before{background:#EDEDE7}
+
+.askmodal{border:1px solid var(--rule);background:var(--sheet);color:var(--ink);
+  padding:20px;width:520px;max-width:92vw;max-height:86vh;overflow-y:auto;
+  border-radius:2px;margin:auto}
+.askmodal::backdrop{background:rgba(27,35,39,.45)}
+.askhead{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.askhead h2{margin:0;font-family:var(--serif);font-size:21px;font-weight:600}
+.askclose{min-width:44px;min-height:44px;border:0;background:none;color:var(--ink3);
+  font-size:22px;line-height:1;cursor:pointer}
+.askbody{margin-top:10px}
+.askinput{display:block;width:100%;min-height:48px;margin:0 0 14px;font-size:16px;
+  font-family:var(--cond);color:var(--ink);background:var(--sheet);
+  border:1px solid var(--rule);border-radius:2px;padding:0 12px}
+textarea.askinput{min-height:80px;padding:10px 12px}
+.askinput:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:var(--accent)}
+.askfilelist{list-style:none;margin:8px 0;padding:0}
+.askfilelist li{display:flex;align-items:center;justify-content:space-between;gap:10px;
+  min-height:40px;padding:6px 0;border-bottom:1px solid var(--rule2);font-size:14px}
+.askfilelist button{min-height:32px;padding:0 10px;border:1px solid var(--rule);
+  background:transparent;border-radius:2px;cursor:pointer;font-size:12px;color:var(--bad)}
+.askgrid{display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;margin:0 0 14px}
+.askchk{display:flex;align-items:center;gap:8px;min-height:44px;font-size:14.5px;
+  cursor:pointer}
+.askother{display:block;width:100%;min-height:44px;margin-top:6px;font-size:15px;
+  font-family:var(--cond);color:var(--ink);background:var(--sheet);
+  border:1px solid var(--rule);border-radius:2px;padding:0 12px}
+.askprogress{margin:14px 0}
+.askdone p{font-size:15.5px}
+@media (max-width:560px){
+  .askmodal{position:fixed;left:0;right:0;bottom:0;top:auto;margin:0;width:100%;
+    max-width:100%;max-height:86vh;border-radius:2px 2px 0 0}
+  .askgrid{grid-template-columns:1fr}
+}
+@media (prefers-reduced-motion:reduce){ #askprogressfill{transition:none} }
+
+/* ---------- admin inbox ---------- */
+.inboxrow{border:1px solid var(--rule);border-radius:2px;padding:12px 14px;margin:0 0 12px}
+.inboxrow h4{margin:0 0 4px;font-family:var(--serif);font-size:16.5px}
+.inboxmeta{margin:0 0 6px;font-family:var(--mono);font-size:11px;letter-spacing:.06em;
+  color:var(--ink3);text-transform:uppercase}
+.inboxnotes{margin:0 0 8px;font-size:14.5px;color:var(--ink2);white-space:pre-wrap}
+.inboxfiles{margin:0 0 8px;padding-left:18px;font-size:13.5px;color:var(--ink2)}

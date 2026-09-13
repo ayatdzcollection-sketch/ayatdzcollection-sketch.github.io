@@ -378,7 +378,25 @@ function paintStrip(st) {
   $('stripbarfill').style.width = pct + '%';
 }
 
+/* How much this device holds and would send, so "did it save" has an answer. Size is shown
+   against the server's cap because a row over it is refused whole. */
+var lastSizePaint = 0;
+function paintSyncSize() {
+  var el = $('syncsize');
+  if (!el || !window.StudyStore || !StudyStore.syncSummary) return;
+  if (Date.now() - lastSizePaint < 5000) return;
+  lastSizePaint = Date.now();
+  var sum = StudyStore.syncSummary();
+  var names = Object.keys(sum.namespaces).filter(function (ns) { return sum.namespaces[ns].synced.length; });
+  var kb = Math.round(sum.bytes / 1024);
+  el.textContent = names.length
+    ? 'This device holds ' + names.length + ' material' + (names.length === 1 ? '' : 's') + ' of progress, ' + kb +
+      ' KB of the ' + Math.round(sum.limit / 1024) + ' KB a sync can carry.' + (sum.bytes > sum.limit * 0.8 ? ' That is close to the limit.' : '')
+    : 'Nothing saved on this device yet.';
+}
+
 function paintStatus(st) {
+  paintSyncSize();
   var dot = $('syncdot'), line = $('statusline'), sum = $('syncsum');
   paintProgress(st);
   paintStrip(st);
@@ -654,6 +672,7 @@ function initAdmin() {
   });
 
   renderAdminItems();
+  initInbox();
 }
 
 /* ============================================================ offline cache */
@@ -789,6 +808,7 @@ function start() {
   initOwner();
   paintOwner();
   boot();
+  initAsk();
   // Confirm an owner session in the background; a lapsed one just drops the controls.
   if (StudyAuth.signedIn()) {
     StudyAuth.verify().then(function (r) {
@@ -1108,6 +1128,384 @@ function renderQR(text, el) {
   svg.appendChild(bg);
   svg.appendChild(path);
   el.appendChild(svg);
+}
+
+/* ============================================================================
+ * Ask for a material: a quiet request channel with no label saying who reads it.
+ * The button and the sheet exist for every visitor; the Inbox list at the bottom
+ * is admin only.
+ * ========================================================================== */
+
+var ASK_SB_URL = 'https://gyfqhkhgosjpyvatffbi.supabase.co';
+var ASK_SB_KEY = 'sb_publishable_q-_2MgYpTJB-OeGGIy8EzA_8mvRB1nb';
+
+function askRpc(fn, body) {
+  return fetch(ASK_SB_URL + '/rest/v1/rpc/' + fn, {
+    method: 'POST',
+    headers: {
+      apikey: ASK_SB_KEY,
+      Authorization: 'Bearer ' + ASK_SB_KEY,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(body || {})
+  }).then(function (r) {
+    if (r.ok) return r.json();
+    return r.text().then(function (t) {
+      var e = new Error('http_' + r.status);
+      e.status = r.status;
+      e.body = t;
+      throw e;
+    });
+  });
+}
+
+var ASK_FEATURES = [
+  'Study guide', 'Endless practice feed', 'Mock quiz or test', 'Notecards',
+  'Multiple choice', 'True or false', 'Written short answers',
+  'Worked problems with fresh numbers', 'Vocabulary drill', 'Printable sheet'
+];
+
+var ASK_ERR_TEXT = {
+  empty: 'Add a subject or a note before sending.',
+  rate_limited: 'Too many requests from this network right now. Try again later.',
+  not_found: 'That request could not be found. Try again from the start.',
+  not_open: 'That request is no longer open. Try again from the start.',
+  expired: 'That took too long. Try again from the start.',
+  too_many_files: 'Only 6 files per request.',
+  file_too_large: 'That file is over 20 MB.',
+  request_too_large: 'These files add up to more than 30 MB total.',
+  storage_full: 'The inbox is full right now. Try again later, or leave files out.',
+  out_of_order: 'That file lost its place while sending. Try sending it again.',
+  chunk_too_large: 'That piece was too large.',
+  bad_chunk: 'That piece could not be read. Try sending it again.',
+  oversize: 'That file grew past what it said it would be.',
+  forbidden: 'Not allowed.',
+  bad_status: 'Not allowed.'
+};
+
+function askFriendlyError(err, fallback) {
+  if (err && err.status === 404) return 'The inbox is not open yet.';
+  if (err && err.error && ASK_ERR_TEXT[err.error]) return ASK_ERR_TEXT[err.error];
+  if (err && err.message === 'rate_limited') return ASK_ERR_TEXT.rate_limited;
+  return fallback || 'Could not reach the server. Nothing was lost, your form is still filled in.';
+}
+
+function buildAskGrid() {
+  var grid = $('askgrid');
+  grid.innerHTML = '';
+  ASK_FEATURES.forEach(function (label) {
+    var l = document.createElement('label');
+    l.className = 'askchk';
+    var cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.value = label;
+    l.appendChild(cb);
+    l.appendChild(document.createTextNode(label));
+    grid.appendChild(l);
+  });
+
+  var otherLabel = document.createElement('label');
+  otherLabel.className = 'askchk';
+  var otherCb = document.createElement('input');
+  otherCb.type = 'checkbox'; otherCb.id = 'askotheron';
+  otherLabel.appendChild(otherCb);
+  otherLabel.appendChild(document.createTextNode('Other'));
+  grid.appendChild(otherLabel);
+
+  var otherInput = document.createElement('input');
+  otherInput.type = 'text'; otherInput.className = 'askother'; otherInput.id = 'askothertext';
+  otherInput.placeholder = 'Say what it is';
+  otherInput.hidden = true;
+  grid.appendChild(otherInput);
+  otherCb.addEventListener('change', function () { otherInput.hidden = !otherCb.checked; });
+}
+
+function collectAskFeatures() {
+  var out = [];
+  $('askgrid').querySelectorAll('input[type=checkbox]').forEach(function (cb) {
+    if (cb.id === 'askotheron') return;
+    if (cb.checked) out.push(cb.value);
+  });
+  var otherOn = $('askotheron');
+  if (otherOn && otherOn.checked) {
+    var t = $('askothertext').value.trim();
+    out.push(t ? 'Other: ' + t : 'Other');
+  }
+  return out;
+}
+
+var askFiles = [];
+
+function renderAskFileList() {
+  var ul = $('askfilelist');
+  ul.innerHTML = '';
+  askFiles.forEach(function (f, idx) {
+    var li = document.createElement('li');
+    var span = document.createElement('span');
+    span.textContent = f.name + ' (' + Math.ceil(f.size / 1024) + ' KB)';
+    var rm = document.createElement('button');
+    rm.type = 'button'; rm.textContent = 'Remove';
+    rm.addEventListener('click', function () {
+      askFiles.splice(idx, 1);
+      renderAskFileList();
+    });
+    li.appendChild(span); li.appendChild(rm);
+    ul.appendChild(li);
+  });
+}
+
+function onAskFilesChosen(fileList) {
+  var err = $('askfileerr');
+  err.hidden = true;
+  var incoming = Array.prototype.slice.call(fileList);
+  var rejected = [];
+  incoming.forEach(function (f) {
+    if (f.size > 20 * 1024 * 1024) { rejected.push(f.name + ' is over 20 MB'); return; }
+    if (askFiles.length >= 6) { rejected.push(f.name + ' was not added, the limit is 6 files'); return; }
+    askFiles.push(f);
+  });
+  if (rejected.length) { err.textContent = rejected.join('. ') + '.'; err.hidden = false; }
+  renderAskFileList();
+  $('askfiles').value = ''; // so picking the same file again re-fires change
+}
+
+function resetAskForm() {
+  ['asksubject', 'askpurpose', 'askdue', 'asknotes', 'askname'].forEach(function (id) { $(id).value = ''; });
+  askFiles = [];
+  renderAskFileList();
+  buildAskGrid();
+  $('askerr').hidden = true;
+  $('askfileerr').hidden = true;
+  $('askprogress').hidden = true;
+  $('askdone').hidden = true;
+  $('askactions').hidden = false;
+  $('asksend').disabled = false;
+  $('askcancel').disabled = false;
+  ['asksubject', 'askpurpose', 'askdue', 'askfiles', 'askfilelist', 'askgrid', 'asknotes', 'askname'].forEach(function (id) {
+    var el = $(id);
+    if (el) el.hidden = false;
+  });
+  $('askbody').querySelectorAll('.lbl').forEach(function (el) { el.hidden = false; });
+}
+
+function openAskModal() {
+  resetAskForm();
+  var dlg = $('askmodal');
+  if (typeof dlg.showModal === 'function') dlg.showModal();
+  else dlg.setAttribute('open', '');
+}
+
+function closeAskModal() {
+  var dlg = $('askmodal');
+  if (dlg.open) {
+    if (typeof dlg.close === 'function') dlg.close();
+    else dlg.removeAttribute('open');
+  }
+}
+
+function bufToBase64(buf) {
+  var bytes = new Uint8Array(buf), binary = '', step = 0x8000;
+  for (var i = 0; i < bytes.length; i += step) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + step));
+  }
+  return btoa(binary);
+}
+
+function askWithRetry(fn, tries) {
+  tries = tries || 3;
+  function attempt(n) {
+    return fn().catch(function (err) {
+      if (n >= tries || (err && err.status === 404)) throw err;
+      return attempt(n + 1);
+    });
+  }
+  return attempt(1);
+}
+
+function paintAskProgress(text, pct) {
+  $('askprogress').hidden = false;
+  $('askprogresstext').textContent = text;
+  $('askprogressfill').style.width = pct + '%';
+}
+
+function sendOneAskFile(file, fi, total, requestId) {
+  return askRpc('request_file_open', {
+    p_request: requestId, p_name: file.name,
+    p_mime: file.type || 'application/octet-stream', p_size: file.size
+  }).then(function (r) {
+    if (!r || !r.ok) { var e = new Error('file_open_failed'); e.error = r && r.error; throw e; }
+    return file.arrayBuffer().then(function (buf) {
+      var slice = 1024 * 1024;
+      var n = Math.max(1, Math.ceil(buf.byteLength / slice));
+      var chain = Promise.resolve();
+      var _loop = function (idx) {
+        chain = chain.then(function () {
+          var part = buf.slice(idx * slice, Math.min(buf.byteLength, (idx + 1) * slice));
+          var pct = Math.round(((idx + 1) / n) * 100);
+          paintAskProgress('Sending ' + (fi + 1) + ' of ' + total + ' files, ' + pct + '%', pct);
+          return askWithRetry(function () {
+            return askRpc('request_file_chunk', { p_file: r.file_id, p_index: idx, p_b64: bufToBase64(part) })
+              .then(function (cr) {
+                if (!cr || !cr.ok) { var e2 = new Error('chunk_failed'); e2.error = cr && cr.error; throw e2; }
+              });
+          });
+        });
+      };
+      for (var i = 0; i < n; i++) _loop(i);
+      return chain;
+    });
+  });
+}
+
+function sendAskFiles(requestId) {
+  var total = askFiles.length;
+  if (!total) return Promise.resolve(requestId);
+  var chain = Promise.resolve();
+  askFiles.forEach(function (file, fi) {
+    chain = chain.then(function () { return sendOneAskFile(file, fi, total, requestId); });
+  });
+  return chain.then(function () { return requestId; });
+}
+
+function sendAskRequest() {
+  var subject = $('asksubject').value.trim();
+  var notes = $('asknotes').value.trim();
+  var errEl = $('askerr');
+  errEl.hidden = true;
+  if (!subject && !notes) {
+    errEl.textContent = ASK_ERR_TEXT.empty; errEl.hidden = false; return;
+  }
+
+  var meta = {
+    subject: subject,
+    purpose: $('askpurpose').value.trim(),
+    due: $('askdue').value,
+    notes: notes,
+    from_name: $('askname').value.trim(),
+    features: collectAskFeatures()
+  };
+
+  $('asksend').disabled = true; $('askcancel').disabled = true;
+
+  askRpc('request_open', { p_meta: meta }).then(function (r) {
+    if (!r || !r.ok) { var e = new Error('open_failed'); e.error = r && r.error; throw e; }
+    return sendAskFiles(r.id);
+  }).then(function (requestId) {
+    return askRpc('request_finish', { p_request: requestId });
+  }).then(function (r) {
+    if (!r || !r.ok) { var e = new Error('finish_failed'); e.error = r && r.error; throw e; }
+    $('askprogress').hidden = true;
+    $('askactions').hidden = true;
+    ['asksubject', 'askpurpose', 'askdue', 'askfiles', 'askfilelist', 'askgrid', 'asknotes', 'askname'].forEach(function (id) {
+      var el = $(id);
+      if (el) el.hidden = true;
+    });
+    $('askbody').querySelectorAll('.lbl').forEach(function (el) { el.hidden = true; });
+    $('askdone').hidden = false;
+    $('askdonetext').textContent = 'Sent. Reference ' + r.ref.toUpperCase() + '.';
+  }).catch(function (err) {
+    errEl.textContent = askFriendlyError(err);
+    errEl.hidden = false;
+  }).then(function () {
+    $('asksend').disabled = false; $('askcancel').disabled = false;
+  });
+}
+
+function initAsk() {
+  buildAskGrid();
+  $('asktrigger').addEventListener('click', openAskModal);
+  $('askclose').addEventListener('click', closeAskModal);
+  $('askcancel').addEventListener('click', closeAskModal);
+  $('askdoneclose').addEventListener('click', closeAskModal);
+  $('askfiles').addEventListener('change', function () { onAskFilesChosen(this.files); });
+  $('asksend').addEventListener('click', sendAskRequest);
+}
+
+/* ---- admin inbox ---- */
+
+var inboxShowAll = false;
+
+function renderInboxRequest(req) {
+  var row = document.createElement('div');
+  row.className = 'inboxrow';
+
+  var h = document.createElement('h4');
+  h.textContent = req.subject || '(no subject)';
+  row.appendChild(h);
+
+  var meta = document.createElement('p');
+  meta.className = 'inboxmeta';
+  var when = req.created_at ? new Date(req.created_at).toLocaleString() : '';
+  var bits = [when, req.purpose, req.due ? 'due ' + req.due : null,
+    (req.features && req.features.length) ? req.features.join(', ') : null]
+    .filter(function (x) { return !!x; });
+  meta.textContent = bits.join(' | ');
+  row.appendChild(meta);
+
+  if (req.notes) {
+    var p = document.createElement('p');
+    p.className = 'inboxnotes'; p.textContent = req.notes;
+    row.appendChild(p);
+  }
+
+  if (req.files && req.files.length) {
+    var ul = document.createElement('ul');
+    ul.className = 'inboxfiles';
+    req.files.forEach(function (f) {
+      var li = document.createElement('li');
+      li.textContent = (f.purged ? '(removed) ' : '') + f.name + ' (' + Math.ceil(f.size / 1024) + ' KB)';
+      ul.appendChild(li);
+    });
+    row.appendChild(ul);
+  }
+
+  var actions = document.createElement('div');
+  actions.className = 'row wrap';
+  var seenBtn = document.createElement('button');
+  seenBtn.type = 'button'; seenBtn.className = 'btn ghost sm';
+  var already = req.status === 'seen' || req.status === 'done';
+  seenBtn.textContent = already ? 'Seen' : 'Mark seen';
+  seenBtn.disabled = already;
+  seenBtn.addEventListener('click', function () {
+    seenBtn.disabled = true;
+    askRpc('admin_request_mark', { p_token: StudyAuth.token(), p_id: req.id, p_status: 'seen' })
+      .then(function (r) {
+        if (r && r.ok) { seenBtn.textContent = 'Seen'; }
+        else { seenBtn.disabled = false; }
+      }, function () { seenBtn.disabled = false; });
+  });
+  actions.appendChild(seenBtn);
+  row.appendChild(actions);
+
+  return row;
+}
+
+function loadInbox() {
+  var note = $('inboxnote'), list = $('inboxlist');
+  askRpc('admin_requests', { p_token: StudyAuth.token(), p_all: inboxShowAll }).then(function (r) {
+    if (!r || !r.ok) {
+      note.textContent = r && r.error === 'forbidden' ? 'Not allowed.' : 'Could not load the inbox.';
+      list.innerHTML = '';
+      return;
+    }
+    note.textContent = r.requests.length ? '' : 'No requests yet.';
+    list.innerHTML = '';
+    r.requests.forEach(function (req) { list.appendChild(renderInboxRequest(req)); });
+  }, function (err) {
+    note.textContent = (err && err.status === 404)
+      ? 'Run 0007_requests.sql in Supabase to open the inbox.'
+      : 'Could not load the inbox.';
+    list.innerHTML = '';
+  });
+}
+
+function initInbox() {
+  $('inboxshowall').addEventListener('click', function () {
+    inboxShowAll = !inboxShowAll;
+    this.setAttribute('aria-pressed', String(inboxShowAll));
+    this.textContent = inboxShowAll ? 'Show submitted only' : 'Show all';
+    loadInbox();
+  });
+  loadInbox();
 }
 
 })();

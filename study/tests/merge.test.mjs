@@ -13,7 +13,7 @@ const require = createRequire(import.meta.url);
 const {
   normalizeCode, formatCode,
   mergeEnvelopes, mergeFsrsValue, mergeRegionsDone, mergeExams,
-  mergeNumberSet, mergeSettings, makeEventMerge,
+  mergeNumberSet, mergeSettings, makeEventMerge, mergeMax,
   buildEnvelopeFrom, diffEnvelopes, describeFsrsChange
 } = require('../assets/sync.js');
 
@@ -527,7 +527,7 @@ test('acct1: the open tab and a Learn session stay on the device', () => {
 /* ---------- la10crucible and apushp12: the materials on the shared core ----------
    Same { cards, quizDate, exams } shape, same per card rule; ui (tab, pace, open stretch)
    is per device. */
-for (const ns of ['la10crucible', 'apushp12']) {
+for (const ns of ['la10crucible', 'apushp12', 'psychu0']) {
   test(ns + ' fsrs merges per card', () => {
     const a = env({ [ns + ':fsrs']: [{ cards: { 't1abc': rec(2, 5, 2200, 3, 0) }, quizDate: '2026-09-15', exams: [] }, 100] });
     const b = env({ [ns + ':fsrs']: [{ cards: { 'q9xyz': rec(4, 4, 3300, 2, 0) }, quizDate: '2026-09-15', exams: [] }, 900] });
@@ -544,3 +544,14 @@ for (const ns of ['la10crucible', 'apushp12']) {
     assert.ok(built.ns[ns].fsrs, 'the schedule does sync');
   });
 }
+
+/* ---------- periodic:best ----------
+   The sprint best is a maximum. It had no rule, so the device that saved last won even with
+   the lower score. */
+test('periodic best keeps the higher score whichever device wrote last', () => {
+  const a = env({ 'periodic:best': [22, 100] });
+  const b = env({ 'periodic:best': [14, 900] });
+  assert.equal(merge(a, b).ns.periodic.best.value, 22);
+  assert.equal(merge(b, a).ns.periodic.best.value, 22);
+  assert.equal(mergeMax(null, 5), 5);
+});

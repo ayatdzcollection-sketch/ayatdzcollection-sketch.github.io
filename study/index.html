@@ -103,6 +103,15 @@
         </section>
 
         <section class="block">
+          <h3 class="rubric">What syncs</h3>
+          <p class="note">Progress in every material travels with the pairing code: the
+            schedule of every card, quiz results and test dates. What stays on each device on
+            purpose: the tab and section you had open, deck positions, your typing pace, recent
+            materials and the review log queue.</p>
+          <p class="note" id="syncsize"></p>
+        </section>
+
+        <section class="block">
           <h3 class="rubric">Copy-and-paste backup</h3>
           <p class="note">Works with no network at all. Import merges; it never wipes what is here.</p>
           <div class="row wrap">
@@ -216,6 +225,15 @@
           <button class="btn ghost danger" id="revokeothers" type="button">Sign out every other device</button>
         </section>
 
+        <section class="block" id="inboxblock">
+          <h3 class="rubric">Inbox</h3>
+          <p class="note" id="inboxnote"></p>
+          <div class="row wrap" style="margin-bottom:10px">
+            <button class="btn ghost sm" id="inboxshowall" type="button" aria-pressed="false">Show all</button>
+          </div>
+          <div id="inboxlist"></div>
+        </section>
+
         <div class="warnbox">
           Anything published before encryption was switched on may already be copied or
           archived elsewhere. Locking it now hides it going forward; it cannot un-publish it.
@@ -228,6 +246,60 @@
     </footer>
 
   </main>
+
+  <button type="button" id="asktrigger" class="asktrigger" aria-label="Send"></button>
+
+  <dialog id="askmodal" class="askmodal">
+    <div class="askhead">
+      <h2>Ask for a material</h2>
+      <button type="button" class="askclose" id="askclose" aria-label="Cancel">&times;</button>
+    </div>
+
+    <div class="askbody" id="askbody">
+      <label class="lbl" for="asksubject">Class or subject</label>
+      <input id="asksubject" type="text" class="askinput" autocomplete="off">
+
+      <label class="lbl" for="askpurpose">What it is for</label>
+      <input id="askpurpose" type="text" class="askinput"
+             placeholder="Unit 3 test, chapter quiz, final" autocomplete="off">
+
+      <label class="lbl" for="askdue">Date if there is one</label>
+      <input id="askdue" type="date" class="askinput">
+
+      <label class="lbl" for="askfiles">Files</label>
+      <input id="askfiles" type="file" multiple
+             accept=".pdf,.doc,.docx,.ppt,.pptx,.txt,image/*">
+      <ul class="askfilelist" id="askfilelist"></ul>
+      <p class="err-inline" id="askfileerr" hidden></p>
+
+      <p class="lbl" style="margin-top:16px">Features</p>
+      <div class="askgrid" id="askgrid"></div>
+
+      <label class="lbl" for="asknotes">Anything else</label>
+      <textarea id="asknotes" class="askinput" rows="3"></textarea>
+
+      <label class="lbl" for="askname">Your name</label>
+      <input id="askname" type="text" class="askinput" autocomplete="off">
+
+      <p class="err-inline" id="askerr" hidden></p>
+
+      <div class="askprogress" id="askprogress" hidden>
+        <p class="note" id="askprogresstext"></p>
+        <div class="syncbar-track"><div class="syncbar-fill" id="askprogressfill"></div></div>
+      </div>
+
+      <div class="askdone" id="askdone" hidden>
+        <p id="askdonetext"></p>
+        <button type="button" class="btn" id="askdoneclose">Done</button>
+      </div>
+
+      <div class="row wrap" id="askactions" style="margin-top:18px">
+        <button type="button" class="btn" id="asksend">Send</button>
+        <button type="button" class="btn ghost" id="askcancel">Cancel</button>
+      </div>
+    </div>
+  </dialog>
+
 </div>
 
 <script src="assets/auth.js"></script>

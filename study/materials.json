@@ -119,6 +119,21 @@
           "sort": 10
         }
       ]
+    },
+    {
+      "id": "other",
+      "name": "Other",
+      "term": "2026-27",
+      "materials": [
+        {
+          "id": "psych-unit0",
+          "title": "Unit 0: research, statistics and approaches",
+          "blurb": "The whole Unit 0 slide deck in eighteen sections: the eight psychological approaches and the biopsychosocial model, the three biases and the scientific attitude, theory to replication, case studies, surveys, sampling, naturalistic observation, correlation and its problems, experiments and their controls, central tendency, standard deviation and the normal curve, significance and effect size, and the six ethics rules. A feed that says why each card was picked, every term the slides define as a card where you type the term, statistics problems on fresh numbers, a mock quiz, notecards of every miss and a printable sheet with the key on its own page.",
+          "tags": ["psychology", "research-methods", "statistics", "approaches", "ethics", "unit-0"],
+          "added": "2026-09-13",
+          "sort": 10
+        }
+      ]
     }
   ]
 }
