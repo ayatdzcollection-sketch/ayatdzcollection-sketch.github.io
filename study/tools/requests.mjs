@@ -33,8 +33,15 @@ async function rpc(fn, body) {
     headers: { apikey: ANON, Authorization: `Bearer ${ANON}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
   });
+  /* PostgREST answers 404 both when a function does not exist (code PGRST202) and when one
+     exists but a call inside it names a function that does not (42883). Only the first means
+     the migration is missing; the second is a bug worth printing in full. */
   if (res.status === 404) {
-    die('The inbox functions are not on the server yet. Run study/supabase/migrations/0007_requests.sql in the Supabase SQL editor.');
+    const body = await res.text();
+    if (/PGRST202/.test(body)) {
+      die('The inbox functions are not on the server yet. Run study/supabase/migrations/0007_requests.sql in the Supabase SQL editor.');
+    }
+    die(`${fn} failed on the server: ${body.slice(0, 300)}`);
   }
   if (!res.ok) die(`${fn} failed: HTTP ${res.status} ${(await res.text()).slice(0, 300)}`);
   return res.json();

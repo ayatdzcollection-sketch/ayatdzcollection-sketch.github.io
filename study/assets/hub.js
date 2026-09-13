@@ -1184,7 +1184,7 @@ var ASK_ERR_TEXT = {
 };
 
 function askFriendlyError(err, fallback) {
-  if (err && err.status === 404) return 'The inbox is not open yet.';
+  if (err && err.status === 404 && /PGRST202/.test(err.body || '')) return 'The inbox is not open yet.';
   if (err && err.error && ASK_ERR_TEXT[err.error]) return ASK_ERR_TEXT[err.error];
   if (err && err.message === 'rate_limited') return ASK_ERR_TEXT.rate_limited;
   return fallback || 'Could not reach the server. Nothing was lost, your form is still filled in.';
@@ -1491,7 +1491,7 @@ function loadInbox() {
     list.innerHTML = '';
     r.requests.forEach(function (req) { list.appendChild(renderInboxRequest(req)); });
   }, function (err) {
-    note.textContent = (err && err.status === 404)
+    note.textContent = (err && err.status === 404 && /PGRST202/.test(err.body || ''))
       ? 'Run 0007_requests.sql in Supabase to open the inbox.'
       : 'Could not load the inbox.';
     list.innerHTML = '';
