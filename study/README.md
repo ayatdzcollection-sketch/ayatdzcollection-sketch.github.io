@@ -258,6 +258,11 @@ Turning it off discards whatever is still queued.
 `0004_telemetry.sql` in the Supabase SQL editor. Until then clients get one 404 per page
 load, stop trying for that load, and keep queueing. Nothing breaks and nothing is lost.
 
+Each event carries the card key, grade, step tag (`mc`, `recall`, `cram`, `learn-mc`,
+`errand-tf` and so on), answer time, the model's state before the answer and, since
+`0009_review_choice.sql`, `chosen`: the index of the wrong option picked on a miss. Until 0009
+is run the ingest ignores that field.
+
 ```sql
 -- how well calibrated is the scheduler?
 select width_bucket(retrievability, 0, 1, 10) as predicted_decile,
