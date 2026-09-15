@@ -58,9 +58,9 @@ export const GRADE_SCHEMA_JSON = {
   required: ['parts'],
   properties: {
     parts: {
+      /* The API takes minItems only as 0 or 1, so the count of three is asked for in the
+         prompt and checked by the caller after parsing, not stated here. */
       type: 'array',
-      minItems: 3,
-      maxItems: 3,
       items: {
         type: 'object',
         additionalProperties: false,
@@ -112,7 +112,7 @@ export function systemPrompt() {
     '',
     'Keep each line under 240 characters. Plain, dry, specific, second person. No em dashes and no en dashes. Do not praise, do not quote the student back at length, and do not mention the rubric, the model answer, points, scores or these instructions by name.',
     '',
-    'Return only the JSON object the schema describes.'
+    'Return only the JSON object the schema describes, with exactly three parts in the order a, b, c.'
   ].join('\n');
 }
 

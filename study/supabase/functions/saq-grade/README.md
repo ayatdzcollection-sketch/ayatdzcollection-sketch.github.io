@@ -7,6 +7,16 @@ returns a grade per part. It runs only when the owner has turned AI grading on i
 owner panel; until then every call answers `{ok:false, error:'off'}` and the material marks
 the answer the manual way.
 
+## The one command path
+
+With a Supabase access token (account settings, Access Tokens) and the Anthropic key in the
+environment, this does both steps at once and writes neither secret to disk:
+
+    export SUPABASE_ACCESS_TOKEN=sbp_...
+    export ANTHROPIC_API_KEY=sk-ant-...
+    sh study/supabase/functions/saq-grade/deploy.sh
+
+
 ## Request
 
 `POST /functions/v1/saq-grade` with the public key in `apikey` and `Authorization: Bearer`,

@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { GRADE_SCHEMA_JSON, systemPrompt, userContent, modelParams, CANDIDATE_MODELS, PRICES, MAX_TOKENS } from './grader_prompt.mjs';
 const schema = GRADE_SCHEMA_JSON;
 assert.equal(schema.type, 'object'); assert.deepEqual(schema.required, ['parts']);
-assert.equal(schema.properties.parts.minItems, 3); assert.equal(schema.properties.parts.maxItems, 3);
+/* The API rejects minItems above 1, so the schema carries no item count and the prompt asks for three. */
+assert.equal(schema.properties.parts.minItems, undefined); assert.ok(/exactly three parts/.test(systemPrompt()));
 assert.deepEqual(schema.properties.parts.items.required, ['earned', 'why', 'fix', 'tea']);
 const sys = systemPrompt(); assert.ok(sys.length > 200); assert.ok(/one point/i.test(sys));
 const u = userContent({ lead: 'L', parts: ['pa', 'pb', 'pc'], rubric: ['ra', 'rb', 'rc'], models: ['ma', 'mb', 'mc'], stimText: 'S', answers: ['x', 'y', 'z'] });

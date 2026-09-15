@@ -22,7 +22,7 @@
  * Deploy, secrets and the smoke test: README.md beside this file.
  * No em dashes and no en dashes in this file.
  */
-import Anthropic from "npm:@anthropic-ai/sdk";
+import Anthropic, { RateLimitError, APIConnectionError } from "npm:@anthropic-ai/sdk";
 import {
   CANDIDATE_MODELS,
   GRADE_SCHEMA_JSON,
@@ -40,9 +40,10 @@ const ALLOWED_ORIGINS = [
   "http://localhost:8000",
 ];
 
-/* One Claude call, 25 seconds. maxRetries is 1 rather than the SDK default of 2 so the
+/* One Claude call, 40 seconds: the eval measured a p95 of 23.5 s on the chosen model, so 25 s
+   cut it too close. maxRetries is 1 rather than the SDK default of 2 so the
    worst case stays inside the function's own wall clock. */
-const CALL_TIMEOUT_MS = 25_000;
+const CALL_TIMEOUT_MS = 40_000;
 const CALL_MAX_RETRIES = 1;
 
 /* Clip the model's two feedback lines. The prompt asks for 240; this is the backstop. */
@@ -342,8 +343,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
          it is a subclass. Nothing from the error body is forwarded; the client only ever
          learns that the grader did not answer. */
       let kind = "unknown";
-      if (e instanceof Anthropic.RateLimitError) kind = "rate_limit";
-      else if (e instanceof Anthropic.APIConnectionError) kind = "connection";
+      if (e instanceof RateLimitError) kind = "rate_limit";
+      else if (e instanceof APIConnectionError) kind = "connection";
       else if (e instanceof Anthropic.APIError) kind = `api_${e.status ?? 0}`;
       console.error(`saq-grade: call failed (${kind})`);
       return reply({ ok: false, error: "grader_error" }, 200, origin);
