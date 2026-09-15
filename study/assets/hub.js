@@ -113,7 +113,11 @@ function matches(m, klass, needle) {
   return needle.split(/\s+/).every(function (w) { return hay.indexOf(w) !== -1; });
 }
 
-var isRetired = function (m) { return (m.tags || []).indexOf('retired') !== -1; };
+var hasTag = function (m, tag) { return (m.tags || []).indexOf(tag) !== -1; };
+var isRetired = function (m) { return hasTag(m, 'retired'); };
+var withTag = function (m, tag, on) {
+  return (m.tags || []).filter(function (x) { return x !== tag; }).concat(on ? [tag] : []);
+};
 
 function makeRow(m) {
   var lockedForMe = m.locked && role !== 'admin';
@@ -130,6 +134,7 @@ function makeRow(m) {
   if (m.locked) title.appendChild(flag('locked', 'Locked'));
   if (m.hidden) title.appendChild(flag('hidden', 'Hidden'));
   if (isRetired(m)) title.appendChild(flag('retired', 'Retired'));
+  if (hasTag(m, 'ai')) title.appendChild(flag('ai', 'AI'));
   left.appendChild(title);
   if (m.blurb) {
     var b = document.createElement('span');
@@ -615,8 +620,16 @@ function renderAdminItems() {
       m.locked = v; return StudyAuth.admin.setItem(m.id, null, v);
     }));
     togs.appendChild(mk('Retired', isRetired(m), function (v) {
-      return StudyAuth.admin.setRetired(m, v).then(function (r) {
-        if (r && r.ok) m.tags = (m.tags || []).filter(function (x) { return x !== 'retired'; }).concat(v ? ['retired'] : []);
+      return StudyAuth.admin.setTag(m, 'retired', v).then(function (r) {
+        if (r && r.ok) m.tags = withTag(m, 'retired', v);
+        return r;
+      });
+    }));
+    /* The ai tag is what lets one material offer AI grading at all. It is the narrow gate:
+       the master switch below can be on and this material still never asks the grader. */
+    togs.appendChild(mk('AI', hasTag(m, 'ai'), function (v) {
+      return StudyAuth.admin.setTag(m, 'ai', v).then(function (r) {
+        if (r && r.ok) m.tags = withTag(m, 'ai', v);
         return r;
       });
     }));
@@ -624,6 +637,424 @@ function renderAdminItems() {
     row.appendChild(name); row.appendChild(togs);
     box.appendChild(row);
   });
+}
+
+/* ============================================================ AI grading */
+
+/* Built here rather than written into index.html so the section does not exist in the
+   document at all unless this browser holds an admin session. That is convenience, not
+   security: every control below writes through a token checked RPC that decides again on
+   the server, and the only anonymous surface the feature has is ai_status, which answers
+   with three facts and nothing else. No API key is ever in reach of this file; the key
+   lives as an Edge Function secret. */
+
+/* Stored units are cents and counts; the two money fields are typed in dollars because
+   nobody budgets in cents. min and max mirror the checks in 0010 so a value the server
+   will refuse can be named before the round trip, and the server still has the last word. */
+var AI_FIELDS = [
+  { key: 'daily_cents',       label: 'Daily cap',              money: true, min: 0,   max: 10000 },
+  { key: 'monthly_cents',     label: 'Monthly cap',            money: true, min: 0,   max: 10000 },
+  { key: 'per_install_daily', label: 'Grades per device, day',              min: 0,   max: 500 },
+  { key: 'per_ip_minute',     label: 'Calls per address, min',              min: 1,   max: 60 },
+  { key: 'max_chars',         label: 'Max characters',                      min: 200, max: 6000 }
+];
+
+/* One grade is about this many tokens, so a price per million becomes a price per grade
+   the owner can actually compare. It is an estimate and the ledger is the truth. */
+var AI_IN_TOKENS = 1200, AI_OUT_TOKENS = 250;
+
+var aiEl = null;
+var aiState = { settings: null, models: [], usage: null };
+
+function el(tag, cls, text) {
+  var n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text != null) n.textContent = text;
+  return n;
+}
+
+function aiTog(label) {
+  var b = el('button', 'tog', label);
+  b.type = 'button';
+  b.setAttribute('aria-pressed', 'false');
+  return b;
+}
+
+/* Caps are round money and print like money. Spend is not: a grade can cost a fraction of
+   a cent, so rounding it to the nearest cent would show nothing all week and then a dollar.
+   Four places is enough to watch a number climb. */
+function dollars(cents) { return '$' + (Number(cents || 0) / 100).toFixed(2); }
+function spendDollars(cents) { return '$' + (Number(cents || 0) / 100).toFixed(4); }
+/* The ledger counts microcents, a millionth of a cent, so 1e8 of them make a dollar. */
+function microDollars(mc) { return '$' + (Number(mc || 0) / 1e8).toFixed(4); }
+
+function aiCostPerGrade(m) {
+  if (m.in_per_mtok == null || m.out_per_mtok == null) return null;
+  return (Number(m.in_per_mtok) * AI_IN_TOKENS + Number(m.out_per_mtok) * AI_OUT_TOKENS) / 1e6;
+}
+
+function aiModelMeta(m) {
+  if (!m) return '';
+  var cost = aiCostPerGrade(m);
+  return [
+    m.eval_agreement == null ? 'agreement: no eval yet'
+      : 'agreement ' + Math.round(Number(m.eval_agreement) * 100) + '%',
+    m.eval_false_points == null ? 'false points: no eval yet'
+      : 'false points ' + Math.round(Number(m.eval_false_points) * 100) + '%',
+    cost == null ? 'cost: no price' : 'about $' + cost.toFixed(4) + ' a grade',
+    m.eval_latency_ms == null ? 'latency: no eval yet'
+      : (Number(m.eval_latency_ms) / 1000).toFixed(1) + ' s'
+  ].join(' · ');
+}
+
+function aiCurrentModel() {
+  var id = aiState.settings && aiState.settings.model;
+  var found = null;
+  aiState.models.forEach(function (m) { if (m.id === id) found = m; });
+  return found;
+}
+
+function aiNote(text, bad) {
+  aiEl.msg.textContent = text || '';
+  aiEl.msg.style.color = bad === false ? 'var(--ok)' : '';
+  aiEl.msg.hidden = !text;
+}
+
+function aiErrText(err) {
+  var m = err && err.message;
+  if (m === 'http_404') return 'Run 0010_ai_grading.sql in Supabase to turn this on.';
+  if (m === 'rate_limited') return 'Too many tries from this network. Wait a few minutes.';
+  return 'Could not reach the server.';
+}
+
+/* The server is the one that decides what is in range, so its verdict is what gets
+   printed, beside the field it names rather than at the top where it would be guessed at. */
+function aiShowError(r) {
+  if (r && r.error === 'range' && r.field && aiEl.cap[r.field]) {
+    var f = null;
+    AI_FIELDS.forEach(function (x) { if (x.key === r.field) f = x; });
+    var lo = f && f.money ? dollars(f.min) : (f ? f.min : '');
+    var hi = f && f.money ? dollars(f.max) : (f ? f.max : '');
+    var e = aiEl.cap[r.field].err;
+    e.textContent = f ? ('The server refused that: ' + lo + ' to ' + hi + '.') : 'The server refused that value.';
+    e.hidden = false;
+    return;
+  }
+  aiNote(r && r.error === 'forbidden'
+    ? 'That admin session was refused. Sign in again.'
+    : 'Could not save that.');
+}
+
+function aiClearFieldErrors() {
+  AI_FIELDS.forEach(function (f) {
+    aiEl.cap[f.key].err.hidden = true;
+    aiEl.cap[f.key].err.textContent = '';
+  });
+}
+
+function buildAi(sec) {
+  var e = { cap: {} };
+
+  sec.appendChild(el('h3', 'rubric', 'AI grading'));
+  sec.appendChild(el('p', 'note',
+    'Grades a written short answer against its rubric and model answer. Off unless you turn ' +
+    'it on here, and a material only offers it when it carries the AI tag above. The three ' +
+    'answers and the prompt go to Anthropic for the grade; no answer text is stored here or ' +
+    'in the ledger below.'));
+
+  e.msg = el('p', 'err-inline');
+  e.msg.hidden = true;
+  sec.appendChild(e.msg);
+
+  e.body = el('div');
+  sec.appendChild(e.body);
+
+  e.body.appendChild(el('p', 'lbl', 'Switch'));
+  var sw = el('div', 'row wrap');
+  e.off = aiTog('Off'); e.on = aiTog('On');
+  sw.appendChild(e.off); sw.appendChild(e.on);
+  e.body.appendChild(sw);
+
+  e.body.appendChild(el('p', 'lbl', 'Who can use it'));
+  var md = el('div', 'row wrap');
+  e.modeOpen = aiTog('Open with caps'); e.modeOwner = aiTog('Owner only');
+  md.appendChild(e.modeOpen); md.appendChild(e.modeOwner);
+  e.body.appendChild(md);
+  e.body.appendChild(el('p', 'note',
+    'Owner only ignores the per device and per address counters and takes your admin session ' +
+    'on every call. Open with caps lets anyone studying use it, held down by the numbers below.'));
+
+  e.body.appendChild(el('p', 'lbl', 'Model'));
+  e.model = document.createElement('select');
+  e.model.className = 'aisel';
+  e.body.appendChild(e.model);
+  e.modelmeta = el('p', 'aimeta');
+  e.body.appendChild(e.modelmeta);
+  /* The select alone would make this a blind choice. The list under it is the reason for
+     the choice: what the eval measured, and what one grade costs at that model's prices. */
+  e.models = el('div', 'aimodels');
+  e.body.appendChild(e.models);
+
+  e.effortwrap = el('div');
+  e.effortwrap.appendChild(el('p', 'lbl', 'Effort'));
+  e.effort = document.createElement('select');
+  e.effort.className = 'aisel';
+  ['low', 'medium'].forEach(function (v) {
+    var o = document.createElement('option');
+    o.value = v; o.textContent = v;
+    e.effort.appendChild(o);
+  });
+  e.effortwrap.appendChild(e.effort);
+  e.body.appendChild(e.effortwrap);
+
+  e.caps = el('div', 'aicaps');
+  AI_FIELDS.forEach(function (f) {
+    var wrap = el('div', 'aicap');
+    var lab = el('label', 'lbl', f.label + (f.money ? ' (dollars)' : ''));
+    lab.setAttribute('for', 'aicap-' + f.key);
+    wrap.appendChild(lab);
+    var inp = document.createElement('input');
+    inp.type = 'text';
+    inp.inputMode = 'decimal';
+    inp.className = 'aiinput';
+    inp.id = 'aicap-' + f.key;
+    inp.autocomplete = 'off';
+    wrap.appendChild(inp);
+    var err = el('p', 'err-inline');
+    err.hidden = true;
+    wrap.appendChild(err);
+    e.cap[f.key] = { input: inp, err: err };
+    e.caps.appendChild(wrap);
+  });
+  e.body.appendChild(e.caps);
+  e.capnote = el('p', 'note');
+  e.body.appendChild(e.capnote);
+  e.save = el('button', 'btn sm', 'Save the caps');
+  e.save.type = 'button';
+  e.body.appendChild(e.save);
+
+  e.body.appendChild(el('p', 'lbl', 'Spending'));
+  e.usage = el('p', 'note');
+  e.body.appendChild(e.usage);
+  e.calls = el('div', 'aicalls');
+  e.body.appendChild(e.calls);
+  e.refresh = el('button', 'ailink', 'Refresh');
+  e.refresh.type = 'button';
+  e.body.appendChild(e.refresh);
+
+  return e;
+}
+
+function paintAi() {
+  var s = aiState.settings;
+  if (!s) return;
+  var on = !!s.enabled, openMode = s.mode === 'open';
+
+  aiEl.off.setAttribute('aria-pressed', String(!on));
+  aiEl.on.setAttribute('aria-pressed', String(on));
+  aiEl.modeOpen.setAttribute('aria-pressed', String(openMode));
+  aiEl.modeOwner.setAttribute('aria-pressed', String(!openMode));
+
+  aiEl.model.innerHTML = '';
+  aiState.models.forEach(function (m) {
+    var o = document.createElement('option');
+    o.value = m.id;
+    o.textContent = (m.name || m.id) + (m.enabled === false ? ' (off)' : '');
+    aiEl.model.appendChild(o);
+  });
+  if (!aiState.models.length) {
+    var o = document.createElement('option');
+    o.value = s.model || '';
+    o.textContent = s.model || 'no models listed';
+    aiEl.model.appendChild(o);
+  }
+  aiEl.model.value = s.model || '';
+
+  var cur = aiCurrentModel();
+  aiEl.modelmeta.textContent = cur ? aiModelMeta(cur) : 'no eval yet';
+
+  aiEl.models.innerHTML = '';
+  aiState.models.forEach(function (m) {
+    var row = el('div', 'aimodel' + (m.id === s.model ? ' on' : ''));
+    row.appendChild(el('span', 'aimodelid', m.id));
+    row.appendChild(el('span', 'aimodelmeta', aiModelMeta(m)));
+    aiEl.models.appendChild(row);
+  });
+
+  /* Haiku 4.5 has no adaptive thinking, so an effort control over it would be a lie. */
+  aiEl.effortwrap.hidden = /haiku/.test(String(s.model || ''));
+  aiEl.effort.value = s.effort || 'low';
+
+  AI_FIELDS.forEach(function (f) {
+    var v = s[f.key];
+    aiEl.cap[f.key].input.value = v == null ? '' : (f.money ? (Number(v) / 100).toFixed(2) : String(v));
+    aiEl.cap[f.key].input.disabled = !openMode;
+  });
+  aiEl.save.disabled = !openMode;
+  aiEl.capnote.textContent = openMode
+    ? 'The monthly cap is the one that cannot be talked around: a device id is spoofable, a spend ceiling is not.'
+    : 'The caps are held while owner only is on, because nothing but your own session can spend anything.';
+}
+
+function paintAiUsage() {
+  var u = aiState.usage, s = aiState.settings;
+  if (!u) { aiEl.usage.textContent = 'No spending recorded yet.'; aiEl.calls.innerHTML = ''; return; }
+
+  var last = u.last_ok_at ? new Date(u.last_ok_at) : null;
+  var n = Number(u.month_calls || 0);
+  aiEl.usage.textContent =
+    'Spent today ' + spendDollars(u.today_cents) + ' of ' + dollars(s && s.daily_cents) +
+    ' over ' + Number(u.today_calls || 0) + ', this month ' + spendDollars(u.month_cents) +
+    ' of ' + dollars(s && s.monthly_cents) + ' over ' + n + ' grade' + (n === 1 ? '' : 's') +
+    (last ? ', last grade ' + last.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+          : ', none yet') + '.';
+
+  aiEl.calls.innerHTML = '';
+  var calls = u.recent || [];
+  if (!calls.length) { aiEl.calls.appendChild(el('p', 'note', 'No calls yet.')); return; }
+
+  var t = el('table', 'aitable');
+  var head = document.createElement('tr');
+  ['Time', 'Material', 'Model', 'Cost', 'Status'].forEach(function (h) {
+    head.appendChild(el('th', null, h));
+  });
+  t.appendChild(head);
+  calls.slice(0, 20).forEach(function (c) {
+    var tr = document.createElement('tr');
+    var when = c.created_at ? new Date(c.created_at) : null;
+    tr.appendChild(el('td', null, when ? when.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''));
+    tr.appendChild(el('td', null, c.material || ''));
+    tr.appendChild(el('td', null, c.model || ''));
+    tr.appendChild(el('td', null, microDollars(c.cost_microcents)));
+    tr.appendChild(el('td', c.status === 'ok' ? null : 'aibad', c.status || ''));
+    t.appendChild(tr);
+  });
+  aiEl.calls.appendChild(t);
+}
+
+function aiApplySettings(r) {
+  if (r && r.settings) aiState.settings = r.settings;
+  paintAi();
+}
+
+function aiSet(patch) {
+  aiNote('');
+  aiClearFieldErrors();
+  return StudyAuth.admin.ai.set(patch).then(function (r) {
+    if (r && r.ok) {
+      aiApplySettings(r);
+      if (!r.settings) return aiLoadSettings();
+      return r;
+    }
+    aiShowError(r);
+    /* A refused write must not leave the controls showing what was asked for rather than
+       what is stored, so the stored row is painted back over the attempt. */
+    paintAi();
+    return r;
+  }, function (err) { aiNote(aiErrText(err)); paintAi(); });
+}
+
+function aiLoadSettings() {
+  return StudyAuth.admin.ai.settings().then(function (r) {
+    if (!r || !r.ok) { aiShowError(r); return null; }
+    aiState.settings = r.settings || null;
+    paintAi();
+    return r;
+  });
+}
+
+/* admin_ai_usage answers with the numbers at the top level of the payload, so the payload
+   itself is the readout's state. A failure here is left quiet: the ledger not loading is
+   no reason to make the switches above look broken. */
+function aiLoadUsage() {
+  return StudyAuth.admin.ai.usage().then(function (r) {
+    if (r && r.ok) { aiState.usage = r; paintAiUsage(); }
+  }, function () {});
+}
+
+function aiLoad() {
+  aiNote('');
+  return Promise.all([
+    StudyAuth.admin.ai.settings(),
+    StudyAuth.admin.ai.models()
+  ]).then(function (both) {
+    var s = both[0], m = both[1];
+    if (!s || !s.ok) {
+      aiEl.body.hidden = true;
+      aiNote(s && s.error === 'forbidden'
+        ? 'That admin session was refused. Sign in again.'
+        : 'Run 0010_ai_grading.sql in Supabase to turn this on.');
+      return;
+    }
+    aiState.settings = s.settings || null;
+    aiState.models = (m && m.ok && m.models) ? m.models : [];
+    aiEl.body.hidden = false;
+    paintAi();
+    return aiLoadUsage();
+  }, function (err) {
+    aiEl.body.hidden = true;
+    aiNote(aiErrText(err));
+  });
+}
+
+function wireAi() {
+  aiEl.off.addEventListener('click', function () { aiSet({ enabled: false }); });
+  aiEl.on.addEventListener('click', function () { aiSet({ enabled: true }); });
+  aiEl.modeOpen.addEventListener('click', function () { aiSet({ mode: 'open' }); });
+  aiEl.modeOwner.addEventListener('click', function () { aiSet({ mode: 'owner' }); });
+
+  aiEl.model.addEventListener('change', function () {
+    aiSet({ model: aiEl.model.value });
+  });
+
+  /* Effort is read by ai_begin off the settings row, not off the model row, so that is
+     where it has to be written. The model row's own effort column is the eval's record of
+     which setting was measured, and only the eval writes it. */
+  aiEl.effort.addEventListener('change', function () {
+    aiSet({ effort: aiEl.effort.value });
+  });
+
+  aiEl.save.addEventListener('click', function () {
+    aiNote('');
+    aiClearFieldErrors();
+    var patch = {}, bad = false;
+    AI_FIELDS.forEach(function (f) {
+      var raw = aiEl.cap[f.key].input.value.trim();
+      if (raw === '') return;
+      var n = Number(raw);
+      if (!isFinite(n)) {
+        aiEl.cap[f.key].err.textContent = 'Numbers only.';
+        aiEl.cap[f.key].err.hidden = false;
+        bad = true;
+        return;
+      }
+      patch[f.key] = f.money ? Math.round(n * 100) : Math.round(n);
+    });
+    if (bad) return;
+    aiEl.save.disabled = true;
+    aiSet(patch).then(function (r) {
+      aiEl.save.disabled = false;
+      if (r && r.ok) aiNote('Saved.', false);
+    }, function () { aiEl.save.disabled = false; });
+  });
+
+  aiEl.refresh.addEventListener('click', function () { aiLoad(); });
+}
+
+function initAi() {
+  if (!StudyAuth.isAdmin()) return;
+  var sec = $('aiblock');
+  if (!sec) {
+    var body = document.querySelector('#adminpanel .panelbody');
+    if (!body) return;
+    sec = el('section', 'block');
+    sec.id = 'aiblock';
+    var warn = body.querySelector('.warnbox');
+    if (warn) body.insertBefore(sec, warn); else body.appendChild(sec);
+    aiEl = buildAi(sec);
+    wireAi();
+  }
+  aiLoad();
 }
 
 function initAdmin() {
@@ -673,6 +1104,7 @@ function initAdmin() {
 
   renderAdminItems();
   initInbox();
+  initAi();
 }
 
 /* ============================================================ offline cache */

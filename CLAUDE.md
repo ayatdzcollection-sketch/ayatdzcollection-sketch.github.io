@@ -14,7 +14,11 @@ Rules that always apply:
 
 - Never commit `study/src/`. Commit only the `.enc` files, `study/materials.json`, shell files
   and repo docs you actually changed.
-- Never run anything that calls a paid API; materials are written by hand in-session.
+- Never run anything that calls a paid API; materials are written by hand in-session. Two
+  named exceptions, both the user's call on 2026-09-14: the AI grading model eval
+  (`study/src/tools/ai_eval/run_eval.mjs`, run once, only after the user has put the key in
+  the terminal and said go; PLAYBOOK section 14) and the AI grading feature itself when a
+  material has it turned on (owner controlled, capped, off by default).
 - Do not open the retired "Adaptive Study System" project on the Desktop or anything in it.
 - Content only from the named course documents, never general knowledge.
 - No em dashes or en dashes anywhere, including commit messages.

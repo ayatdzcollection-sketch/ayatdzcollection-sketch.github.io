@@ -6,3 +6,9 @@ study/src/
 
 # Local Claude Code launch config
 .claude/
+
+# secrets never enter the repo
+.env
+.env.*
+study/supabase/functions/**/.env*
+study/supabase/.temp/

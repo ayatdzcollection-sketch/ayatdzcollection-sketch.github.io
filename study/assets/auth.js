@@ -186,6 +186,14 @@ var StudyAuth = {
       .catch(function () { throw new Error('decrypt_failed'); });
   },
 
+  /* Whether AI grading is on for one material, for the material itself to ask. Anonymous
+     on purpose: the answer is three facts a visitor may as well know (on or off, open or
+     owner only, which model), and nothing else is exposed. A material treats a rejection
+     and a slow answer alike, as off, so the feature can never hold up a page. */
+  aiStatus: function (material) {
+    return rpc('ai_status', { p_material: material });
+  },
+
   /* ---- admin ---- */
   admin: {
     setCode: function (role, code) {
@@ -194,22 +202,34 @@ var StudyAuth = {
     setItem: function (id, hidden, locked) {
       return rpc('admin_set_item', { p_token: ls(TOKEN_KEY), p_id: id, p_hidden: hidden, p_locked: locked });
     },
-    /* Retired is a tag, not a column, so it needs no migration. Flipping it means writing
-       the whole item back through the publisher's upsert, which wants the key; an admin
-       session can fetch that. hidden and locked are not in the upsert's column list, so
-       they survive the round trip. */
-    setRetired: function (m, retired) {
+    /* A flag like retired or ai is a tag, not a column, so it needs no migration. Flipping
+       one means writing the whole item back through the publisher's upsert, which wants the
+       key; an admin session can fetch that. hidden and locked are not in the upsert's column
+       list, so they survive the round trip. */
+    setTag: function (m, tag, on) {
       var t = ls(TOKEN_KEY);
       return rpc('auth_material_key', { p_token: t, p_id: m.id }).then(function (r) {
         if (!r || !r.ok) throw new Error(r && r.error ? r.error : 'no key');
-        var tags = (m.tags || []).filter(function (x) { return x !== 'retired'; });
-        if (retired) tags.push('retired');
+        var tags = (m.tags || []).filter(function (x) { return x !== tag; });
+        if (on) tags.push(tag);
         return rpc('admin_upsert_item', { p_token: t, p_item: {
           id: m.id, kind: m.kind || 'material', class_id: m.class_id, class_name: m.class_name,
           term: m.term, title: m.title, blurb: m.blurb, path: m.path, tags: tags,
           added: m.added || null, sort: m.sort == null ? 100 : m.sort, enc_key: r.key
         } });
       });
+    },
+    setRetired: function (m, retired) { return StudyAuth.admin.setTag(m, 'retired', retired); },
+
+    /* AI grading. Every one of these is refused by the server without an admin token, so
+       the panel hiding them is a courtesy and not the control. Nothing here carries an API
+       key: the key lives only as an Edge Function secret and is never seen by a browser. */
+    ai: {
+      settings:  function ()     { return rpc('admin_ai_settings',   { p_token: ls(TOKEN_KEY) }); },
+      set:       function (o)    { return rpc('admin_ai_set',        { p_token: ls(TOKEN_KEY), p_settings: o }); },
+      usage:     function ()     { return rpc('admin_ai_usage',      { p_token: ls(TOKEN_KEY) }); },
+      models:    function ()     { return rpc('admin_ai_models',     { p_token: ls(TOKEN_KEY) }); },
+      modelsSet: function (list) { return rpc('admin_ai_models_set', { p_token: ls(TOKEN_KEY), p_models: list }); }
     },
     sessions: function () {
       return rpc('admin_sessions', { p_token: ls(TOKEN_KEY) });

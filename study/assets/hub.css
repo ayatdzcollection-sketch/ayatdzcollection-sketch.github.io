@@ -143,6 +143,7 @@ body{
 .flag.locked{color:var(--bad)}
 .flag.hidden{color:var(--warn)}
 .flag.retired{color:var(--ink3)}
+.flag.ai{color:var(--accent)}
 .mrow.islocked .mtitle{color:var(--ink2)}
 .mrow.isretired .mtitle{color:var(--ink2)}
 .retiredwrap{margin:34px 0 0;border-top:1px solid var(--rule);padding-top:6px}
@@ -308,3 +309,40 @@ textarea.askinput{min-height:80px;padding:10px 12px}
   color:var(--ink3);text-transform:uppercase}
 .inboxnotes{margin:0 0 8px;font-size:14.5px;color:var(--ink2);white-space:pre-wrap}
 .inboxfiles{margin:0 0 8px;padding-left:18px;font-size:13.5px;color:var(--ink2)}
+
+/* ---------- admin: AI grading ---------- */
+/* Same language as the rest of the owner panel: 2px corners, hairline rules, mono for
+   anything that is a number or an identifier, and no colour that is not already a token. */
+.aisel{width:100%;max-width:340px;min-height:44px;padding:0 10px;
+  font-family:var(--mono);font-size:13px;color:var(--ink);
+  background:var(--sheet);border:1px solid var(--rule);border-radius:2px}
+.aisel:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:var(--accent)}
+.aimeta{margin:6px 0 10px;font-family:var(--mono);font-size:11px;letter-spacing:.04em;
+  color:var(--ink3)}
+.aimodels{border:1px solid var(--rule2);border-radius:2px;margin:0 0 14px}
+.aimodel{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;
+  padding:8px 10px;border-bottom:1px solid var(--rule2)}
+.aimodel:last-child{border-bottom:0}
+.aimodel.on{border-left:2px solid var(--accent);padding-left:8px}
+.aimodelid{font-family:var(--mono);font-size:11.5px;letter-spacing:.04em;color:var(--ink)}
+.aimodelmeta{font-family:var(--mono);font-size:11px;letter-spacing:.04em;color:var(--ink3)}
+.aicaps{display:grid;grid-template-columns:1fr 1fr;gap:10px 14px;margin:10px 0 4px}
+.aicap{min-width:0}
+.aicap .lbl{margin-top:0}
+.aicap .err-inline{font-size:12.5px;margin-top:4px}
+.aiinput{width:100%;min-height:44px;padding:0 10px;font-family:var(--mono);font-size:14px;
+  color:var(--ink);background:var(--sheet);border:1px solid var(--rule);border-radius:2px}
+.aiinput:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:var(--accent)}
+.aiinput[disabled]{opacity:.5;background:var(--paper)}
+.aicalls{margin:8px 0 10px;overflow-x:auto}
+.aitable{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:11.5px}
+.aitable th{text-align:left;padding:6px 8px;border-bottom:1px solid var(--rule);
+  font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3)}
+.aitable td{padding:6px 8px;border-bottom:1px solid var(--rule2);color:var(--ink2);
+  white-space:nowrap}
+.aitable td.aibad{color:var(--bad)}
+.ailink{min-height:38px;padding:0;border:0;background:none;color:var(--ink3);
+  font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+  cursor:pointer}
+.ailink:hover,.ailink:focus-visible{color:var(--ink2)}
+@media (max-width:560px){ .aicaps{grid-template-columns:1fr} }

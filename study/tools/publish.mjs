@@ -158,9 +158,14 @@ async function push() {
         title: mat.title,
         blurb: mat.blurb,
         path: `m/${s.cls}/${s.file.replace(/\.html$/, '.enc')}`,
-        /* 'retired' rides along as a tag so no column or migration is needed; the hub
-           reads it back out and the admin panel can flip it live. */
-        tags: (mat.tags || []).filter(t => t !== 'retired').concat(mat.retired ? ['retired'] : []),
+        /* 'retired' and 'ai' ride along as tags so no column or migration is needed; the
+           hub reads them back out and the admin panel can flip either one live. 'ai' is
+           what lets a material offer AI grading at all, and it is checked again server
+           side on every grade, so writing it here decides nothing on its own. */
+        tags: (mat.tags || [])
+          .filter(t => t !== 'retired' && t !== 'ai')
+          .concat(mat.retired ? ['retired'] : [])
+          .concat(mat.ai ? ['ai'] : []),
         added: mat.added || null,
         sort: mat.sort ?? 100,
         enc_key: keyB64

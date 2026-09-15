@@ -31,6 +31,18 @@ One admin code, entered under **Owner** in the hub, gives you:
 
 Plus changing codes, seeing how many devices are signed in, and signing them all out.
 
+Where a material has AI grading built in (`apush/period1-2-test`, today), the owner panel adds
+an **AI grading** section: a master switch, a mode (open to any visitor with caps, or owner
+only), a model choice, editable caps (daily and monthly spend, grades per device per day, calls
+per address per minute, the longest an answer may be), and a readout of what has been spent
+today and this month and the last twenty calls (time, material, model, cost, status; never the
+text that was graded). The section exists only for an admin session, and every change in it is
+checked against the admin token on the server. It needs `0010_ai_grading.sql`, the deployed
+`supabase/functions/saq-grade/` function and the `ANTHROPIC_API_KEY` secret set under that
+function's Edge Function Secrets; until then the switch has nothing to turn on and every
+material behaves exactly as it does with AI grading off. The key lives only there: never in
+this repo, never in `materials.json`, never in a material, never in `localStorage`.
+
 Codes are checked on the server (bcrypt, cost 12) and stored only as hashes. Ten wrong
 tries from one address in fifteen minutes locks that address out for a while. Signing in
 stores a 256-bit token the server generated; only its SHA-256 is kept, so a database leak
@@ -233,6 +245,7 @@ anonymous line and sends it when there is a connection.
 | Grade, and how long the answer took | Your name, codes, tokens or session |
 | Stability, difficulty and predicted retrievability *before* the review | Your IP address |
 | Days since the last review, reps, lapses, scheduler version | Anything that identifies a person |
+| Your typed short answer in a material with AI grading, only when you press "Grade with AI", only if the owner has turned AI grading on, and only to Anthropic's API, never to this hub's database | A short answer when AI grading is off, and anything with your name attached |
 
 Identity is a random 32-hex install id generated on the device, so one device's stream stays
 separable from another's without anyone being named. Clearing site data throws it away.
