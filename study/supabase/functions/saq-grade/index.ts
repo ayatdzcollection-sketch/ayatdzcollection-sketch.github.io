@@ -43,11 +43,14 @@ const ALLOWED_ORIGINS = [
 /* One Claude call, 40 seconds: the eval measured a p95 of 23.5 s on the chosen model, so 25 s
    cut it too close. maxRetries is 1 rather than the SDK default of 2 so the
    worst case stays inside the function's own wall clock. */
-const CALL_TIMEOUT_MS = 40_000;
-const CALL_MAX_RETRIES = 1;
+/* The fuller feedback takes longer to write, so one attempt gets a long leash rather than a
+   short one that times out and quietly pays for a second try: a retry here cost 2.1 cents and
+   66 seconds for one grade. */
+const CALL_TIMEOUT_MS = 70_000;
+const CALL_MAX_RETRIES = 0;
 
 /* Clip the model's two feedback lines. The prompt asks for 240; this is the backstop. */
-const FEEDBACK_MAX = 300;
+const FEEDBACK_MAX = 600;   /* why and fix now carry an explanation and a worked instruction */
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -181,10 +184,10 @@ function validate(raw: unknown): Body | null {
 
 /* ---------------------------------------------------------------- the model's answer */
 
-type Part = { earned: boolean; why: string; fix: string; tea: { t: boolean; e: boolean; a: boolean } };
+type Part = { earned: boolean; why: string; fix: string; example: string; teacher: string; tea: { t: boolean; e: boolean; a: boolean } };
 
-function line(v: unknown): string {
-  return typeof v === "string" ? v.trim().slice(0, FEEDBACK_MAX) : "";
+function line(v: unknown, max = FEEDBACK_MAX): string {
+  return typeof v === "string" ? v.trim().slice(0, max) : "";
 }
 
 /* Structured outputs put the object in parsed_output. The JSON schema is passed raw rather
@@ -216,6 +219,8 @@ function readGrade(msg: { parsed_output?: unknown; content?: unknown }): Part[] 
       earned: q.earned,
       why: line(q.why),
       fix: line(q.fix),
+      example: line(q.example, 400),
+      teacher: line(q.teacher, 400),
       tea: { t: tea.t === true, e: tea.e === true, a: tea.a === true },
     });
   }
