@@ -527,7 +527,7 @@ test('acct1: the open tab and a Learn session stay on the device', () => {
 /* ---------- la10crucible and apushp12: the materials on the shared core ----------
    Same { cards, quizDate, exams } shape, same per card rule; ui (tab, pace, open stretch)
    is per device. */
-for (const ns of ['la10crucible', 'apushp12', 'psychu0']) {
+for (const ns of ['la10crucible', 'apushp12', 'psychu0', 'la10vocab1']) {
   test(ns + ' fsrs merges per card', () => {
     const a = env({ [ns + ':fsrs']: [{ cards: { 't1abc': rec(2, 5, 2200, 3, 0) }, quizDate: '2026-09-15', exams: [] }, 100] });
     const b = env({ [ns + ':fsrs']: [{ cards: { 'q9xyz': rec(4, 4, 3300, 2, 0) }, quizDate: '2026-09-15', exams: [] }, 900] });

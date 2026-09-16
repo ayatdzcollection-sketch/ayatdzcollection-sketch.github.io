@@ -103,6 +103,14 @@
           "tags": ["crucible", "miller", "acts-1-2", "true-or-false", "study-questions", "quiz"],
           "added": "2026-09-12",
           "sort": 10
+        },
+        {
+          "id": "vocab-ch1",
+          "title": "Vocabulary Chapter 1: ten words",
+          "blurb": "For the chapter 1 vocabulary quiz: a passage with blanks and no word bank, the spelling, and the definitions. Three drills over the same ten words, mixed in one feed or worked one skill at a time. Ninety cards: forty blanks across four passages that each use all ten words, thirty single sentences, the definition of each word picked from the other nine, and a spelling card that marks the letters you missed and tells the right word in the wrong form apart from the wrong word. Four passages to fill straight through, a word page with the root, the spelling trap and the word it gets confused with, a spot the misspelling drill, a mock quiz marked out of 25, and a printable sheet with the key on its own page.",
+          "tags": ["vocabulary", "chapter-1", "fill-in-the-blank", "spelling", "definitions", "passage"],
+          "added": "2026-09-15",
+          "sort": 20
         }
       ]
     },
