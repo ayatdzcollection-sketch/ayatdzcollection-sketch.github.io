@@ -22,7 +22,7 @@
  * Deploy, secrets and the smoke test: README.md beside this file.
  * No em dashes and no en dashes in this file.
  */
-import Anthropic, { RateLimitError, APIConnectionError } from "npm:@anthropic-ai/sdk";
+import Anthropic, { RateLimitError, APIConnectionError, APIError } from "npm:@anthropic-ai/sdk";
 import {
   CANDIDATE_MODELS,
   GRADE_SCHEMA_JSON,
@@ -46,7 +46,7 @@ const ALLOWED_ORIGINS = [
 /* The fuller feedback takes longer to write, so one attempt gets a long leash rather than a
    short one that times out and quietly pays for a second try: a retry here cost 2.1 cents and
    66 seconds for one grade. */
-const CALL_TIMEOUT_MS = 70_000;
+const CALL_TIMEOUT_MS = 110_000;   /* the detailed feedback took 53 s once; a timeout still bills, so leave room */
 const CALL_MAX_RETRIES = 0;
 
 /* Clip the model's two feedback lines. The prompt asks for 240; this is the backstop. */
@@ -184,7 +184,7 @@ function validate(raw: unknown): Body | null {
 
 /* ---------------------------------------------------------------- the model's answer */
 
-type Part = { earned: boolean; teacher_earned: boolean; why: string; fix: string; example: string; teacher: string; tea: { t: boolean; e: boolean; a: boolean } };
+type Part = { earned: boolean; teacher_earned: boolean; why: string; tea: { t: boolean; e: boolean; a: boolean }; tea_notes: { t: string; e: string; a: string }; accuracy: string; fix: string; rewrite: string; teacher: string };
 
 function line(v: unknown, max = FEEDBACK_MAX): string {
   return typeof v === "string" ? v.trim().slice(0, max) : "";
@@ -214,15 +214,18 @@ function readGrade(msg: { parsed_output?: unknown; content?: unknown }): Part[] 
     if (!p || typeof p !== "object") return null;
     const q = p as Record<string, unknown>;
     const tea = (q.tea ?? {}) as Record<string, unknown>;
+    const notes = (q.tea_notes ?? {}) as Record<string, unknown>;
     if (typeof q.earned !== "boolean") return null;
     out.push({
       earned: q.earned,
       teacher_earned: q.teacher_earned === true,
       why: line(q.why),
-      fix: line(q.fix),
-      example: line(q.example, 400),
-      teacher: line(q.teacher, 400),
       tea: { t: tea.t === true, e: tea.e === true, a: tea.a === true },
+      tea_notes: { t: line(notes.t, 300), e: line(notes.e, 300), a: line(notes.a, 300) },
+      accuracy: line(q.accuracy, 500),
+      fix: line(q.fix),
+      rewrite: line(q.rewrite, 800),
+      teacher: line(q.teacher, 400),
     });
   }
   return out;
@@ -325,7 +328,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
         {
           model,
           max_tokens: MAX_TOKENS,
-          system: systemPrompt(),
+          /* The system prompt is identical on every call and over Sonnet's 1024 token cache
+             minimum, so a student grading several parts in a sitting pays a tenth of its
+             input price after the first call. */
+          system: [{ type: "text", text: systemPrompt(), cache_control: { type: "ephemeral" } }],
           messages: [
             {
               role: "user",
@@ -351,13 +357,17 @@ Deno.serve(async (req: Request): Promise<Response> => {
       let kind = "unknown";
       if (e instanceof RateLimitError) kind = "rate_limit";
       else if (e instanceof APIConnectionError) kind = "connection";
-      else if (e instanceof Anthropic.APIError) kind = `api_${e.status ?? 0}`;
+      else if (e instanceof APIError) kind = `api_${e.status ?? 0}`;
       console.error(`saq-grade: call failed (${kind})`);
       return reply({ ok: false, error: "grader_error" }, 200, origin);
     }
 
-    inTok = msg.usage?.input_tokens ?? 0;
-    outTok = msg.usage?.output_tokens ?? 0;
+    /* The ledger prices input at the plain rate, so cache writes (1.25 times) and cache reads
+       (a tenth) are folded into the input count at what they actually cost. The spend cap
+       then stays true whether or not the cache was hit. */
+    const u = (msg.usage ?? {}) as unknown as Record<string, number | undefined>;
+    inTok = Math.ceil((u.input_tokens ?? 0) + 1.25 * (u.cache_creation_input_tokens ?? 0) + 0.1 * (u.cache_read_input_tokens ?? 0));
+    outTok = u.output_tokens ?? 0;
 
     if (msg.stop_reason === "refusal") {
       endStatus = "refused";

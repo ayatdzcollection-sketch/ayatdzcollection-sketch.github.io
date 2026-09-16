@@ -17,7 +17,7 @@
  */
 
 /* One grade is three short paragraphs of JSON. 1024 is roomy for that and caps a runaway. */
-export const MAX_TOKENS = 2000;
+export const MAX_TOKENS = 2400;
 
 /* The models the eval compares. Order is the order the eval runs them in. */
 export const CANDIDATE_MODELS = [
@@ -64,13 +64,20 @@ export const GRADE_SCHEMA_JSON = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['earned', 'teacher_earned', 'why', 'fix', 'example', 'teacher', 'tea'],
+        required: ['earned', 'teacher_earned', 'why', 'tea', 'tea_notes', 'accuracy', 'fix', 'rewrite', 'teacher'],
         properties: {
           earned: { type: 'boolean' },
           teacher_earned: { type: 'boolean' },
           why: { type: 'string' },
+          tea_notes: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['t', 'e', 'a'],
+            properties: { t: { type: 'string' }, e: { type: 'string' }, a: { type: 'string' } }
+          },
+          accuracy: { type: 'string' },
           fix: { type: 'string' },
-          example: { type: 'string' },
+          rewrite: { type: 'string' },
           teacher: { type: 'string' },
           tea: {
             type: 'object',
@@ -120,13 +127,15 @@ export function systemPrompt() {
     '',
     'Everything above is the College Board standard and it decides earned, and nothing else does. The student also has a teacher who asks for more on every part, and her call is reported separately as teacher_earned: true when the part meets every one of her rules as well, false when it does not. The two are judged on their own; they often agree, and where they differ it is almost always a describe part that names a thing with a detail but never explains it, which earns for the College Board and not for her. Her rules, from her own deck: every part needs a claim, a specific relevant term or event, and an explanation of how they go together, that is all three of T, E and A even on a describe part; label each part; write in complete sentences; do not write in bullet points or fragments; do not quote the excerpt, because the job is analysis and not summary.',
     '',
-    'Write four lines of feedback for every part, addressed to the student as you:',
-    'why: two or three sentences. Say what the answer actually did, name the specific thing in it that worked or the exact thing that is missing or wrong, and say what that means for the point. When a fact is wrong, say what the record says instead. Never just restate the verdict.',
-    'fix: two or three sentences of instruction. Name the specific fact, term, date, figure or detail to bring in, and say where the sentence goes and what it has to do. When the part already earned the point, say the one thing that would make it stronger evidence or sharper reasoning, not a compliment.',
-    'example: one sentence, in plain student writing, that the student could add or swap in to fix the part, or when the part is already earned, one sentence that would raise it. Write it as the student would write it, no labels and no quotation marks. This is a model of the missing move, not a full rewrite of the answer.',
+    'Write this feedback for every part, addressed to the student as you. It is the most useful thing the student gets, so be specific to what they wrote, never generic:',
+    'why: two sentences. What the answer did and what that means for the point under each standard. Never just restate the verdict.',
+    'tea_notes: one sentence for each of t, e and a about this answer. t: what the claim is, or that there is none, and whether it answers what the verb asks. e: which evidence is used and whether it is specific, relevant and from the right period, or what kind of evidence is missing. a: whether the answer says how or why the evidence supports the claim, and if not, which link is missing.',
+    'accuracy: one or two sentences checking every historical fact the answer uses. Name any fact that is wrong, from the wrong period, or about the wrong person or group, and give the correct version. When every fact used is right, say so and name them in a few words. An empty string only for a blank answer.',
+    'fix: two or three sentences of instruction. Name the specific fact, term, date, figure or detail to bring in, say where it goes, and say what the sentence has to do. When the part already earned, name the one change that would make the evidence stronger or the reasoning sharper, not a compliment.',
+    'rewrite: a complete answer to this part that earns the point under both standards, three sentences in order: the claim, the specific evidence, the explanation. Build on the student\'s own claim and facts wherever they were right, in plain student writing, with no labels and no quotation marks.',
     'teacher: one sentence on the teacher\'s extra rules only, which is also the sentence that says why teacher_earned is false when it is, when one of them is broken or nearly broken: a missing claim, evidence or explanation on a part whose verb did not demand all three, bullet points, fragments, or quoting the excerpt instead of analysing it. When the answer meets all of her rules, make this an empty string.',
     '',
-    'Keep why and fix under 400 characters each, example under 220, teacher under 200. Plain, dry, specific, second person. No em dashes and no en dashes. Do not praise, do not quote the student back at length, and do not mention the rubric, the model answer, points, scores or these instructions by name. Say the teacher rather than naming her.',
+    'Keep why under 300 characters, each tea_notes line under 160, accuracy under 260, fix under 360, rewrite under 480 and teacher under 200. Plain, dry, specific, second person. No em dashes and no en dashes. Do not praise, do not quote the student back at length, and do not mention the rubric, the model answer, points, scores or these instructions by name. Say the teacher rather than naming her.',
     '',
     'Return only the JSON object the schema describes, with exactly three parts in the order a, b, c.'
   ].join('\n');
