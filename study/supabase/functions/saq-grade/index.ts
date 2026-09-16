@@ -184,7 +184,7 @@ function validate(raw: unknown): Body | null {
 
 /* ---------------------------------------------------------------- the model's answer */
 
-type Part = { earned: boolean; why: string; fix: string; example: string; teacher: string; tea: { t: boolean; e: boolean; a: boolean } };
+type Part = { earned: boolean; teacher_earned: boolean; why: string; fix: string; example: string; teacher: string; tea: { t: boolean; e: boolean; a: boolean } };
 
 function line(v: unknown, max = FEEDBACK_MAX): string {
   return typeof v === "string" ? v.trim().slice(0, max) : "";
@@ -217,6 +217,7 @@ function readGrade(msg: { parsed_output?: unknown; content?: unknown }): Part[] 
     if (typeof q.earned !== "boolean") return null;
     out.push({
       earned: q.earned,
+      teacher_earned: q.teacher_earned === true,
       why: line(q.why),
       fix: line(q.fix),
       example: line(q.example, 400),

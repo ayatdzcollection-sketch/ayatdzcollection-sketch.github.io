@@ -12,3 +12,5 @@ study/src/
 .env.*
 study/supabase/functions/**/.env*
 study/supabase/.temp/
+supabase/.temp/
+study/supabase/supabase/

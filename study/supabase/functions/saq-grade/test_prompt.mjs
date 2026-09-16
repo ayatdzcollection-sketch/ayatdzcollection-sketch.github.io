@@ -5,7 +5,7 @@ const schema = GRADE_SCHEMA_JSON;
 assert.equal(schema.type, 'object'); assert.deepEqual(schema.required, ['parts']);
 /* The API rejects minItems above 1, so the schema carries no item count and the prompt asks for three. */
 assert.equal(schema.properties.parts.minItems, undefined); assert.ok(/exactly three parts/.test(systemPrompt()));
-assert.deepEqual(schema.properties.parts.items.required, ['earned', 'why', 'fix', 'example', 'teacher', 'tea']);
+assert.deepEqual(schema.properties.parts.items.required, ['earned', 'teacher_earned', 'why', 'fix', 'example', 'teacher', 'tea']);
 assert.ok(/teacher/.test(systemPrompt()) && /College Board standard/.test(systemPrompt()));
 const sys = systemPrompt(); assert.ok(sys.length > 200); assert.ok(/one point/i.test(sys));
 const u = userContent({ lead: 'L', parts: ['pa', 'pb', 'pc'], rubric: ['ra', 'rb', 'rc'], models: ['ma', 'mb', 'mc'], stimText: 'S', answers: ['x', 'y', 'z'] });
