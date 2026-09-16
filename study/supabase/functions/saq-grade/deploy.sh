@@ -11,7 +11,8 @@ set -e
 REF=gyfqhkhgosjpyvatffbi
 if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then echo "SUPABASE_ACCESS_TOKEN is not set"; exit 1; fi
 if [ -z "$ANTHROPIC_API_KEY" ]; then echo "ANTHROPIC_API_KEY is not set"; exit 1; fi
-DIR=$(cd "$(dirname "$0")/../.." && pwd)
+# The CLI wants the directory that holds supabase/, which here is study/.
+DIR=$(cd "$(dirname "$0")/../../.." && pwd)
 echo "setting the function secret"
 npx --yes supabase@latest secrets set "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY" --project-ref "$REF" >/dev/null
 echo "deploying the function"
