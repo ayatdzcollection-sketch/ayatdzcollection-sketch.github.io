@@ -27,6 +27,7 @@
 [data-subject="acct"]    { --accent:#27518C; }   /* accounting: ledger ink blue */
 [data-subject="la10"]    { --accent:#7A3E52; }   /* language arts: the plum lang already owned */
 [data-subject="other"]  { --accent:#6B6F5A; }
+[data-subject="fr"]      { --accent:#4A5E70; }   /* french: the ardoise of a chateau roof */
 
 *{box-sizing:border-box}
 /* The hidden attribute has to beat every display rule below, or a chip with

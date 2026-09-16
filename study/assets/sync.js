@@ -48,6 +48,7 @@ var SYNC_EXCLUDE = {
   'apushp12': ['ui'],
   'psychu0': ['ui'],
   'la10vocab1': ['ui'],
+  'frchateaux': ['ui'],
   /* 'telemetryQueue' and 'installId' are per device by definition: copying a queue between
    * devices would send the same reviews twice, and the install id is what keeps one
    * device's stream separable from another's without naming anybody. The 'telemetry'
@@ -310,6 +311,7 @@ var BUILTIN_MERGES = {
   'apushp12:fsrs': mergeCardsFsrs,             // APUSH period 1 and 2 test: same record shape
   'psychu0:fsrs': mergeCardsFsrs,              // Unit 0 research and statistics: same record shape
   'la10vocab1:fsrs': mergeCardsFsrs,           // vocabulary chapter 1: same record shape
+  'frchateaux:fsrs': mergeCardsFsrs,           // les chateaux vocabulary: same record shape
   'periodic:best': mergeMax,                   // sprint best: the higher score, from either device
   'periodic:setsDone': mergeRegionsDone,     // legacy ids; kept so an old device loses nothing
   'periodic:started': mergeNumberSet,        // set-size-independent successor to setsDone

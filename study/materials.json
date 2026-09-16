@@ -115,6 +115,21 @@
       ]
     },
     {
+      "id": "fr",
+      "name": "French 4",
+      "term": "2026-27",
+      "materials": [
+        {
+          "id": "chateaux",
+          "title": "Les châteaux: contrôle de vocabulaire",
+          "blurb": "For the vocabulary quiz on Thursday 17 September, in the format the teacher gave: a picture, and you write the word beside it. Every line of the class Quizlet set and nothing else, forty three terms with a drawing for each of the thirty seven you can photograph. One castle drawn as a labelled plate where the seven parts of a building fill in as you earn them. Two rungs per word, picked out of four real confusables and then written cold on a ruled line with an accent row under it, and a grader that tells a missing accent, a wrong gender and a wrong word apart instead of calling all three wrong. The sheet's own mistakes are named where they are. A fifteen picture mock marked out of fifteen, notecards, and a printable sheet with the key on its own page.",
+          "tags": ["vocabulaire", "châteaux", "picture-to-word", "written-recall", "accents", "gender"],
+          "added": "2026-09-15",
+          "sort": 10
+        }
+      ]
+    },
+    {
       "id": "acct",
       "name": "Accounting 1",
       "term": "2026-27",
