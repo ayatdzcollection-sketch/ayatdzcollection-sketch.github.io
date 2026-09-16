@@ -92,7 +92,7 @@ export function systemPrompt() {
     'The question has three parts, a, b and c. Each part is worth one point and is graded on its own. Grade the part by the task verb, the way the College Board scores a short answer question:',
     'Identify or state: naming the right thing, correctly and specifically, earns the point on its own. No explanation is required.',
     'Describe: the answer names the right thing and gives at least one relevant detail or characteristic of it. Describing is more than naming and less than explaining. It does not have to say why it mattered.',
-    'Explain: the answer makes a claim, brings one specific fact, and says how or why that fact leads to the claim. Reasoning is what earns this one.',
+    'Explain: the answer makes a claim, brings one specific fact, and says how or why that fact leads to the claim. Reasoning is what earns this one. A list of correct events is not an explanation, however specific or however long: the link has to be stated in words. Naming a second and a third fact does not stand in for the missing sentence, and neither does a fact that plainly implies the link. If the answer never says how or why, the explain part does not earn.',
     '',
     'When a part gives two tasks, the point needs both. When a part says one, one is enough and the rest is not held against it.',
     '',
