@@ -242,6 +242,9 @@ var StudyAuth = {
       features:   function ()     { return rpc('admin_ai_features',    { p_token: ls(TOKEN_KEY) }); },
       /* A patch: id, plus any of enabled, mode, model, daily_cents. The server checks each. */
       featureSet: function (o)    { return rpc('admin_ai_feature_set', { p_token: ls(TOKEN_KEY), p_feature: o }); },
+      /* Extra budget for today only (0016). feature null is the global daily cap. It expires by
+         itself at the next day boundary, so nothing has to be put back. */
+      bonus:      function (f, c) { return rpc('admin_ai_bonus', { p_token: ls(TOKEN_KEY), p_feature: f || null, p_cents: c }); },
       /* Saved Ask conversations (0012), newest first. before is the smallest id already in
          hand, or null for the newest page; the server holds limit to 1 to 500. */
       chats:      function (limit, before) {

@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {
   FEATURE, MAX_TOKENS, RESERVE_IN, RESERVE_OUT, CHARS_PER_TOKEN, DEFAULT_MODEL, LIMITS, PRICES, THREAD_RE,
-  PLAIN_MODELS, EFFORT_MODELS, modelParams, systemPrompt, buildRequest, estimateInputTokens, validateAsk
+  PLAIN_MODELS, EFFORT_MODELS, modelParams, systemPrompt, buildRequest, MATH_RULE, estimateInputTokens, validateAsk
 } from './ask_prompt.mjs';
 import { PRICES as GRADER_PRICES } from '../saq-grade/grader_prompt.mjs';
 
@@ -167,11 +167,23 @@ assert.equal(v.turn, 2);
 const minimal = validateAsk({ material: good.material, install: good.install, question: 'x' });
 assert.deepEqual(minimal, {
   material: good.material, install: good.install, adminToken: null, question: 'x', quote: '', focus: '', map: '', chunks: [], history: [],
-  progress: '', notes: '', thread: null, turn: 0, textbook: false, practice: true, widgets: true, chapter: null
+  progress: '', notes: '', thread: null, turn: 0, textbook: false, practice: true, widgets: true, math: false, chapter: null
 });
 assert.equal(validateAsk({ material: good.material, install: good.install, question: 'x', chunks: [{ label: 'a', text: 'b', ref: 'q:abc_1' }] }).chunks[0].ref, 'q:abc_1');
 assert.equal(validateAsk({ material: good.material, install: good.install, question: 'x', chunks: [{ label: 'a', text: 'b', ref: 'bad ref' }] }), null);
 assert.equal(validateAsk({ material: good.material, install: good.install, question: 'x', textbook: 'yes' }), null);
+assert.equal(validateAsk({ material: good.material, install: good.install, question: 'x', math: 'yes' }), null);
+assert.equal(validateAsk({ material: good.material, install: good.install, question: 'x', math: true }).math, true);
+
+/* Math: the paragraph goes only to pages that can draw it, and it rides in the cached system text. */
+{
+  const off = buildRequest({ model: 'claude-sonnet-4-6', map: 'm', question: 'q' });
+  const on = buildRequest({ model: 'claude-sonnet-4-6', map: 'm', question: 'q', math: true });
+  assert.ok(!off.system[0].text.includes(MATH_RULE));
+  assert.ok(on.system[0].text.includes(MATH_RULE));
+  assert.ok(on.system[1].cache_control);
+  assert.ok(!/[\u2014\u2013]/.test(MATH_RULE));
+}
 
 const s = (n) => 'a'.repeat(n);
 const at = (n, per) => Array.from({ length: n }, () => per);

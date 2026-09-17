@@ -1108,6 +1108,13 @@ function buildAi(sec) {
     e.caps.appendChild(fld.field);
   });
   e.spend.body.appendChild(e.caps);
+
+  /* Today only (0016). It is not one of the stored caps: it lifts the daily ceiling until the
+     next day boundary and then lapses, so a cram night never quietly becomes the new normal. */
+  e.bonus = aiTextInput();
+  var bf = aiField('aibonus', 'Extra for today only (dollars)', e.bonus);
+  e.bonusErr = bf.err;
+  e.spend.body.appendChild(bf.field);
   e.spend.body.appendChild(el('p', 'note',
     'The daily and monthly caps count every feature in either mode, and each feature\'s own ' +
     'daily cap sits inside them. The device and address limits hold features set to Open with ' +
@@ -1116,6 +1123,16 @@ function buildAi(sec) {
   var saveRow = el('div', 'row wrap');
   e.save = el('button', 'btn sm', 'Save the caps');
   e.save.type = 'button';
+  e.bonus.addEventListener('input', function () { e.bonus.setAttribute('data-editing', '1'); });
+  e.bonus.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') e.bonus.blur(); });
+  e.bonus.addEventListener('change', function () {
+    e.bonus.removeAttribute('data-editing');
+    e.bonusErr.hidden = true;
+    var raw = e.bonus.value.trim().replace(/^\$/, '');
+    var n = raw === '' ? 0 : Number(raw);
+    if (!isFinite(n) || n < 0) { aiShowAt(e.bonusErr, 'Numbers only.'); return; }
+    aiBonusSet(null, Math.round(n * 100), e.bonusErr);
+  });
   e.saveMsg = el('span', 'aisaved');
   saveRow.appendChild(e.save);
   saveRow.appendChild(e.saveMsg);
@@ -1246,6 +1263,24 @@ function aiFeatRow(id) {
     r.capErr = f.err;
   }
   ctl.appendChild(f.field);
+
+  if (!saq) {
+    r.bonus = aiTextInput();
+    f = aiField('aibonusf', 'Extra today ($)', r.bonus);
+    r.bonusErr = f.err;
+    ctl.appendChild(f.field);
+  }
+
+  if (!saq) {
+    /* Whether an answer may go past the material (0015). Hidden for a feature that has no such
+       switch, so an older server without the column shows nothing rather than a dead control. */
+    r.beyond = aiSwitch('Beyond the material');
+    f = aiField('aibeyondf', 'Beyond the material', r.beyond);
+    r.beyondField = f.field;
+    r.beyondErr = f.err;
+    r.beyondField.hidden = true;
+    ctl.appendChild(f.field);
+  }
   r.li.appendChild(ctl);
 
   r.msg = el('p', 'err-inline aifeatmsg');
@@ -1257,11 +1292,11 @@ function aiFeatRow(id) {
 }
 
 function aiRowControls(r) {
-  return [r.sw, r.seg.owner, r.seg.open, r.model, r.cap].filter(Boolean);
+  return [r.sw, r.seg.owner, r.seg.open, r.model, r.cap, r.beyond, r.bonus].filter(Boolean);
 }
 
 function aiRowClear(r) {
-  [r.modeErr, r.modelErr, r.capErr, r.msg].forEach(function (n) {
+  [r.modeErr, r.modelErr, r.capErr, r.beyondErr, r.bonusErr, r.msg].forEach(function (n) {
     if (!n) return;
     n.hidden = true;
     n.textContent = '';
@@ -1284,6 +1319,21 @@ function aiWireRow(r) {
   });
   if (r.sw) {
     r.sw.addEventListener('click', function () { set({ enabled: !aiSwitchOn(r.sw) }); });
+  }
+  if (r.beyond) {
+    r.beyond.addEventListener('click', function () { set({ beyond: !aiSwitchOn(r.beyond) }); });
+  }
+  if (r.bonus) {
+    r.bonus.addEventListener('input', function () { r.bonus.setAttribute('data-editing', '1'); });
+    r.bonus.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') r.bonus.blur(); });
+    r.bonus.addEventListener('change', function () {
+      r.bonus.removeAttribute('data-editing');
+      aiRowClear(r);
+      var raw = r.bonus.value.trim().replace(/^\$/, '');
+      var n = raw === '' ? 0 : Number(raw);
+      if (!isFinite(n) || n < 0) { aiShowAt(r.bonusErr, 'Numbers only.'); return; }
+      aiBonusSet(r.id, Math.round(n * 100), r.bonusErr, r);
+    });
   }
   if (r.cap) {
     r.cap.addEventListener('input', function () { r.cap.setAttribute('data-editing', '1'); });
@@ -1354,13 +1404,22 @@ function aiPaintFeatRow(r, f, s) {
   r.beta.hidden = !f.beta;
   r.sw.setAttribute('aria-checked', String(!!f.enabled));
   r.sw.setAttribute('aria-label', name);
-  r.meta.textContent = 'Today ' + spendDollars(f.today_cents) + ', ' +
-    aiCount(f.today_calls, 'call') + ' · tag ' + String(f.tag || '');
+  var bonus = Number(f.bonus_cents) || 0;
+  r.meta.textContent = 'Today ' + spendDollars(f.today_cents) + ' of ' +
+    dollars((Number(f.daily_cents) || 0) + bonus) + (bonus ? ' (' + dollars(bonus) + ' extra today)' : '') +
+    ', ' + aiCount(f.today_calls, 'call') + ' · tag ' + String(f.tag || '');
   r.li.classList.toggle('off', !s.enabled || !f.enabled);
   aiPaintMode(r, f.mode);
   aiPaintModelSelect(r.model, f.model);
+  if (r.beyond) {
+    r.beyondField.hidden = typeof f.beyond !== 'boolean';
+    r.beyond.setAttribute('aria-checked', String(!!f.beyond));
+  }
   if (r.cap.getAttribute('data-editing') !== '1') {
     r.cap.value = f.daily_cents == null ? '' : (Number(f.daily_cents) / 100).toFixed(2);
+  }
+  if (r.bonus && r.bonus.getAttribute('data-editing') !== '1') {
+    r.bonus.value = bonus ? (bonus / 100).toFixed(2) : '';
   }
 }
 
@@ -1400,11 +1459,27 @@ function aiPaintModels() {
   aiEl.models.hidden = !aiState.models.length;
 }
 
+/* An extra granted today is spent by the next day boundary, so it is shown only while it
+   counts. The server decides that too; this is the same test in the panel's own words. */
+function aiBonusToday(row) {
+  if (!row || !row.bonus_at) return 0;
+  var at = Date.parse(row.bonus_at);
+  if (!isFinite(at)) return 0;
+  var now = new Date();
+  var dayStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  return at >= dayStart ? (Number(row.bonus_cents) || 0) : 0;
+}
+
 function aiPaintReadout() {
   var u = aiState.usage, s = aiState.settings;
+  var bonus = aiBonusToday(s);
+  if (aiEl.bonus && aiEl.bonus.getAttribute('data-editing') !== '1') {
+    aiEl.bonus.value = bonus ? (bonus / 100).toFixed(2) : '';
+  }
   if (!u) { aiEl.readout.textContent = 'No spending recorded yet.'; return; }
   aiEl.readout.textContent =
-    'Today ' + spendDollars(u.today_cents) + ' of ' + dollars(s && s.daily_cents) + ', ' +
+    'Today ' + spendDollars(u.today_cents) + ' of ' + dollars((s ? Number(s.daily_cents) || 0 : 0) + bonus) +
+    (bonus ? ' (' + dollars(bonus) + ' extra today)' : '') + ', ' +
     aiCount(u.today_calls, 'call') + ' · month ' + spendDollars(u.month_cents) + ' of ' +
     dollars(s && s.monthly_cents) + ', ' + aiCount(u.month_calls, 'call');
 }
@@ -1517,6 +1592,21 @@ function aiSet(patch, row, els) {
   });
 }
 
+/* Today's extra budget, for one feature or (feature null) the global daily cap. The reply
+   carries the new ceiling and what has been spent against it, and the panel reloads so every
+   readout agrees. */
+function aiBonusSet(feature, cents, errAt, row) {
+  if (!aiEl) return Promise.resolve(null);
+  return StudyAuth.admin.ai.bonus(feature, cents).then(function (r) {
+    if (r && r.ok) return aiLoad();
+    aiShowAt(errAt, r && r.error === 'range' ? 'The server refused that: $0 to $100.' : aiRefusal(r));
+    return r;
+  }, function (err) {
+    aiShowAt(errAt, aiErrText(err));
+    return null;
+  });
+}
+
 /* Writes one feature through admin_ai_feature_set. The reply is the stored row, which is
    merged over the one in hand so today's spend (not part of the reply) stays put. */
 function aiFeatureSet(row, patch) {
@@ -1534,6 +1624,7 @@ function aiFeatureSet(row, patch) {
     var at = field === 'mode' ? row.modeErr
       : field === 'model' ? row.modelErr
       : field === 'daily_cents' ? row.capErr
+      : field === 'beyond' ? row.beyondErr
       : null;
     if (at) aiShowAt(at, aiRangeText(field));
     else aiShowAt(row.msg, field ? aiRangeText(field) : aiRefusal(r));
@@ -1553,7 +1644,7 @@ function aiMergeFeature(f) {
   var cur = null;
   list.forEach(function (x) { if (x && x.id === f.id) cur = x; });
   if (!cur) { list.push(f); return; }
-  ['name', 'enabled', 'mode', 'model', 'daily_cents', 'tag', 'beta', 'updated_at'].forEach(function (k) {
+  ['name', 'enabled', 'mode', 'model', 'daily_cents', 'tag', 'beta', 'beyond', 'bonus_cents', 'updated_at'].forEach(function (k) {
     if (Object.prototype.hasOwnProperty.call(f, k)) cur[k] = f[k];
   });
 }

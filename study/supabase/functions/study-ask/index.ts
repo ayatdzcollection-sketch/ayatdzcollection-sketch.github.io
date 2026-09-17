@@ -84,6 +84,8 @@ type AskBody = {
   textbook: boolean;
   practice: boolean;
   widgets: boolean;
+  math: boolean;
+  beyond?: boolean;
   chapter: number | null;
   textbookLabels?: string[];
 };
@@ -483,6 +485,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return reply({ ok: false, error: "grader_error" }, 200, origin);
   }
   const model = typeof begun.model === "string" && begun.model ? begun.model : DEFAULT_MODEL;
+  /* Whether an answer may go past the material is the owner's switch, read here from ai_begin2
+     and never from the request: a forged body cannot turn it on. */
+  body.beyond = begun.beyond === true;
 
   return streamAnswer(body, callId, model, origin);
 });
