@@ -36,11 +36,12 @@
         {
           "id": "period1-2-test",
           "title": "Periods 1 and 2: test prep",
-          "blurb": "For the test on Thursday 17 September: 26 stimulus based multiple choice questions in sets and one short answer question. Forty eight sources the way the exam gives them: excerpts, a law, two historians, eleven tables, five charts drawn from the chapters' own figures, four maps, ten period images and one political cartoon, every image a public domain original with its credit, each source with two to four questions that refer to it. A timeline of every source at its date, coloured by how well you hold it. A feed that hands you one question with its source and says why it was picked; a mock test built by sets, eleven from Period 1 and fifteen from Period 2, timed, then an SAQ in three parts written and marked against a model, or graded by AI when the owner turns that on; twelve SAQ prompts to practise; a Tips tab on sourcing, the question stems, reading a visual, the distractor habits and TEA; and a printable test with the sources on the page and the key on its own.",
+          "blurb": "For the test on Thursday 17 September: 26 stimulus based multiple choice questions in sets and one short answer question. A Learn tab that teaches the four chapters section by section, with five must knows each, a covered self check and a cram path weakest first. Forty eight sources the way the exam gives them: excerpts, a law, two historians, tables, charts, maps, period images and a political cartoon, each with the questions that refer to it. An Events tab of every event and people in the chapters. A feed that picks your next question and says why, a timed mock test built by sets, eighteen short answer questions answered in three parts and marked against a model, a Tips tab on sourcing, stems, visuals, distractors and TEA, and a printable test with its key on its own page.",
           "tags": ["periods-1-2", "stimulus-based", "sbmcq", "saq", "test", "fraser"],
           "added": "2026-09-12",
           "sort": 35,
-          "ai": true
+          "ai": true,
+          "ask": true
         },
         {
           "id": "fraser-review",

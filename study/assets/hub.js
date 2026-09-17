@@ -26,6 +26,8 @@ function paintOwner() {
     : 'Sign in with the admin code to hide, lock or retire materials, change codes, or open anything you have locked. Studying needs no code at all.';
   if (admin) {
     $('whonote').textContent = 'This browser is signed in as the owner. Signing out also clears any keys cached for locked materials.';
+  } else {
+    aiTeardown();
   }
   role = StudyAuth.role();
 }
@@ -134,7 +136,9 @@ function makeRow(m) {
   if (m.locked) title.appendChild(flag('locked', 'Locked'));
   if (m.hidden) title.appendChild(flag('hidden', 'Hidden'));
   if (isRetired(m)) title.appendChild(flag('retired', 'Retired'));
-  if (hasTag(m, 'ai')) title.appendChild(flag('ai', 'AI'));
+  /* The owner's reminder of which materials offer an AI feature. Nothing AI related is drawn
+     for anyone else. */
+  if (StudyAuth.isAdmin() && aiHasAnyTag(m)) title.appendChild(flag('ai', 'AI'));
   left.appendChild(title);
   if (m.blurb) {
     var b = document.createElement('span');
@@ -581,10 +585,11 @@ function initSyncPanel() {
 
 function renderAdminItems() {
   var box = $('adminitems');
+  aiPopOpen = null;
   box.innerHTML = '';
   if (!items.length) { box.innerHTML = '<p class="note">Nothing published yet.</p>'; return; }
 
-  items.forEach(function (m) {
+  items.forEach(function (m, i) {
     var row = document.createElement('div');
     row.className = 'adminrow';
 
@@ -625,28 +630,169 @@ function renderAdminItems() {
         return r;
       });
     }));
-    /* The ai tag is what lets one material offer AI grading at all. It is the narrow gate:
-       the master switch below can be on and this material still never asks the grader. */
-    togs.appendChild(mk('AI', hasTag(m, 'ai'), function (v) {
-      return StudyAuth.admin.setTag(m, 'ai', v).then(function (r) {
-        if (r && r.ok) m.tags = withTag(m, 'ai', v);
-        return r;
-      });
-    }));
+    /* Each AI feature is offered by a material only when it carries that feature's tag. The
+       tags are the narrow gate: every switch in the AI section below can be on and this
+       material still offers nothing it is not tagged for. One control holds all of them, so
+       a new feature is a line in AI_FEATURES rather than another button on every row. */
+    if (StudyAuth.isAdmin()) togs.appendChild(aiTagControl(m, i));
 
     row.appendChild(name); row.appendChild(togs);
     box.appendChild(row);
   });
 }
 
-/* ============================================================ AI grading */
+/* The per material AI control: a small button that says how many features this material
+   carries, opening a short list with one checkbox per feature. Only one list is open at a
+   time; a tap anywhere else, focus moving elsewhere, or Escape closes it. */
+var aiPopOpen = null;
+var aiPopWired = false;
+
+function aiPopClose(refocus) {
+  var p = aiPopOpen;
+  if (!p) return;
+  aiPopOpen = null;
+  p.menu.hidden = true;
+  p.btn.setAttribute('aria-expanded', 'false');
+  if (refocus) { try { p.btn.focus(); } catch (e) {} }
+}
+
+function aiPopWire() {
+  if (aiPopWired) return;
+  aiPopWired = true;
+  var outside = function (ev) {
+    if (aiPopOpen && !aiPopOpen.wrap.contains(ev.target)) aiPopClose(false);
+  };
+  if (window.PointerEvent) {
+    document.addEventListener('pointerdown', outside, true);
+  } else {
+    document.addEventListener('mousedown', outside, true);
+    document.addEventListener('touchstart', outside, true);
+  }
+  document.addEventListener('focusin', outside, true);
+  document.addEventListener('keydown', function (ev) {
+    if (aiPopOpen && (ev.key === 'Escape' || ev.key === 'Esc')) {
+      ev.preventDefault();
+      aiPopClose(true);
+    }
+  });
+}
+
+function aiTagControl(m, i) {
+  aiPopWire();
+  var total = AI_FEATURES.length;
+  var wrap = el('div', 'aipop');
+  var btn = el('button', 'tog aipopbtn');
+  btn.type = 'button';
+  btn.setAttribute('aria-expanded', 'false');
+  var menu = el('div', 'aipopmenu');
+  menu.id = 'aipop-' + i;
+  menu.hidden = true;
+  menu.setAttribute('role', 'group');
+  menu.setAttribute('aria-label', 'AI features for ' + (m.title || m.id));
+  btn.setAttribute('aria-controls', menu.id);
+
+  var err = el('p', 'err-inline aipoperr');
+  err.hidden = true;
+  var boxes = [];
+
+  function paintBtn() {
+    var n = AI_FEATURES.filter(function (f) { return hasTag(m, f.tag); }).length;
+    btn.textContent = 'AI ' + n + '/' + total;
+    btn.setAttribute('aria-label', 'AI features, ' + n + ' of ' + total + ' on');
+    btn.classList.toggle('some', n > 0);
+  }
+
+  function settle(box, on, text) {
+    boxes.forEach(function (b) { b.disabled = false; });
+    if (text == null) return;
+    box.checked = !on;
+    err.textContent = text;
+    err.hidden = false;
+  }
+
+  AI_FEATURES.forEach(function (f) {
+    var lab = el('label', 'aipopitem');
+    var box = document.createElement('input');
+    box.type = 'checkbox';
+    box.checked = hasTag(m, f.tag);
+    lab.appendChild(box);
+    lab.appendChild(el('span', null, f.label));
+    menu.appendChild(lab);
+    boxes.push(box);
+
+    box.addEventListener('change', function () {
+      var on = box.checked;
+      err.hidden = true;
+      /* setTag writes the whole tag list back. Two writes in flight would each carry the list
+         from before the other, and the later one would undo the earlier, so one at a time. */
+      boxes.forEach(function (b) { b.disabled = true; });
+      StudyAuth.admin.setTag(m, f.tag, on).then(function (r) {
+        if (r && r.ok) {
+          settle(box, on, null);
+          m.tags = withTag(m, f.tag, on);
+          paintBtn();
+          loadCatalog().then(function () {
+            renderAll($('filter').value.trim().toLowerCase());
+          }).catch(function () {});
+          return;
+        }
+        settle(box, on, r && r.error === 'forbidden'
+          ? 'That admin session was refused. Sign in again.'
+          : 'Could not save that.');
+      }, function () {
+        settle(box, on, 'Could not save that.');
+      });
+    });
+  });
+  menu.appendChild(err);
+
+  btn.addEventListener('click', function () {
+    if (aiPopOpen && aiPopOpen.btn === btn) { aiPopClose(false); return; }
+    aiPopClose(false);
+    err.hidden = true;
+    menu.hidden = false;
+    btn.setAttribute('aria-expanded', 'true');
+    aiPopOpen = { wrap: wrap, btn: btn, menu: menu };
+  });
+
+  paintBtn();
+  wrap.appendChild(btn);
+  wrap.appendChild(menu);
+  return wrap;
+}
+
+/* ============================================================ AI */
 
 /* Built here rather than written into index.html so the section does not exist in the
    document at all unless this browser holds an admin session. That is convenience, not
    security: every control below writes through a token checked RPC that decides again on
-   the server, and the only anonymous surface the feature has is ai_status, which answers
-   with three facts and nothing else. No API key is ever in reach of this file; the key
-   lives as an Edge Function secret. */
+   the server, and the only anonymous surface the features have is ai_status and ai_status2,
+   which answer with a few facts and nothing else. No API key is ever in reach of this file;
+   the key lives as an Edge Function secret.
+
+   The section is four groups that stay closed until opened, so it does not grow a screen
+   longer each time a feature is added: Spend (the master switch and the ceilings every
+   feature spends against), Features (one row each), Models (what the eval measured) and
+   Recent calls (the ledger). */
+
+/* Every AI feature, one line each. id is the feature's id on the server, tag is what a
+   material carries to offer it, label is what the per material control reads. 'saq' has no
+   row in study_ai_features: its mode and model live in study_ai_settings (0010). A third
+   feature is one line here and one row in study_ai_features. */
+var AI_FEATURES = [
+  { id: 'saq', tag: 'ai',     label: 'SAQ grading', short: 'SAQ' },
+  { id: 'ask', tag: 'ai-ask', label: 'Ask (beta)',  short: 'Ask' }
+];
+
+function aiFeatureInfo(id) {
+  var hit = null;
+  AI_FEATURES.forEach(function (f) { if (f.id === id) hit = f; });
+  return hit;
+}
+
+function aiHasAnyTag(m) {
+  return AI_FEATURES.some(function (f) { return hasTag(m, f.tag); });
+}
 
 /* Stored units are cents and counts; the two money fields are typed in dollars because
    nobody budgets in cents. min and max mirror the checks in 0010 so a value the server
@@ -654,30 +800,30 @@ function renderAdminItems() {
 var AI_FIELDS = [
   { key: 'daily_cents',       label: 'Daily cap',              money: true, min: 0,   max: 10000 },
   { key: 'monthly_cents',     label: 'Monthly cap',            money: true, min: 0,   max: 10000 },
-  { key: 'per_install_daily', label: 'Grades per device, day',              min: 0,   max: 500 },
+  { key: 'per_install_daily', label: 'Calls per device, day',               min: 0,   max: 500 },
   { key: 'per_ip_minute',     label: 'Calls per address, min',              min: 1,   max: 60 },
   { key: 'max_chars',         label: 'Max characters',                      min: 200, max: 6000 }
 ];
+
+/* A feature's own daily cap, in cents, as 0011 checks it. */
+var AI_FEATURE_CAP = { min: 0, max: 10000 };
 
 /* One grade is about this many tokens, so a price per million becomes a price per grade
    the owner can actually compare. It is an estimate and the ledger is the truth. */
 var AI_IN_TOKENS = 1200, AI_OUT_TOKENS = 250;
 
+/* Which groups are open is a per browser convenience, nothing more. */
+var AI_GROUPS_KEY = 'studyhub:admin:aigroups';
+
 var aiEl = null;
-var aiState = { settings: null, models: [], usage: null };
+var aiState = { settings: null, models: [], usage: null, features: [], saq: null, featErr: '' };
+var aiUid = 0;
 
 function el(tag, cls, text) {
   var n = document.createElement(tag);
   if (cls) n.className = cls;
   if (text != null) n.textContent = text;
   return n;
-}
-
-function aiTog(label) {
-  var b = el('button', 'tog', label);
-  b.type = 'button';
-  b.setAttribute('aria-pressed', 'false');
-  return b;
 }
 
 /* Caps are round money and print like money. Spend is not: a grade can cost a fraction of
@@ -687,6 +833,22 @@ function dollars(cents) { return '$' + (Number(cents || 0) / 100).toFixed(2); }
 function spendDollars(cents) { return '$' + (Number(cents || 0) / 100).toFixed(4); }
 /* The ledger counts microcents, a millionth of a cent, so 1e8 of them make a dollar. */
 function microDollars(mc) { return '$' + (Number(mc || 0) / 1e8).toFixed(4); }
+/* For the one line a closed group shows: whole cents, and a fraction of one said in words
+   rather than printed as $0.00, which would read as nothing spent. */
+function shortDollars(cents) {
+  var n = Number(cents || 0);
+  return n > 0 && n < 1 ? 'under $0.01' : dollars(n);
+}
+function aiCount(n, word) {
+  n = Number(n || 0);
+  return n + ' ' + word + (n === 1 ? '' : 's');
+}
+function aiWhen(ts) {
+  var d = ts ? new Date(ts) : null;
+  return d && !isNaN(d.getTime())
+    ? d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+    : '';
+}
 
 function aiCostPerGrade(m) {
   if (m.in_per_mtok == null || m.out_per_mtok == null) return null;
@@ -707,96 +869,259 @@ function aiModelMeta(m) {
   ].join(' · ');
 }
 
-function aiCurrentModel() {
-  var id = aiState.settings && aiState.settings.model;
-  var found = null;
-  aiState.models.forEach(function (m) { if (m.id === id) found = m; });
-  return found;
+/* Every model some feature is set to: SAQ grading's from the settings row, the rest from
+   their own rows. */
+function aiModelsInUse() {
+  var used = Object.create(null);
+  var s = aiState.settings;
+  if (s && s.model) used[s.model] = true;
+  (aiState.features || []).forEach(function (f) { if (f && f.model) used[f.model] = true; });
+  return used;
 }
 
-function aiNote(text, bad) {
+function aiUsesHaiku() {
+  return Object.keys(aiModelsInUse()).some(function (id) { return /haiku/.test(id); });
+}
+
+function aiNote(text) {
+  if (!aiEl) return;
   aiEl.msg.textContent = text || '';
-  aiEl.msg.style.color = bad === false ? 'var(--ok)' : '';
   aiEl.msg.hidden = !text;
+}
+
+function aiShowAt(node, text) {
+  if (!node) return;
+  node.textContent = text;
+  node.hidden = false;
 }
 
 function aiErrText(err) {
   var m = err && err.message;
-  if (m === 'http_404') return 'Run 0010_ai_grading.sql in Supabase to turn this on.';
+  if (m === 'http_404') return 'Run 0010_ai_grading.sql and 0011_ai_features.sql in Supabase to turn this on.';
   if (m === 'rate_limited') return 'Too many tries from this network. Wait a few minutes.';
   return 'Could not reach the server.';
 }
 
+function aiRefusal(r) {
+  if (r && r.error === 'forbidden') return 'That admin session was refused. Sign in again.';
+  if (r && r.error === 'not_found') return 'The server has no such feature. Refresh and try again.';
+  return 'Could not save that.';
+}
+
+function aiRangeText(field) {
+  if (field === 'daily_cents') {
+    return 'The server refused that: ' + dollars(AI_FEATURE_CAP.min) + ' to ' + dollars(AI_FEATURE_CAP.max) + '.';
+  }
+  if (field === 'model') return 'The server refused that model. Pick one that is on.';
+  if (field === 'mode') return 'The server refused that choice.';
+  if (field === 'effort') return 'The server refused that effort.';
+  return 'The server refused that value.';
+}
+
 /* The server is the one that decides what is in range, so its verdict is what gets
-   printed, beside the field it names rather than at the top where it would be guessed at. */
-function aiShowError(r) {
-  if (r && r.error === 'range' && r.field && aiEl.cap[r.field]) {
+   printed, beside the field it names rather than at the top where it would be guessed at.
+   admin_ai_set carries the master switch, the caps, effort, and SAQ grading's mode and
+   model, so a refusal of any of those is routed to where that control sits. */
+function aiShowError(r, row) {
+  if (!aiEl) return;
+  var field = r && r.error === 'range' ? r.field : null;
+  if (field && aiEl.cap[field]) {
     var f = null;
-    AI_FIELDS.forEach(function (x) { if (x.key === r.field) f = x; });
-    var lo = f && f.money ? dollars(f.min) : (f ? f.min : '');
-    var hi = f && f.money ? dollars(f.max) : (f ? f.max : '');
-    var e = aiEl.cap[r.field].err;
-    e.textContent = f ? ('The server refused that: ' + lo + ' to ' + hi + '.') : 'The server refused that value.';
-    e.hidden = false;
+    AI_FIELDS.forEach(function (x) { if (x.key === field) f = x; });
+    var lo = f.money ? dollars(f.min) : f.min;
+    var hi = f.money ? dollars(f.max) : f.max;
+    aiShowAt(aiEl.cap[field].err, 'The server refused that: ' + lo + ' to ' + hi + '.');
     return;
   }
-  aiNote(r && r.error === 'forbidden'
-    ? 'That admin session was refused. Sign in again.'
-    : 'Could not save that.');
+  var saq = aiEl.rows.saq;
+  if (field === 'effort') { aiShowAt(aiEl.effortErr, aiRangeText(field)); return; }
+  if (field === 'enabled') { aiShowAt(aiEl.masterErr, aiRangeText(field)); return; }
+  if ((field === 'mode' || field === 'model') && saq) {
+    aiShowAt(field === 'mode' ? saq.modeErr : saq.modelErr, aiRangeText(field));
+    return;
+  }
+  var text = field ? aiRangeText(field) : aiRefusal(r);
+  if (row) aiShowAt(row.msg, text); else aiNote(text);
 }
 
 function aiClearFieldErrors() {
+  if (!aiEl) return;
   AI_FIELDS.forEach(function (f) {
     aiEl.cap[f.key].err.hidden = true;
     aiEl.cap[f.key].err.textContent = '';
   });
+  [aiEl.effortErr, aiEl.masterErr].forEach(function (n) { n.hidden = true; n.textContent = ''; });
+}
+
+function aiDisable(list, on) {
+  list.forEach(function (n) { if (n) n.disabled = !!on; });
+}
+
+/* ---- building blocks ---- */
+
+function aiGroupsRead() {
+  try {
+    var o = JSON.parse(localStorage.getItem(AI_GROUPS_KEY) || '{}');
+    return o && typeof o === 'object' ? o : {};
+  } catch (e) { return {}; }
+}
+
+function aiGroupsWrite(name, open) {
+  try {
+    var o = aiGroupsRead();
+    o[name] = !!open;
+    localStorage.setItem(AI_GROUPS_KEY, JSON.stringify(o));
+  } catch (e) {}
+}
+
+/* A closed group is one line: its name, the numbers worth seeing without opening it, and a
+   chevron. */
+function aiGroup(parent, name, title) {
+  var det = el('details', 'aigroup');
+  det.open = aiGroupsRead()[name] === true;
+  var sum = el('summary', 'aisum');
+  sum.appendChild(el('span', 'aisumtitle', title));
+  var state = el('span', 'aisumstate');
+  sum.appendChild(state);
+  var chev = el('span', 'aichev');
+  chev.setAttribute('aria-hidden', 'true');
+  sum.appendChild(chev);
+  var body = el('div', 'aigroupbody');
+  det.appendChild(sum);
+  det.appendChild(body);
+  det.addEventListener('toggle', function () { aiGroupsWrite(name, det.open); });
+  parent.appendChild(det);
+  return { det: det, state: state, body: body };
+}
+
+function aiSwitch(label) {
+  var b = el('button', 'aiswitch');
+  b.type = 'button';
+  b.setAttribute('role', 'switch');
+  b.setAttribute('aria-checked', 'false');
+  if (label) b.setAttribute('aria-label', label);
+  return b;
+}
+
+function aiSwitchOn(b) { return b.getAttribute('aria-checked') === 'true'; }
+
+function aiSeg() {
+  var wrap = el('div', 'aiseg');
+  wrap.setAttribute('role', 'group');
+  var owner = el('button', null, 'Owner only');
+  var open = el('button', null, 'Open with caps');
+  [owner, open].forEach(function (b) {
+    b.type = 'button';
+    b.setAttribute('aria-pressed', 'false');
+    wrap.appendChild(b);
+  });
+  return { wrap: wrap, owner: owner, open: open };
+}
+
+/* A label, the control, and the line under it where the server's refusal is printed. */
+function aiField(cls, text, control) {
+  var f = el('div', 'aifield' + (cls ? ' ' + cls : ''));
+  var id = 'aif-' + (++aiUid);
+  var lab;
+  if (control.tagName === 'INPUT' || control.tagName === 'SELECT') {
+    lab = el('label', 'lbl', text);
+    control.id = id;
+    lab.setAttribute('for', id);
+  } else {
+    lab = el('span', 'lbl', text);
+    lab.id = id;
+    control.setAttribute('aria-labelledby', id);
+  }
+  f.appendChild(lab);
+  f.appendChild(control);
+  var err = el('p', 'err-inline');
+  err.hidden = true;
+  f.appendChild(err);
+  return { field: f, err: err };
+}
+
+function aiTextInput() {
+  var inp = document.createElement('input');
+  inp.type = 'text';
+  inp.inputMode = 'decimal';
+  inp.className = 'aiinput';
+  inp.autocomplete = 'off';
+  return inp;
 }
 
 function buildAi(sec) {
-  var e = { cap: {} };
+  var e = { cap: {}, rows: Object.create(null) };
 
-  sec.appendChild(el('h3', 'rubric', 'AI grading'));
+  var head = el('div', 'aihead');
+  head.appendChild(el('h3', 'rubric', 'AI'));
+  e.refresh = el('button', 'ailink', 'Refresh');
+  e.refresh.type = 'button';
+  head.appendChild(e.refresh);
+  sec.appendChild(head);
   sec.appendChild(el('p', 'note',
-    'Grades a written short answer against its rubric and model answer. Off unless you turn ' +
-    'it on here, and a material only offers it when it carries the AI tag above. The three ' +
-    'answers and the prompt go to Anthropic for the grade; no answer text is stored here or ' +
-    'in the ledger below.'));
+    'Every feature is off until you turn it on, spends against the caps in Spend, and runs ' +
+    'only in a material that carries its tag (the AI button on each row above). What a ' +
+    'student types goes to Anthropic for the answer and is never stored here or in the ledger.'));
 
   e.msg = el('p', 'err-inline');
   e.msg.hidden = true;
   sec.appendChild(e.msg);
 
-  e.body = el('div');
+  e.body = el('div', 'aigroups');
   sec.appendChild(e.body);
 
-  e.body.appendChild(el('p', 'lbl', 'Switch'));
-  var sw = el('div', 'row wrap');
-  e.off = aiTog('Off'); e.on = aiTog('On');
-  sw.appendChild(e.off); sw.appendChild(e.on);
-  e.body.appendChild(sw);
+  /* ---- Spend ---- */
+  e.spend = aiGroup(e.body, 'spend', 'Spend');
+  var master = el('div', 'aimaster');
+  var mt = el('div', 'aimastertext');
+  mt.appendChild(el('span', 'aimastername', 'All AI features'));
+  mt.appendChild(el('span', 'aimeta', 'Off holds every feature, whatever its own switch says.'));
+  master.appendChild(mt);
+  e.master = aiSwitch('All AI features');
+  master.appendChild(e.master);
+  e.spend.body.appendChild(master);
+  e.masterErr = el('p', 'err-inline');
+  e.masterErr.hidden = true;
+  e.spend.body.appendChild(e.masterErr);
 
-  e.body.appendChild(el('p', 'lbl', 'Who can use it'));
-  var md = el('div', 'row wrap');
-  e.modeOpen = aiTog('Open with caps'); e.modeOwner = aiTog('Owner only');
-  md.appendChild(e.modeOpen); md.appendChild(e.modeOwner);
-  e.body.appendChild(md);
-  e.body.appendChild(el('p', 'note',
-    'Owner only ignores the per device and per address counters and takes your admin session ' +
-    'on every call. Open with caps lets anyone studying use it, held down by the numbers below.'));
+  e.readout = el('p', 'aireadout');
+  e.spend.body.appendChild(e.readout);
 
-  e.body.appendChild(el('p', 'lbl', 'Model'));
-  e.model = document.createElement('select');
-  e.model.className = 'aisel';
-  e.body.appendChild(e.model);
-  e.modelmeta = el('p', 'aimeta');
-  e.body.appendChild(e.modelmeta);
-  /* The select alone would make this a blind choice. The list under it is the reason for
-     the choice: what the eval measured, and what one grade costs at that model's prices. */
-  e.models = el('div', 'aimodels');
-  e.body.appendChild(e.models);
+  e.caps = el('div', 'aicaps');
+  AI_FIELDS.forEach(function (f) {
+    var inp = aiTextInput();
+    var fld = aiField('aicap', f.label + (f.money ? ' (dollars)' : ''), inp);
+    e.cap[f.key] = { input: inp, err: fld.err };
+    e.caps.appendChild(fld.field);
+  });
+  e.spend.body.appendChild(e.caps);
+  e.spend.body.appendChild(el('p', 'note',
+    'The daily and monthly caps count every feature in either mode, and each feature\'s own ' +
+    'daily cap sits inside them. The device and address limits hold features set to Open with ' +
+    'caps. The monthly cap is the one that cannot be talked around: a device id is spoofable, ' +
+    'a spend ceiling is not.'));
+  var saveRow = el('div', 'row wrap');
+  e.save = el('button', 'btn sm', 'Save the caps');
+  e.save.type = 'button';
+  e.saveMsg = el('span', 'aisaved');
+  saveRow.appendChild(e.save);
+  saveRow.appendChild(e.saveMsg);
+  e.spend.body.appendChild(saveRow);
 
-  e.effortwrap = el('div');
-  e.effortwrap.appendChild(el('p', 'lbl', 'Effort'));
+  /* ---- Features ---- */
+  e.feat = aiGroup(e.body, 'features', 'Features');
+  e.held = el('p', 'aiheld', 'All AI features is off in Spend, so nothing here can run.');
+  e.held.hidden = true;
+  e.feat.body.appendChild(e.held);
+  e.featNote = el('p', 'err-inline');
+  e.featNote.hidden = true;
+  e.feat.body.appendChild(e.featNote);
+  e.featList = el('ul', 'aifeats');
+  e.feat.body.appendChild(e.featList);
+
+  /* Effort is read off the settings row by every feature, not off a model row, so that is
+     where it is written. The model row's own effort column is the eval's record of which
+     setting was measured, and only the eval writes it. */
   e.effort = document.createElement('select');
   e.effort.className = 'aisel';
   ['low', 'medium'].forEach(function (v) {
@@ -804,125 +1129,268 @@ function buildAi(sec) {
     o.value = v; o.textContent = v;
     e.effort.appendChild(o);
   });
-  e.effortwrap.appendChild(e.effort);
-  e.body.appendChild(e.effortwrap);
+  var eff = aiField('aieffort', 'Effort, every feature', e.effort);
+  e.effortErr = eff.err;
+  /* Haiku 4.5 has no adaptive thinking, so for a feature on it the effort is a no op. */
+  e.effortHint = el('p', 'aimeta', 'Haiku has no adaptive thinking and ignores this.');
+  e.effortHint.hidden = true;
+  eff.field.insertBefore(e.effortHint, eff.err);
+  e.feat.body.appendChild(eff.field);
+  e.feat.body.appendChild(el('p', 'note',
+    'Owner only takes your admin session on every call and skips the device and address ' +
+    'limits. Open with caps lets anyone studying use it, held by every cap in Spend.'));
 
-  e.caps = el('div', 'aicaps');
-  AI_FIELDS.forEach(function (f) {
-    var wrap = el('div', 'aicap');
-    var lab = el('label', 'lbl', f.label + (f.money ? ' (dollars)' : ''));
-    lab.setAttribute('for', 'aicap-' + f.key);
-    wrap.appendChild(lab);
-    var inp = document.createElement('input');
-    inp.type = 'text';
-    inp.inputMode = 'decimal';
-    inp.className = 'aiinput';
-    inp.id = 'aicap-' + f.key;
-    inp.autocomplete = 'off';
-    wrap.appendChild(inp);
-    var err = el('p', 'err-inline');
-    err.hidden = true;
-    wrap.appendChild(err);
-    e.cap[f.key] = { input: inp, err: err };
-    e.caps.appendChild(wrap);
-  });
-  e.body.appendChild(e.caps);
-  e.capnote = el('p', 'note');
-  e.body.appendChild(e.capnote);
-  e.save = el('button', 'btn sm', 'Save the caps');
-  e.save.type = 'button';
-  e.body.appendChild(e.save);
+  /* ---- Models ---- */
+  e.modelsGroup = aiGroup(e.body, 'models', 'Models');
+  /* The selects alone would make each choice blind. This list is the reason for the choice:
+     what the eval measured, and what one grade costs at that model's prices. */
+  e.models = el('div', 'aimodels');
+  e.modelsGroup.body.appendChild(e.models);
 
-  e.body.appendChild(el('p', 'lbl', 'Spending'));
-  e.usage = el('p', 'note');
-  e.body.appendChild(e.usage);
+  /* ---- Recent calls ---- */
+  e.callsGroup = aiGroup(e.body, 'calls', 'Recent calls');
   e.calls = el('div', 'aicalls');
-  e.body.appendChild(e.calls);
-  e.refresh = el('button', 'ailink', 'Refresh');
-  e.refresh.type = 'button';
-  e.body.appendChild(e.refresh);
+  e.callsGroup.body.appendChild(e.calls);
 
   return e;
 }
 
-function paintAi() {
-  var s = aiState.settings;
-  if (!s) return;
-  var on = !!s.enabled, openMode = s.mode === 'open';
+/* One row per feature. The row is built once and repainted in place, so a save elsewhere in
+   the section never throws away a cap someone is halfway through typing. */
+function aiFeatRow(id) {
+  var saq = id === 'saq';
+  var r = { id: id, saq: saq };
+  r.li = el('li', 'aifeat');
 
-  aiEl.off.setAttribute('aria-pressed', String(!on));
-  aiEl.on.setAttribute('aria-pressed', String(on));
-  aiEl.modeOpen.setAttribute('aria-pressed', String(openMode));
-  aiEl.modeOwner.setAttribute('aria-pressed', String(!openMode));
+  var head = el('div', 'aifeathead');
+  var who = el('div', 'aifeatwho');
+  var title = el('div', 'aifeattitle');
+  r.name = el('span', 'aifeatname');
+  r.beta = el('span', 'aibeta', 'Beta');
+  r.beta.hidden = true;
+  title.appendChild(r.name);
+  title.appendChild(r.beta);
+  who.appendChild(title);
+  r.meta = el('p', 'aifeatmeta');
+  who.appendChild(r.meta);
+  head.appendChild(who);
+  if (saq) {
+    /* SAQ grading predates the features table. Its only switch is the master one. */
+    r.fixed = el('span', 'aifixed');
+    head.appendChild(r.fixed);
+  } else {
+    r.sw = aiSwitch();
+    head.appendChild(r.sw);
+  }
+  r.li.appendChild(head);
 
-  aiEl.model.innerHTML = '';
+  var ctl = el('div', 'aifeatctl');
+  var f;
+  r.seg = aiSeg();
+  f = aiField('aimode', 'Who can use it', r.seg.wrap);
+  r.modeErr = f.err;
+  ctl.appendChild(f.field);
+
+  r.model = document.createElement('select');
+  r.model.className = 'aisel';
+  f = aiField('aimodelf', 'Model', r.model);
+  r.modelErr = f.err;
+  ctl.appendChild(f.field);
+
+  if (saq) {
+    r.capFixed = el('p', 'aifixedval');
+    f = aiField('aicapf', 'Daily cap', r.capFixed);
+  } else {
+    r.cap = aiTextInput();
+    f = aiField('aicapf', 'Daily cap ($)', r.cap);
+    r.capErr = f.err;
+  }
+  ctl.appendChild(f.field);
+  r.li.appendChild(ctl);
+
+  r.msg = el('p', 'err-inline aifeatmsg');
+  r.msg.hidden = true;
+  r.li.appendChild(r.msg);
+
+  aiWireRow(r);
+  return r;
+}
+
+function aiRowControls(r) {
+  return [r.sw, r.seg.owner, r.seg.open, r.model, r.cap].filter(Boolean);
+}
+
+function aiRowClear(r) {
+  [r.modeErr, r.modelErr, r.capErr, r.msg].forEach(function (n) {
+    if (!n) return;
+    n.hidden = true;
+    n.textContent = '';
+  });
+}
+
+function aiWireRow(r) {
+  var set = r.saq
+    ? function (patch) { return aiSet(patch, r); }
+    : function (patch) { return aiFeatureSet(r, patch); };
+
+  r.seg.owner.addEventListener('click', function () {
+    if (r.seg.owner.getAttribute('aria-pressed') !== 'true') set({ mode: 'owner' });
+  });
+  r.seg.open.addEventListener('click', function () {
+    if (r.seg.open.getAttribute('aria-pressed') !== 'true') set({ mode: 'open' });
+  });
+  r.model.addEventListener('change', function () {
+    if (r.model.value) set({ model: r.model.value });
+  });
+  if (r.sw) {
+    r.sw.addEventListener('click', function () { set({ enabled: !aiSwitchOn(r.sw) }); });
+  }
+  if (r.cap) {
+    r.cap.addEventListener('input', function () { r.cap.setAttribute('data-editing', '1'); });
+    r.cap.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') r.cap.blur(); });
+    r.cap.addEventListener('change', function () {
+      r.cap.removeAttribute('data-editing');
+      aiRowClear(r);
+      var raw = r.cap.value.trim().replace(/^\$/, '');
+      if (raw === '') { paintAi(); return; }
+      var n = Number(raw);
+      if (!isFinite(n)) { aiShowAt(r.capErr, 'Numbers only.'); return; }
+      set({ daily_cents: Math.round(n * 100) });
+    });
+  }
+}
+
+/* ---- painting ---- */
+
+/* Enabled models only. A feature still set to a model that has since been switched off
+   shows it, marked and not selectable, so the select never claims a model that is not the
+   stored one. */
+function aiPaintModelSelect(sel, current) {
+  current = current == null ? '' : String(current);
+  sel.innerHTML = '';
+  var found = false;
   aiState.models.forEach(function (m) {
+    var on = m.enabled !== false;
+    if (!on && m.id !== current) return;
     var o = document.createElement('option');
     o.value = m.id;
-    o.textContent = (m.name || m.id) + (m.enabled === false ? ' (off)' : '');
-    aiEl.model.appendChild(o);
+    o.textContent = (m.name || m.id) + (on ? '' : ' (off)');
+    o.disabled = !on;
+    if (m.id === current) found = true;
+    sel.appendChild(o);
   });
-  if (!aiState.models.length) {
+  if (!found) {
     var o = document.createElement('option');
-    o.value = s.model || '';
-    o.textContent = s.model || 'no models listed';
-    aiEl.model.appendChild(o);
+    o.value = current;
+    o.textContent = current || 'no model set';
+    o.disabled = true;
+    sel.appendChild(o);
   }
-  aiEl.model.value = s.model || '';
+  sel.value = current;
+}
 
-  var cur = aiCurrentModel();
-  aiEl.modelmeta.textContent = cur ? aiModelMeta(cur) : 'no eval yet';
+function aiPaintMode(r, mode) {
+  var open = mode === 'open';
+  r.seg.owner.setAttribute('aria-pressed', String(!open));
+  r.seg.open.setAttribute('aria-pressed', String(open));
+}
 
+function aiPaintSaqRow(r, s) {
+  var info = aiFeatureInfo('saq');
+  r.name.textContent = info.label;
+  /* Without 0011 the ledger has no feature column and every call in it is a grade. */
+  var today = aiState.saq ? aiState.saq.today_cents : (aiState.usage ? aiState.usage.today_cents : 0);
+  r.meta.textContent = 'Today ' + spendDollars(today) + ' · tag ' + info.tag;
+  r.fixed.textContent = s.enabled ? 'On with All AI' : 'Off with All AI';
+  r.li.classList.toggle('off', !s.enabled);
+  aiPaintMode(r, s.mode);
+  aiPaintModelSelect(r.model, s.model);
+  r.capFixed.textContent = 'Global ' + dollars(s.daily_cents);
+}
+
+function aiPaintFeatRow(r, f, s) {
+  var name = String(f.name || f.id);
+  r.name.textContent = name;
+  r.beta.hidden = !f.beta;
+  r.sw.setAttribute('aria-checked', String(!!f.enabled));
+  r.sw.setAttribute('aria-label', name);
+  r.meta.textContent = 'Today ' + spendDollars(f.today_cents) + ', ' +
+    aiCount(f.today_calls, 'call') + ' · tag ' + String(f.tag || '');
+  r.li.classList.toggle('off', !s.enabled || !f.enabled);
+  aiPaintMode(r, f.mode);
+  aiPaintModelSelect(r.model, f.model);
+  if (r.cap.getAttribute('data-editing') !== '1') {
+    r.cap.value = f.daily_cents == null ? '' : (Number(f.daily_cents) / 100).toFixed(2);
+  }
+}
+
+function aiPaintFeatures() {
+  var s = aiState.settings;
+  var list = [{ id: 'saq' }].concat((aiState.features || []).filter(function (f) {
+    return f && typeof f.id === 'string' && f.id !== 'saq';
+  }));
+  var keep = Object.create(null);
+  list.forEach(function (f, i) {
+    keep[f.id] = true;
+    var r = aiEl.rows[f.id] || (aiEl.rows[f.id] = aiFeatRow(f.id));
+    /* Moving a node that holds focus blurs it, so a row is only moved when it is out of place. */
+    if (aiEl.featList.children[i] !== r.li) aiEl.featList.insertBefore(r.li, aiEl.featList.children[i] || null);
+    if (r.saq) aiPaintSaqRow(r, s); else aiPaintFeatRow(r, f, s);
+  });
+  Object.keys(aiEl.rows).forEach(function (id) {
+    if (keep[id]) return;
+    var gone = aiEl.rows[id];
+    if (gone.li.parentNode) gone.li.parentNode.removeChild(gone.li);
+    delete aiEl.rows[id];
+  });
+  aiEl.held.hidden = !!s.enabled;
+  aiEl.featNote.textContent = aiState.featErr || '';
+  aiEl.featNote.hidden = !aiState.featErr;
+}
+
+function aiPaintModels() {
   aiEl.models.innerHTML = '';
+  var used = aiModelsInUse();
   aiState.models.forEach(function (m) {
-    var row = el('div', 'aimodel' + (m.id === s.model ? ' on' : ''));
+    var row = el('div', 'aimodel' + (used[m.id] ? ' on' : ''));
     row.appendChild(el('span', 'aimodelid', m.id));
     row.appendChild(el('span', 'aimodelmeta', aiModelMeta(m)));
     aiEl.models.appendChild(row);
   });
-
-  /* Haiku 4.5 has no adaptive thinking, so an effort control over it would be a lie. */
-  aiEl.effortwrap.hidden = /haiku/.test(String(s.model || ''));
-  aiEl.effort.value = s.effort || 'low';
-
-  AI_FIELDS.forEach(function (f) {
-    var v = s[f.key];
-    aiEl.cap[f.key].input.value = v == null ? '' : (f.money ? (Number(v) / 100).toFixed(2) : String(v));
-    aiEl.cap[f.key].input.disabled = !openMode;
-  });
-  aiEl.save.disabled = !openMode;
-  aiEl.capnote.textContent = openMode
-    ? 'The monthly cap is the one that cannot be talked around: a device id is spoofable, a spend ceiling is not.'
-    : 'The caps are held while owner only is on, because nothing but your own session can spend anything.';
+  aiEl.models.hidden = !aiState.models.length;
 }
 
-function paintAiUsage() {
+function aiPaintReadout() {
   var u = aiState.usage, s = aiState.settings;
-  if (!u) { aiEl.usage.textContent = 'No spending recorded yet.'; aiEl.calls.innerHTML = ''; return; }
+  if (!u) { aiEl.readout.textContent = 'No spending recorded yet.'; return; }
+  aiEl.readout.textContent =
+    'Today ' + spendDollars(u.today_cents) + ' of ' + dollars(s && s.daily_cents) + ', ' +
+    aiCount(u.today_calls, 'call') + ' · month ' + spendDollars(u.month_cents) + ' of ' +
+    dollars(s && s.monthly_cents) + ', ' + aiCount(u.month_calls, 'call');
+}
 
-  var last = u.last_ok_at ? new Date(u.last_ok_at) : null;
-  var n = Number(u.month_calls || 0);
-  aiEl.usage.textContent =
-    'Spent today ' + spendDollars(u.today_cents) + ' of ' + dollars(s && s.daily_cents) +
-    ' over ' + Number(u.today_calls || 0) + ', this month ' + spendDollars(u.month_cents) +
-    ' of ' + dollars(s && s.monthly_cents) + ' over ' + n + ' grade' + (n === 1 ? '' : 's') +
-    (last ? ', last grade ' + last.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-          : ', none yet') + '.';
-
+function aiPaintCalls() {
+  var u = aiState.usage;
   aiEl.calls.innerHTML = '';
-  var calls = u.recent || [];
+  var calls = (u && Array.isArray(u.recent)) ? u.recent.slice(0, 20) : [];
   if (!calls.length) { aiEl.calls.appendChild(el('p', 'note', 'No calls yet.')); return; }
 
+  /* The ledger has a feature column from 0011 on; the readout only prints it once the
+     usage call actually returns it. */
+  var withFeature = calls.some(function (c) { return c && c.feature != null; });
   var t = el('table', 'aitable');
   var head = document.createElement('tr');
-  ['Time', 'Material', 'Model', 'Cost', 'Status'].forEach(function (h) {
+  ['Time'].concat(withFeature ? ['Feature'] : [], ['Material', 'Model', 'Cost', 'Status']).forEach(function (h) {
     head.appendChild(el('th', null, h));
   });
   t.appendChild(head);
-  calls.slice(0, 20).forEach(function (c) {
+  calls.forEach(function (c) {
     var tr = document.createElement('tr');
-    var when = c.created_at ? new Date(c.created_at) : null;
-    tr.appendChild(el('td', null, when ? when.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''));
+    tr.appendChild(el('td', null, aiWhen(c.created_at)));
+    if (withFeature) {
+      var info = aiFeatureInfo(c.feature);
+      tr.appendChild(el('td', null, info ? info.short : String(c.feature || '')));
+    }
     tr.appendChild(el('td', null, c.material || ''));
     tr.appendChild(el('td', null, c.model || ''));
     tr.appendChild(el('td', null, microDollars(c.cost_microcents)));
@@ -932,26 +1400,122 @@ function paintAiUsage() {
   aiEl.calls.appendChild(t);
 }
 
-function aiApplySettings(r) {
-  if (r && r.settings) aiState.settings = r.settings;
-  paintAi();
+/* What each closed group says about itself. */
+function aiPaintSummaries() {
+  var s = aiState.settings, u = aiState.usage;
+  if (s) {
+    aiEl.spend.state.textContent = (s.enabled ? 'On' : 'Off') + ' · ' +
+      (u ? shortDollars(u.today_cents) + ' today of ' : 'daily cap ') + dollars(s.daily_cents);
+    var feats = (aiState.features || []).filter(function (f) { return f && f.id !== 'saq'; });
+    var n = 1 + feats.length;
+    var on = 1 + feats.filter(function (f) { return f.enabled; }).length;
+    aiEl.feat.state.textContent = aiCount(n, 'feature') + ' · ' + (s.enabled ? on + ' on' : 'held off');
+  }
+  var ms = aiState.models;
+  aiEl.modelsGroup.state.textContent = ms.length
+    ? ms.length + ' listed · ' + ms.filter(function (m) { return m.enabled !== false; }).length + ' on'
+    : 'none listed';
+  var calls = (u && Array.isArray(u.recent)) ? u.recent : [];
+  aiEl.callsGroup.state.textContent = calls.length ? 'last ' + aiWhen(calls[0].created_at) : 'none yet';
 }
 
-function aiSet(patch) {
+function paintAi() {
+  if (!aiEl) return;
+  var s = aiState.settings;
+  if (!s) return;
+
+  aiEl.master.setAttribute('aria-checked', String(!!s.enabled));
+  AI_FIELDS.forEach(function (f) {
+    var inp = aiEl.cap[f.key].input;
+    if (inp.getAttribute('data-editing') === '1') return;
+    var v = s[f.key];
+    inp.value = v == null ? '' : (f.money ? (Number(v) / 100).toFixed(2) : String(v));
+  });
+  aiEl.effort.value = s.effort || 'low';
+  aiEl.effortHint.hidden = !aiUsesHaiku();
+
+  aiPaintFeatures();
+  aiPaintModels();
+  aiPaintReadout();
+  aiPaintSummaries();
+}
+
+function paintAiUsage() {
+  if (!aiEl) return;
+  aiPaintReadout();
+  aiPaintCalls();
+  if (aiState.settings) aiPaintFeatures();
+  aiPaintSummaries();
+}
+
+/* ---- saving and loading ---- */
+
+/* Writes through admin_ai_set: the master switch, the caps, effort, and SAQ grading's mode
+   and model. row is SAQ grading's row when the write came from it; els are the controls to
+   hold still until the server answers. */
+function aiSet(patch, row, els) {
+  if (!aiEl) return Promise.resolve(null);
+  var busy = (els || []).concat(row ? aiRowControls(row) : []);
   aiNote('');
   aiClearFieldErrors();
+  if (row) aiRowClear(row);
+  aiDisable(busy, true);
   return StudyAuth.admin.ai.set(patch).then(function (r) {
-    if (r && r.ok) {
-      aiApplySettings(r);
-      if (!r.settings) return aiLoadSettings();
-      return r;
-    }
-    aiShowError(r);
+    aiDisable(busy, false);
+    if (r && r.ok && r.settings) { aiState.settings = r.settings; paintAi(); return r; }
+    if (r && r.ok) return aiLoadSettings().then(function () { return r; });
+    aiShowError(r, row);
     /* A refused write must not leave the controls showing what was asked for rather than
        what is stored, so the stored row is painted back over the attempt. */
     paintAi();
     return r;
-  }, function (err) { aiNote(aiErrText(err)); paintAi(); });
+  }, function (err) {
+    aiDisable(busy, false);
+    if (row) aiShowAt(row.msg, aiErrText(err)); else aiNote(aiErrText(err));
+    paintAi();
+    return null;
+  });
+}
+
+/* Writes one feature through admin_ai_feature_set. The reply is the stored row, which is
+   merged over the one in hand so today's spend (not part of the reply) stays put. */
+function aiFeatureSet(row, patch) {
+  if (!aiEl) return Promise.resolve(null);
+  var busy = aiRowControls(row);
+  var body = { id: row.id };
+  Object.keys(patch).forEach(function (k) { body[k] = patch[k]; });
+  aiRowClear(row);
+  aiDisable(busy, true);
+  return StudyAuth.admin.ai.featureSet(body).then(function (r) {
+    aiDisable(busy, false);
+    if (r && r.ok && r.feature) { aiMergeFeature(r.feature); paintAi(); return r; }
+    if (r && r.ok) return aiLoad().then(function () { return r; });
+    var field = r && r.error === 'range' ? r.field : null;
+    var at = field === 'mode' ? row.modeErr
+      : field === 'model' ? row.modelErr
+      : field === 'daily_cents' ? row.capErr
+      : null;
+    if (at) aiShowAt(at, aiRangeText(field));
+    else aiShowAt(row.msg, field ? aiRangeText(field) : aiRefusal(r));
+    paintAi();
+    return r;
+  }, function (err) {
+    aiDisable(busy, false);
+    aiShowAt(row.msg, aiErrText(err));
+    paintAi();
+    return null;
+  });
+}
+
+function aiMergeFeature(f) {
+  if (!f || typeof f.id !== 'string') return;
+  var list = aiState.features || (aiState.features = []);
+  var cur = null;
+  list.forEach(function (x) { if (x && x.id === f.id) cur = x; });
+  if (!cur) { list.push(f); return; }
+  ['name', 'enabled', 'mode', 'model', 'daily_cents', 'tag', 'beta', 'updated_at'].forEach(function (k) {
+    if (Object.prototype.hasOwnProperty.call(f, k)) cur[k] = f[k];
+  });
 }
 
 function aiLoadSettings() {
@@ -973,12 +1537,20 @@ function aiLoadUsage() {
 }
 
 function aiLoad() {
+  if (!aiEl) return Promise.resolve();
   aiNote('');
+  /* The features list failing (0011 not run, say) must not take SAQ grading's controls down
+     with it, so its failure is caught here and shown inside the Features group. */
+  var feats = StudyAuth.admin.ai.features().then(function (r) { return r; }, function (err) {
+    return { ok: false, error: err && err.message === 'http_404' ? 'missing' : 'unreachable' };
+  });
   return Promise.all([
     StudyAuth.admin.ai.settings(),
-    StudyAuth.admin.ai.models()
-  ]).then(function (both) {
-    var s = both[0], m = both[1];
+    StudyAuth.admin.ai.models(),
+    feats
+  ]).then(function (all) {
+    if (!aiEl) return;
+    var s = all[0], m = all[1], f = all[2];
     if (!s || !s.ok) {
       aiEl.body.hidden = true;
       aiNote(s && s.error === 'forbidden'
@@ -987,64 +1559,78 @@ function aiLoad() {
       return;
     }
     aiState.settings = s.settings || null;
-    aiState.models = (m && m.ok && m.models) ? m.models : [];
+    aiState.models = (m && m.ok && Array.isArray(m.models)) ? m.models : [];
+    if (f && f.ok) {
+      aiState.features = Array.isArray(f.features) ? f.features : [];
+      aiState.saq = { today_cents: f.saq_today_cents, month_cents: f.saq_month_cents };
+      aiState.featErr = '';
+    } else {
+      aiState.features = [];
+      aiState.saq = null;
+      aiState.featErr = f && f.error === 'forbidden' ? 'That admin session was refused. Sign in again.'
+        : f && f.error === 'missing' ? 'Run 0011_ai_features.sql in Supabase to list the other features.'
+        : 'Could not load the other features.';
+    }
     aiEl.body.hidden = false;
     paintAi();
     return aiLoadUsage();
   }, function (err) {
+    if (!aiEl) return;
     aiEl.body.hidden = true;
     aiNote(aiErrText(err));
   });
 }
 
 function wireAi() {
-  aiEl.off.addEventListener('click', function () { aiSet({ enabled: false }); });
-  aiEl.on.addEventListener('click', function () { aiSet({ enabled: true }); });
-  aiEl.modeOpen.addEventListener('click', function () { aiSet({ mode: 'open' }); });
-  aiEl.modeOwner.addEventListener('click', function () { aiSet({ mode: 'owner' }); });
+  var e = aiEl;
 
-  aiEl.model.addEventListener('change', function () {
-    aiSet({ model: aiEl.model.value });
+  e.master.addEventListener('click', function () {
+    aiSet({ enabled: !aiSwitchOn(e.master) }, null, [e.master]);
   });
 
-  /* Effort is read by ai_begin off the settings row, not off the model row, so that is
-     where it has to be written. The model row's own effort column is the eval's record of
-     which setting was measured, and only the eval writes it. */
-  aiEl.effort.addEventListener('change', function () {
-    aiSet({ effort: aiEl.effort.value });
+  e.effort.addEventListener('change', function () {
+    aiSet({ effort: e.effort.value }, null, [e.effort]);
   });
 
-  aiEl.save.addEventListener('click', function () {
+  AI_FIELDS.forEach(function (f) {
+    var inp = e.cap[f.key].input;
+    inp.addEventListener('input', function () {
+      inp.setAttribute('data-editing', '1');
+      e.saveMsg.textContent = '';
+    });
+  });
+
+  e.save.addEventListener('click', function () {
     aiNote('');
     aiClearFieldErrors();
+    e.saveMsg.textContent = '';
     var patch = {}, bad = false;
     AI_FIELDS.forEach(function (f) {
-      var raw = aiEl.cap[f.key].input.value.trim();
+      var raw = e.cap[f.key].input.value.trim();
       if (raw === '') return;
       var n = Number(raw);
       if (!isFinite(n)) {
-        aiEl.cap[f.key].err.textContent = 'Numbers only.';
-        aiEl.cap[f.key].err.hidden = false;
+        aiShowAt(e.cap[f.key].err, 'Numbers only.');
         bad = true;
         return;
       }
       patch[f.key] = f.money ? Math.round(n * 100) : Math.round(n);
     });
     if (bad) return;
-    aiEl.save.disabled = true;
-    aiSet(patch).then(function (r) {
-      aiEl.save.disabled = false;
-      if (r && r.ok) aiNote('Saved.', false);
-    }, function () { aiEl.save.disabled = false; });
+    AI_FIELDS.forEach(function (f) { e.cap[f.key].input.removeAttribute('data-editing'); });
+    aiSet(patch, null, [e.save]).then(function (r) {
+      if (r && r.ok) e.saveMsg.textContent = 'Saved.';
+    });
   });
 
-  aiEl.refresh.addEventListener('click', function () { aiLoad(); });
+  e.refresh.addEventListener('click', function () { aiLoad(); });
 }
 
 function initAi() {
   if (!StudyAuth.isAdmin()) return;
   var sec = $('aiblock');
-  if (!sec) {
+  if (!sec || !aiEl) {
+    if (sec && sec.parentNode) sec.parentNode.removeChild(sec);
     var body = document.querySelector('#adminpanel .panelbody');
     if (!body) return;
     sec = el('section', 'block');
@@ -1055,6 +1641,17 @@ function initAi() {
     wireAi();
   }
   aiLoad();
+}
+
+/* A session that lapses or signs out takes the AI controls with it, rather than leaving
+   them in the document behind a hidden panel. */
+function aiTeardown() {
+  aiPopClose(false);
+  var sec = $('aiblock');
+  if (sec && sec.parentNode) sec.parentNode.removeChild(sec);
+  aiEl = null;
+  var box = $('adminitems');
+  if (box) box.innerHTML = '';
 }
 
 function initAdmin() {

@@ -311,7 +311,7 @@ textarea.askinput{min-height:80px;padding:10px 12px}
 .inboxnotes{margin:0 0 8px;font-size:14.5px;color:var(--ink2);white-space:pre-wrap}
 .inboxfiles{margin:0 0 8px;padding-left:18px;font-size:13.5px;color:var(--ink2)}
 
-/* ---------- admin: AI grading ---------- */
+/* ---------- admin: AI (fields, models, ledger) ---------- */
 /* Same language as the rest of the owner panel: 2px corners, hairline rules, mono for
    anything that is a number or an identifier, and no colour that is not already a token. */
 .aisel{width:100%;max-width:340px;min-height:44px;padding:0 10px;
@@ -347,3 +347,111 @@ textarea.askinput{min-height:80px;padding:10px 12px}
   cursor:pointer}
 .ailink:hover,.ailink:focus-visible{color:var(--ink2)}
 @media (max-width:560px){ .aicaps{grid-template-columns:1fr} }
+
+/* ---------- admin: AI groups ---------- */
+/* The AI section is four closed groups, each one line until it is opened: a name, the numbers
+   worth seeing without opening it, and a chevron. Hairlines between them, nothing heavier. */
+.aihead{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.aihead .ailink{min-height:44px;padding:0 2px}
+.aigroups{margin:12px 0 0;border-top:1px solid var(--rule)}
+.aigroup{border-bottom:1px solid var(--rule2)}
+.aigroup>.aisum{display:flex;align-items:center;gap:10px;min-height:52px;padding:6px 2px;cursor:pointer;
+  list-style:none;-webkit-tap-highlight-color:transparent}
+.aigroup>.aisum::-webkit-details-marker{display:none}
+.aigroup>.aisum:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.aigroup>.aisum:active{background:#EDEDE7}
+.aisumtitle{flex:0 0 auto;font-family:var(--cond);font-size:15px;font-weight:600;color:var(--ink)}
+.aisumstate{flex:1 1 auto;min-width:0;text-align:right;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;font-family:var(--mono);font-size:11px;letter-spacing:.04em;color:var(--ink3)}
+.aichev{flex:0 0 auto;width:7px;height:7px;margin:0 6px 4px 4px;
+  border-right:1.5px solid var(--ink3);border-bottom:1.5px solid var(--ink3);
+  transform:rotate(45deg);transition:transform .18s ease}
+.aigroup[open]>.aisum .aichev{transform:translateY(4px) rotate(225deg)}
+.aigroupbody{padding:2px 2px 18px}
+.aigroupbody>.note:last-child{margin-bottom:0}
+
+/* Switch. Same corners as everything else in the panel, so it reads as the house's own
+   control rather than a phone's; ink when on, as a pressed .tog is. */
+.aiswitch{position:relative;flex:0 0 auto;width:56px;height:44px;margin:0;padding:0;border:0;
+  background:none;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.aiswitch::before{content:"";position:absolute;left:8px;top:12px;width:40px;height:20px;
+  border:1px solid var(--rule);border-radius:2px;background:var(--rule2);
+  transition:background-color .18s ease,border-color .18s ease}
+.aiswitch::after{content:"";position:absolute;left:11px;top:15px;width:14px;height:14px;
+  border-radius:1px;background:var(--sheet);box-shadow:0 0 0 1px var(--rule);
+  transition:transform .18s ease}
+.aiswitch[aria-checked="true"]::before{background:var(--ink);border-color:var(--ink)}
+.aiswitch[aria-checked="true"]::after{transform:translateX(20px);box-shadow:none}
+.aiswitch:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.aiswitch[disabled]{opacity:.45;cursor:default}
+
+/* Segmented control: the .tog look, joined into one bar. */
+.aiseg{display:inline-flex;max-width:100%;border:1px solid var(--rule);border-radius:2px;overflow:hidden}
+.aiseg button{min-height:44px;padding:0 12px;border:0;background:transparent;color:var(--ink2);
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;
+  white-space:nowrap;cursor:pointer}
+.aiseg button+button{border-left:1px solid var(--rule)}
+.aiseg button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
+.aiseg button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.aiseg button[disabled]{opacity:.45;cursor:default}
+
+/* Spend */
+.aimaster{display:flex;align-items:center;gap:12px;min-height:56px;padding:2px 0 8px;
+  border-bottom:1px solid var(--rule2)}
+.aimastertext{flex:1 1 auto;min-width:0}
+.aimastername{display:block;font-family:var(--cond);font-size:15px;font-weight:600}
+.aimastertext .aimeta{display:block;margin:2px 0 0}
+.aireadout{margin:10px 0 2px;font-family:var(--mono);font-size:12px;letter-spacing:.02em;
+  color:var(--ink2);overflow-wrap:anywhere}
+.aisaved{font-family:var(--mono);font-size:11px;letter-spacing:.06em;color:var(--ok)}
+
+/* Features */
+.aiheld{margin:4px 0 8px;padding:8px 10px;border-left:2px solid var(--warn);background:#FAF4E9;
+  font-size:14px;color:#5A3C12}
+.aifeats{list-style:none;margin:0;padding:0}
+.aifeat{padding:8px 0 14px;border-bottom:1px solid var(--rule2)}
+.aifeathead{display:flex;align-items:center;gap:10px;min-height:48px}
+.aifeatwho{flex:1 1 auto;min-width:0}
+.aifeattitle{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 8px}
+.aifeatname{font-family:var(--cond);font-size:15px;font-weight:600;color:var(--ink);overflow-wrap:anywhere}
+.aifeat.off .aifeatname{color:var(--ink2)}
+.aibeta{display:inline-block;padding:1px 5px;border:1px solid currentColor;border-radius:2px;
+  font-family:var(--mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
+.aifeatmeta{margin:2px 0 0;font-family:var(--mono);font-size:11px;letter-spacing:.04em;
+  color:var(--ink3);overflow-wrap:anywhere}
+.aifixed{flex:0 0 auto;max-width:45%;text-align:right;font-family:var(--mono);font-size:10.5px;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--ink3)}
+.aifeatctl{display:grid;grid-template-columns:max-content minmax(0,1fr) 112px;gap:8px 12px;
+  align-items:start;margin-top:6px}
+.aifield{min-width:0}
+.aifield .lbl{display:block;margin:0 0 4px}
+.aifield .aisel{max-width:none}
+.aifield .err-inline{margin-top:4px;font-size:12.5px}
+.aifixedval{margin:0;min-height:44px;display:flex;align-items:center;font-family:var(--mono);
+  font-size:12px;color:var(--ink3)}
+.aifeatmsg{margin-top:6px}
+.aieffort{margin-top:14px;max-width:340px}
+.aieffort .aimeta{margin:4px 0 0}
+
+/* The per material AI control: one button, one short list. */
+.aipop{position:relative;flex:0 0 auto;display:flex}
+.aipopbtn{min-height:44px;white-space:nowrap}
+.aipopbtn.some{border-color:var(--ink);color:var(--ink)}
+.aipopbtn[aria-expanded="true"]{background:#EDEDE7;color:var(--ink);border-color:var(--ink)}
+.aipopbtn:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.aipopmenu{position:absolute;right:0;top:calc(100% + 4px);z-index:30;min-width:200px;
+  max-width:calc(100vw - 32px);padding:4px 0;background:var(--sheet);border:1px solid var(--rule);
+  border-radius:2px;box-shadow:0 6px 18px rgba(27,35,39,.12)}
+.aipopitem{display:flex;align-items:center;gap:10px;min-height:44px;padding:0 14px;
+  font-family:var(--cond);font-size:14.5px;color:var(--ink);cursor:pointer;white-space:nowrap}
+.aipopitem+.aipopitem{border-top:1px solid var(--rule2)}
+.aipopitem input{flex:0 0 auto;width:18px;height:18px;margin:0;accent-color:var(--ink)}
+.aipoperr{margin:4px 14px 8px;font-size:13px;white-space:normal}
+
+@media (max-width:560px){
+  .aifeatctl{grid-template-columns:minmax(0,1fr) 104px}
+  .aifield.aimode{grid-column:1 / -1}
+}
+@media (prefers-reduced-motion:reduce){
+  .aichev,.aiswitch::before,.aiswitch::after{transition:none}
+}

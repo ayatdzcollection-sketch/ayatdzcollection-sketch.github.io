@@ -194,6 +194,13 @@ var StudyAuth = {
     return rpc('ai_status', { p_material: material });
   },
 
+  /* The same question for any feature by id ('ask', and whatever comes after it). Just as
+     thin: on or off, open or owner only, whether this material carries the feature's tag,
+     whether that adds up to available, and whether it is still a beta. */
+  aiStatus2: function (material, feature) {
+    return rpc('ai_status2', { p_material: material, p_feature: feature });
+  },
+
   /* ---- admin ---- */
   admin: {
     setCode: function (role, code) {
@@ -225,11 +232,16 @@ var StudyAuth = {
        the panel hiding them is a courtesy and not the control. Nothing here carries an API
        key: the key lives only as an Edge Function secret and is never seen by a browser. */
     ai: {
-      settings:  function ()     { return rpc('admin_ai_settings',   { p_token: ls(TOKEN_KEY) }); },
-      set:       function (o)    { return rpc('admin_ai_set',        { p_token: ls(TOKEN_KEY), p_settings: o }); },
-      usage:     function ()     { return rpc('admin_ai_usage',      { p_token: ls(TOKEN_KEY) }); },
-      models:    function ()     { return rpc('admin_ai_models',     { p_token: ls(TOKEN_KEY) }); },
-      modelsSet: function (list) { return rpc('admin_ai_models_set', { p_token: ls(TOKEN_KEY), p_models: list }); }
+      settings:   function ()     { return rpc('admin_ai_settings',    { p_token: ls(TOKEN_KEY) }); },
+      set:        function (o)    { return rpc('admin_ai_set',         { p_token: ls(TOKEN_KEY), p_settings: o }); },
+      usage:      function ()     { return rpc('admin_ai_usage',       { p_token: ls(TOKEN_KEY) }); },
+      models:     function ()     { return rpc('admin_ai_models',      { p_token: ls(TOKEN_KEY) }); },
+      modelsSet:  function (list) { return rpc('admin_ai_models_set',  { p_token: ls(TOKEN_KEY), p_models: list }); },
+      /* Every feature with a row in study_ai_features (0011), with today's and this month's
+         spend beside each. SAQ grading has no row: its settings are the ones above. */
+      features:   function ()     { return rpc('admin_ai_features',    { p_token: ls(TOKEN_KEY) }); },
+      /* A patch: id, plus any of enabled, mode, model, daily_cents. The server checks each. */
+      featureSet: function (o)    { return rpc('admin_ai_feature_set', { p_token: ls(TOKEN_KEY), p_feature: o }); }
     },
     sessions: function () {
       return rpc('admin_sessions', { p_token: ls(TOKEN_KEY) });
