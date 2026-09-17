@@ -770,10 +770,10 @@ function aiTagControl(m, i) {
    which answer with a few facts and nothing else. No API key is ever in reach of this file;
    the key lives as an Edge Function secret.
 
-   The section is four groups that stay closed until opened, so it does not grow a screen
+   The section is five groups that stay closed until opened, so it does not grow a screen
    longer each time a feature is added: Spend (the master switch and the ceilings every
-   feature spends against), Features (one row each), Models (what the eval measured) and
-   Recent calls (the ledger). */
+   feature spends against), Features (one row each), Models (what the eval measured),
+   Recent calls (the ledger) and Chats (saved Ask conversations, rated and exported). */
 
 /* Every AI feature, one line each. id is the feature's id on the server, tag is what a
    material carries to offer it, label is what the per material control reads. 'saq' has no
@@ -815,9 +815,21 @@ var AI_IN_TOKENS = 1200, AI_OUT_TOKENS = 250;
 /* Which groups are open is a per browser convenience, nothing more. */
 var AI_GROUPS_KEY = 'studyhub:admin:aigroups';
 
+/* Chats: twenty to a page on screen; an export asks for the server's largest page and stops
+   after twenty of them, ten thousand chats, rather than looping on a server that misbehaves. */
+var AI_CHATS_PAGE = 20;
+var AI_CHATS_EXPORT_PAGE = 500;
+var AI_CHATS_EXPORT_PAGES = 20;
+
 var aiEl = null;
 var aiState = { settings: null, models: [], usage: null, features: [], saq: null, featErr: '' };
 var aiUid = 0;
+/* gen moves on with every fresh load and every teardown, so an answer that lands after either
+   is dropped instead of painting over newer rows or a signed out page. */
+function aiChatsFresh(gen) {
+  return { list: [], stats: null, err: '', more: false, busy: false, exporting: false, gen: gen || 0 };
+}
+var aiChats = aiChatsFresh(0);
 
 function el(tag, cls, text) {
   var n = document.createElement(tag);
@@ -1061,7 +1073,8 @@ function buildAi(sec) {
   sec.appendChild(el('p', 'note',
     'Every feature is off until you turn it on, spends against the caps in Spend, and runs ' +
     'only in a material that carries its tag (the AI button on each row above). What a ' +
-    'student types goes to Anthropic for the answer and is never stored here or in the ledger.'));
+    'student types goes to Anthropic for the answer. The ledger keeps no text; Ask saves its ' +
+    'questions and answers, and they are in Chats.'));
 
   e.msg = el('p', 'err-inline');
   e.msg.hidden = true;
@@ -1151,6 +1164,33 @@ function buildAi(sec) {
   e.callsGroup = aiGroup(e.body, 'calls', 'Recent calls');
   e.calls = el('div', 'aicalls');
   e.callsGroup.body.appendChild(e.calls);
+
+  /* ---- Chats ---- */
+  /* Saved Ask conversations (0012), so the beta can be judged on what it actually said: the
+     newest twenty, one line each until opened, a rating that saves as it is tapped, and an
+     export of the lot. Every string in a row came from the server and goes in as text. */
+  e.chatsGroup = aiGroup(e.body, 'chats', 'Chats');
+  e.chatBar = el('div', 'aichatbar');
+  e.chatBar.hidden = true;
+  e.chatExport = el('button', 'btn ghost sm aichatbtn', 'Export');
+  e.chatExport.type = 'button';
+  e.chatExportMsg = el('span', 'aichatstatus');
+  e.chatExportMsg.setAttribute('role', 'status');
+  e.chatBar.appendChild(e.chatExport);
+  e.chatBar.appendChild(e.chatExportMsg);
+  e.chatsGroup.body.appendChild(e.chatBar);
+  e.chatNote = el('p', 'err-inline');
+  e.chatNote.hidden = true;
+  e.chatsGroup.body.appendChild(e.chatNote);
+  e.chatEmpty = el('p', 'note', 'No chats saved yet.');
+  e.chatEmpty.hidden = true;
+  e.chatsGroup.body.appendChild(e.chatEmpty);
+  e.chatList = el('ul', 'aichats');
+  e.chatsGroup.body.appendChild(e.chatList);
+  e.chatMore = el('button', 'btn ghost sm aichatbtn aichatmore', 'Show more');
+  e.chatMore.type = 'button';
+  e.chatMore.hidden = true;
+  e.chatsGroup.body.appendChild(e.chatMore);
 
   return e;
 }
@@ -1539,6 +1579,9 @@ function aiLoadUsage() {
 function aiLoad() {
   if (!aiEl) return Promise.resolve();
   aiNote('');
+  /* The chats have their own RPC and their own failure line inside their group, so they load
+     alongside the settings rather than after them. */
+  aiLoadChats(false);
   /* The features list failing (0011 not run, say) must not take SAQ grading's controls down
      with it, so its failure is caught here and shown inside the Features group. */
   var feats = StudyAuth.admin.ai.features().then(function (r) { return r; }, function (err) {
@@ -1581,8 +1624,375 @@ function aiLoad() {
   });
 }
 
+/* ---- chats ---- */
+
+/* Cents to one place: an answer costs a fraction of a cent to a few. A cost that would print
+   as 0.0 says so rather than reading as free, as shortDollars does for the Spend line. */
+function aiCents(mc) {
+  var c = Number(mc || 0) / 1e6;
+  if (!isFinite(c) || c <= 0) return '0.0¢';
+  return c < 0.05 ? '<0.1¢' : c.toFixed(1) + '¢';
+}
+
+function aiLocalDate(d) {
+  d = d || new Date();
+  var two = function (n) { return (n < 10 ? '0' : '') + n; };
+  return d.getFullYear() + '-' + two(d.getMonth() + 1) + '-' + two(d.getDate());
+}
+
+function aiChatErrText(err) {
+  if (err && err.message === 'http_404') return 'Run 0012_ai_chats.sql in Supabase to save chats.';
+  return aiErrText(err);
+}
+
+function aiChatRefusal(r, what) {
+  return r && r.error === 'forbidden' ? 'That admin session was refused. Sign in again.' : what;
+}
+
+/* A context label is a string as the Edge Function writes it. Anything else that turns up in
+   the jsonb is read for a label or name, and dropped if it has neither. */
+function aiLabelText(l) {
+  if (typeof l === 'string') return l;
+  if (typeof l === 'number' && isFinite(l)) return String(l);
+  if (l && typeof l === 'object') {
+    var s = l.label != null ? l.label : l.name != null ? l.name : l.text;
+    if (typeof s === 'string' || typeof s === 'number') return String(s);
+  }
+  return '';
+}
+
+function aiChatRating(c) {
+  return Number(c.rating) === 1 ? 1 : Number(c.rating) === -1 ? -1 : null;
+}
+
+var AI_THUMB = 'M3 10h4v11H3zM7 10l4-8c1.4 0 3 1 3 3v4h5a2 2 0 0 1 2 2.3l-1.3 7.7A2 2 0 0 1 17.7 21H7';
+
+function aiThumb() {
+  var NS = 'http://www.w3.org/2000/svg';
+  var svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('class', 'aithumb');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('width', '18');
+  svg.setAttribute('height', '18');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('focusable', 'false');
+  var p = document.createElementNS(NS, 'path');
+  p.setAttribute('d', AI_THUMB);
+  p.setAttribute('fill', 'none');
+  p.setAttribute('stroke', 'currentColor');
+  p.setAttribute('stroke-width', '1.8');
+  p.setAttribute('stroke-linejoin', 'round');
+  p.setAttribute('stroke-linecap', 'round');
+  svg.appendChild(p);
+  return svg;
+}
+
+/* Two toggles, helpful and not. Tapping the pressed one clears it. The change shows at once
+   and goes back if the server does not take it. While a save is out the pair is marked
+   aria-disabled rather than disabled, so keyboard focus stays on the thumb that was pressed. */
+function aiChatRater(c) {
+  var wrap = el('div', 'aichatrate');
+  wrap.setAttribute('role', 'group');
+  wrap.setAttribute('aria-label', 'Rate this answer');
+  var err = el('p', 'err-inline aichaterr');
+  err.hidden = true;
+  var busy = false;
+
+  function mk(cls, label, value) {
+    var b = el('button', 'airate ' + cls);
+    b.type = 'button';
+    b.setAttribute('aria-label', label);
+    b.appendChild(aiThumb());
+    b.addEventListener('click', function () { rate(value); });
+    wrap.appendChild(b);
+    return b;
+  }
+  var up = mk('up', 'Helpful', 1);
+  var down = mk('down', 'Not helpful', -1);
+
+  function paint() {
+    var now = aiChatRating(c);
+    up.setAttribute('aria-pressed', String(now === 1));
+    down.setAttribute('aria-pressed', String(now === -1));
+  }
+  function hold(on) {
+    busy = on;
+    [up, down].forEach(function (b) {
+      if (on) b.setAttribute('aria-disabled', 'true'); else b.removeAttribute('aria-disabled');
+    });
+  }
+  function rate(value) {
+    if (busy) return;
+    var prev = aiChatRating(c);
+    var next = prev === value ? null : value;
+    var gen = aiChats.gen;
+    function back(text) {
+      c.rating = prev;
+      paint();
+      err.textContent = text;
+      err.hidden = false;
+    }
+    err.hidden = true;
+    c.rating = next;
+    paint();
+    hold(true);
+    StudyAuth.admin.ai.chatRate(c.id, next).then(function (r) {
+      hold(false);
+      if (r && r.ok) {
+        /* The counts in the summary follow the tap. A load since then already has the
+           server's own counts, which include this rating. */
+        if (aiEl && gen === aiChats.gen) { aiChatsCount(prev, next); aiPaintChats(); }
+        return;
+      }
+      back(aiChatRefusal(r, 'Could not save that rating.'));
+    }, function (e) {
+      hold(false);
+      back(aiChatErrText(e));
+    });
+  }
+
+  paint();
+  return { wrap: wrap, err: err };
+}
+
+function aiChatsCount(prev, next) {
+  var s = aiChats.stats;
+  if (!s || prev === next) return;
+  var bump = function (k, by) { s[k] = Math.max(0, Number(s[k] || 0) + by); };
+  if (prev === 1) bump('helpful', -1);
+  if (prev === -1) bump('unhelpful', -1);
+  if (next === 1) bump('helpful', 1);
+  if (next === -1) bump('unhelpful', 1);
+}
+
+/* What opening a row shows. Built on first open, so twenty closed rows do not each carry an
+   answer of several thousand characters in the document. */
+function aiChatFill(body, c) {
+  if (c.quote) {
+    body.appendChild(el('p', 'lbl', 'Quote'));
+    body.appendChild(el('p', 'aichatquote', String(c.quote)));
+  }
+  body.appendChild(el('p', 'lbl', 'Answer'));
+  body.appendChild(c.answer
+    ? el('p', 'aichatanswer', String(c.answer))
+    : el('p', 'note', 'No answer was saved.'));
+
+  var chips = el('ul', 'aichips');
+  (Array.isArray(c.labels) ? c.labels : []).forEach(function (l) {
+    var text = aiLabelText(l);
+    if (text) chips.appendChild(el('li', 'aichip', text));
+  });
+  if (c.progress === true) chips.appendChild(el('li', 'aichip aichipflag', 'used progress'));
+  if (c.notes === true) chips.appendChild(el('li', 'aichip aichipflag', 'used notes'));
+  if (chips.firstChild) {
+    body.appendChild(el('p', 'lbl', 'Context'));
+    body.appendChild(chips);
+  }
+
+  var info = [];
+  if (c.model) info.push(String(c.model));
+  if (c.input_tokens != null || c.output_tokens != null) {
+    info.push(Number(c.input_tokens || 0) + ' in, ' + Number(c.output_tokens || 0) + ' out');
+  }
+  if (c.latency_ms) info.push((Number(c.latency_ms) / 1000).toFixed(1) + ' s');
+  if (c.turn != null) info.push('turn ' + Number(c.turn));
+  if (info.length) body.appendChild(el('p', 'aimeta aichatinfo', info.join(' · ')));
+}
+
+/* One chat: a disclosure button (time, feature, cost, the question on one line) with the two
+   thumbs beside it rather than inside it, so rating a row never opens it. */
+function aiChatRow(c) {
+  var li = el('li', 'aichat');
+  var head = el('div', 'aichathead');
+
+  var open = el('button', 'aichatopen');
+  open.type = 'button';
+  open.setAttribute('aria-expanded', 'false');
+  var bodyId = 'aichat-' + (++aiUid);
+  open.setAttribute('aria-controls', bodyId);
+
+  var text = el('span', 'aichattext');
+  var meta = el('span', 'aichatmeta');
+  meta.appendChild(el('span', 'aichatwhen', aiWhen(c.created_at)));
+  var info = aiFeatureInfo(c.feature);
+  meta.appendChild(el('span', 'aichip aichipfeat', info ? info.short : String(c.feature || 'ask')));
+  if (c.status && c.status !== 'ok') meta.appendChild(el('span', 'aichip aibad', String(c.status)));
+  meta.appendChild(el('span', 'aichatcost', aiCents(c.cost_microcents)));
+  text.appendChild(meta);
+  text.appendChild(el('span', 'aichatq', String(c.question || '')));
+  open.appendChild(text);
+  var chev = el('span', 'aichev');
+  chev.setAttribute('aria-hidden', 'true');
+  open.appendChild(chev);
+
+  var rater = aiChatRater(c);
+  head.appendChild(open);
+  head.appendChild(rater.wrap);
+  li.appendChild(head);
+  li.appendChild(rater.err);
+
+  var body = el('div', 'aichatbody');
+  body.id = bodyId;
+  body.hidden = true;
+  li.appendChild(body);
+
+  open.addEventListener('click', function () {
+    var on = open.getAttribute('aria-expanded') !== 'true';
+    if (on && !body.firstChild) aiChatFill(body, c);
+    open.setAttribute('aria-expanded', String(on));
+    body.hidden = !on;
+  });
+  return li;
+}
+
+function aiPaintChats() {
+  if (!aiEl) return;
+  var s = aiChats.stats;
+  var total = s ? Number(s.total || 0) : 0;
+  aiEl.chatsGroup.state.textContent = s
+    ? (total
+      ? total + ' saved · ' + Number(s.helpful || 0) + ' helpful · ' + Number(s.unhelpful || 0) + ' not'
+      : 'none yet')
+    : (aiChats.err ? 'unavailable' : '');
+  aiEl.chatNote.textContent = aiChats.err;
+  aiEl.chatNote.hidden = !aiChats.err;
+  aiEl.chatEmpty.hidden = !s || aiChats.list.length > 0;
+  aiEl.chatBar.hidden = !s || (!total && !aiChats.list.length);
+  aiEl.chatMore.hidden = !aiChats.more;
+  aiEl.chatMore.disabled = aiChats.busy;
+}
+
+function aiChatsMinId() {
+  var min = null;
+  aiChats.list.forEach(function (c) {
+    var id = Number(c.id);
+    if (min === null || id < min) min = id;
+  });
+  return min;
+}
+
+/* more false loads the newest page over whatever is shown; more true appends the page
+   before the smallest id already shown. */
+function aiLoadChats(more) {
+  if (!aiEl || !StudyAuth.isAdmin()) return Promise.resolve();
+  if (more && aiChats.busy) return Promise.resolve();
+  var before = more ? aiChatsMinId() : null;
+  if (more && before === null) return Promise.resolve();
+  var gen = more ? aiChats.gen : ++aiChats.gen;
+  aiChats.busy = true;
+  /* An export's last word belongs to the list it was made from, not to a fresh one. */
+  if (!more && !aiChats.exporting) {
+    aiEl.chatExportMsg.textContent = '';
+    aiEl.chatExportMsg.classList.remove('aibad');
+  }
+  aiPaintChats();
+
+  return StudyAuth.admin.ai.chats(AI_CHATS_PAGE, before).then(function (r) {
+    if (!aiEl || gen !== aiChats.gen) return;
+    aiChats.busy = false;
+    if (!r || !r.ok) {
+      aiChats.err = aiChatRefusal(r, 'Could not load the chats.');
+      aiPaintChats();
+      return;
+    }
+    var page = (Array.isArray(r.chats) ? r.chats : []).filter(function (c) {
+      return c && typeof c === 'object' && c.id != null && isFinite(Number(c.id));
+    });
+    if (r.stats && typeof r.stats === 'object') aiChats.stats = r.stats;
+    if (!more) {
+      aiChats.list = [];
+      aiEl.chatList.textContent = '';
+    }
+    page.forEach(function (c) {
+      aiChats.list.push(c);
+      aiEl.chatList.appendChild(aiChatRow(c));
+    });
+    aiChats.err = '';
+    var total = aiChats.stats ? Number(aiChats.stats.total || 0) : 0;
+    aiChats.more = page.length >= AI_CHATS_PAGE && aiChats.list.length < total;
+    aiPaintChats();
+  }, function (err) {
+    if (!aiEl || gen !== aiChats.gen) return;
+    aiChats.busy = false;
+    aiChats.err = aiChatErrText(err);
+    aiPaintChats();
+  });
+}
+
+/* Hands the browser a file without a server round trip: a Blob, an object URL, a temporary
+   link with download set, and the URL given back once the click has had time to start. */
+function aiDownloadJson(obj, name) {
+  var blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.hidden = true;
+  document.body.appendChild(a);
+  try {
+    a.click();
+  } finally {
+    if (a.parentNode) a.parentNode.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1500);
+  }
+}
+
+/* Every saved chat, page by page, newest first, until a page comes back empty. */
+function aiExportChats() {
+  if (!aiEl || !StudyAuth.isAdmin() || aiChats.exporting) return;
+  var btn = aiEl.chatExport, msg = aiEl.chatExportMsg;
+  var all = [], pages = 0, capped = false;
+  aiChats.exporting = true;
+  btn.setAttribute('aria-disabled', 'true');
+  msg.classList.remove('aibad');
+  msg.textContent = 'Exporting…';
+
+  function step(before) {
+    if (pages >= AI_CHATS_EXPORT_PAGES) { capped = true; return Promise.resolve(); }
+    pages++;
+    return StudyAuth.admin.ai.chats(AI_CHATS_EXPORT_PAGE, before).then(function (r) {
+      if (!r || !r.ok) {
+        var e = new Error('refused');
+        e.reply = r;
+        throw e;
+      }
+      var page = Array.isArray(r.chats) ? r.chats : [];
+      if (!page.length) return null;
+      var min = null;
+      page.forEach(function (c) {
+        all.push(c);
+        var id = c ? Number(c.id) : NaN;
+        if (isFinite(id) && (min === null || id < min)) min = id;
+      });
+      /* A page with no usable id, or one that does not move backwards, cannot be paged past. */
+      if (min === null || (before !== null && min >= before)) return null;
+      return step(min);
+    });
+  }
+
+  step(null).then(function () {
+    if (!aiEl || !StudyAuth.isAdmin()) return;
+    aiDownloadJson({ exported_at: new Date().toISOString(), chats: all },
+      'ask-chats-' + aiLocalDate() + '.json');
+    msg.textContent = 'Exported ' + aiCount(all.length, 'chat') +
+      (capped ? ', stopped after ' + AI_CHATS_EXPORT_PAGES + ' pages' : '');
+  }, function (err) {
+    if (!aiEl) return;
+    msg.classList.add('aibad');
+    msg.textContent = err && err.message === 'refused'
+      ? aiChatRefusal(err.reply, 'Could not export the chats.')
+      : aiChatErrText(err);
+  }).then(function () {
+    aiChats.exporting = false;
+    btn.removeAttribute('aria-disabled');
+  });
+}
+
 function wireAi() {
   var e = aiEl;
+
+  e.chatExport.addEventListener('click', aiExportChats);
+  e.chatMore.addEventListener('click', function () { aiLoadChats(true); });
 
   e.master.addEventListener('click', function () {
     aiSet({ enabled: !aiSwitchOn(e.master) }, null, [e.master]);
@@ -1650,6 +2060,7 @@ function aiTeardown() {
   var sec = $('aiblock');
   if (sec && sec.parentNode) sec.parentNode.removeChild(sec);
   aiEl = null;
+  aiChats = aiChatsFresh(aiChats.gen + 1);
   var box = $('adminitems');
   if (box) box.innerHTML = '';
 }

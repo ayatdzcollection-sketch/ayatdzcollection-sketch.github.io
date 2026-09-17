@@ -555,3 +555,109 @@ test('periodic best keeps the higher score whichever device wrote last', () => {
   assert.equal(merge(b, a).ns.periodic.best.value, 22);
   assert.equal(mergeMax(null, 5), 5);
 });
+
+/* ---------- apushp12:asknotes ----------
+   Notes kept beside Ask: [{ ts, t, del }], ts is the identity. Newest write wins would drop
+   a note written on the other device, and would resurrect a note deleted on this one. */
+
+const { mergeAskNotes, BUILTIN_MERGES, isExcluded: askExcluded } = require('../assets/sync.js');
+const note = (ts, t) => ({ ts, t });
+const gone = ts => ({ ts, t: '', del: true });
+const deepFreeze = v => {
+  if (v && typeof v === 'object') { Object.values(v).forEach(deepFreeze); Object.freeze(v); }
+  return v;
+};
+
+test('asknotes: registered for apushp12, and it syncs while ui stays on the device', () => {
+  assert.equal(BUILTIN_MERGES['apushp12:asknotes'], mergeAskNotes);
+  assert.equal(askExcluded('apushp12', 'asknotes'), false, 'the notes travel');
+  assert.equal(askExcluded('apushp12', 'ui'), true, 'ui still does not');
+  const built = buildEnvelopeFrom({
+    'apushp12:ui': { tab: 'ask' },
+    'apushp12:asknotes': [note(1, 'x')]
+  }, { 'apushp12:ui': 5, 'apushp12:asknotes': 5 });
+  assert.equal(built.ns.apushp12.ui, undefined);
+  assert.deepEqual(built.ns.apushp12.asknotes.value, [note(1, 'x')]);
+});
+
+test('asknotes: notes from both devices are unioned by ts, whichever envelope is newer', () => {
+  const a = env({ 'apushp12:asknotes': [[note(10, 'phone'), note(30, 'both')], 100] });
+  const b = env({ 'apushp12:asknotes': [[note(20, 'laptop'), note(30, 'both')], 900] });
+  const want = [note(10, 'phone'), note(20, 'laptop'), note(30, 'both')];
+  assert.deepEqual(merge(a, b).ns.apushp12.asknotes.value, want, 'the older envelope loses no note');
+  assert.deepEqual(merge(b, a).ns.apushp12.asknotes.value, want);
+});
+
+test('asknotes: a delete on either side wins, and the tombstone keeps no text', () => {
+  const live = [note(5, 'keep me'), note(6, 'other')];
+  const deleted = [{ ts: 5, t: 'keep me', del: true }];
+  const want = [gone(5), note(6, 'other')];
+  assert.deepEqual(mergeAskNotes(live, deleted), want);
+  assert.deepEqual(mergeAskNotes(deleted, live), want);
+  // a longer edit on the other device does not bring the deleted note back
+  assert.deepEqual(mergeAskNotes([note(5, 'a much longer edit of the note')], [gone(5)]), [gone(5)]);
+  // and the result merged with the old live copy again stays deleted
+  assert.deepEqual(mergeAskNotes(want, live), want);
+});
+
+test('asknotes: the same ts with different text keeps the longer text', () => {
+  assert.deepEqual(mergeAskNotes([note(1, 'short')], [note(1, 'short, then edited')]), [note(1, 'short, then edited')]);
+  assert.deepEqual(mergeAskNotes([note(1, 'short, then edited')], [note(1, 'short')]), [note(1, 'short, then edited')]);
+});
+
+test('asknotes: deterministic, sorted by ts, order independent and idempotent', () => {
+  const a = [note(40, 'd'), note(10, 'a'), gone(25), note(7, 'abc')];
+  const b = [note(7, 'xyz'), note(30, 'c'), note(10, 'a')];
+  const m = mergeAskNotes(a, b);
+  assert.deepEqual(m.map(n => n.ts), [7, 10, 25, 30, 40]);
+  assert.deepEqual(mergeAskNotes(b, a), m, 'same result in either direction');
+  assert.equal(m[0].t, 'xyz', 'an equal length tie is broken the same way from both sides');
+  assert.deepEqual(mergeAskNotes(m, a), m, 'idempotent');
+  assert.deepEqual(mergeAskNotes(m, m), m);
+  assert.deepEqual(JSON.stringify(mergeAskNotes(a, b)), JSON.stringify(m), 'same key order too');
+});
+
+test('asknotes: inputs are never mutated', () => {
+  const a = deepFreeze([note(3, 'x'.repeat(400)), { ts: 4, t: 'dup', del: true }]);
+  const b = deepFreeze([note(4, 'dup, longer'), note(1, 'y')]);
+  const before = JSON.stringify([a, b]);
+  const m = mergeAskNotes(a, b);
+  assert.equal(JSON.stringify([a, b]), before);
+  assert.notEqual(m[0], b[1], 'entries are copies, not the input objects');
+});
+
+test('asknotes: capped at 80, oldest tombstones dropped before any note', () => {
+  const notes = Array.from({ length: 70 }, (_, i) => note(1000 + i, 'n' + i));
+  const dead = Array.from({ length: 20 }, (_, i) => gone(i + 1));
+  const m = mergeAskNotes(notes, dead);
+  assert.equal(m.length, 80);
+  assert.equal(m.filter(n => !n.del).length, 70, 'every note survives');
+  assert.deepEqual(m.filter(n => n.del).map(n => n.ts), [11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
+    'the ten oldest tombstones are the ones dropped');
+});
+
+test('asknotes: past the tombstones, the oldest notes go and the newest stay', () => {
+  const notes = Array.from({ length: 100 }, (_, i) => note(i + 1, 'n' + i));
+  const m = mergeAskNotes(notes, [gone(500), gone(501)]);
+  assert.equal(m.length, 80);
+  assert.equal(m.filter(n => n.del).length, 0, 'both tombstones went first');
+  assert.equal(m[0].ts, 21, 'the twenty oldest notes were dropped');
+  assert.equal(m.at(-1).ts, 100);
+  assert.equal(mergeAskNotes(m, m).length, 80, 'a capped list stays put');
+});
+
+test('asknotes: tolerates junk from a damaged device', () => {
+  assert.deepEqual(mergeAskNotes(null, undefined), []);
+  assert.deepEqual(mergeAskNotes({ ts: 1, t: 'x' }, 'notes'), [], 'non arrays count as empty');
+  assert.deepEqual(mergeAskNotes(42, [note(2, 'ok')]), [note(2, 'ok')]);
+  const junk = [
+    null, 7, 'text', [], { t: 'no ts' }, { ts: '5', t: 'string ts' }, { ts: NaN, t: 'nan' },
+    { ts: Infinity, t: 'inf' }, { ts: null, t: 'null ts' },
+    { ts: 9, t: 12345 }, { ts: 8, t: 'z'.repeat(350) }, { ts: 6, t: 'soft', del: 'yes' }
+  ];
+  const m = mergeAskNotes(junk, []);
+  assert.deepEqual(m.map(n => n.ts), [6, 8, 9], 'only entries with a finite numeric ts survive');
+  assert.equal(m[0].del, undefined, 'del counts only when it is true');
+  assert.equal(m[1].t.length, 300, 'text is held to 300 characters');
+  assert.equal(m[2].t, '', 'a non string text becomes empty');
+});

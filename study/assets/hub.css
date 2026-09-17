@@ -448,6 +448,66 @@ textarea.askinput{min-height:80px;padding:10px 12px}
 .aipopitem input{flex:0 0 auto;width:18px;height:18px;margin:0;accent-color:var(--ink)}
 .aipoperr{margin:4px 14px 8px;font-size:13px;white-space:normal}
 
+/* Chats. A row is one disclosure button (when, feature, cost, the question on one line) with
+   the two thumbs beside it, not inside it, so rating a row never opens it. Everything wraps
+   or clips inside the column, so a long answer or an unbroken URL cannot widen the page. */
+.aichatbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin:4px 0 10px}
+.btn.sm.aichatbtn{min-height:44px}
+.btn[aria-disabled="true"]{opacity:.45;cursor:default}
+.aichatstatus{min-width:0;font-family:var(--mono);font-size:11px;letter-spacing:.04em;
+  color:var(--ink3);overflow-wrap:anywhere}
+.aichatstatus.aibad{color:var(--bad)}
+.aichats{list-style:none;margin:0;padding:0}
+.aichats:not(:empty){border-top:1px solid var(--rule2)}
+.aichat{border-bottom:1px solid var(--rule2)}
+.aichathead{display:flex;align-items:center;gap:6px;min-width:0}
+.aichatopen{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:8px;min-height:52px;
+  margin:0;padding:6px 2px;border:0;background:none;color:inherit;font:inherit;text-align:left;
+  cursor:pointer;-webkit-tap-highlight-color:transparent}
+.aichatopen:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.aichatopen:active{background:#EDEDE7}
+.aichattext{flex:1 1 auto;min-width:0;display:block;overflow:hidden}
+.aichatmeta{display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;font-family:var(--mono);
+  font-size:11px;letter-spacing:.04em;color:var(--ink3)}
+.aichatcost{white-space:nowrap}
+.aichatq{display:block;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-family:var(--cond);font-size:14.5px;color:var(--ink)}
+.aichatopen .aichev{margin:0 4px 4px 2px}
+.aichatopen[aria-expanded="true"] .aichev{transform:translateY(4px) rotate(225deg)}
+
+.aichip{display:inline-block;max-width:100%;padding:1px 5px;border:1px solid var(--rule);
+  border-radius:2px;font-family:var(--mono);font-size:10.5px;letter-spacing:.04em;line-height:1.45;
+  color:var(--ink2);overflow-wrap:anywhere}
+.aichip.aichipfeat{border-color:currentColor;color:var(--accent);font-size:9px;letter-spacing:.12em;
+  text-transform:uppercase}
+.aichip.aibad{border-color:currentColor;color:var(--bad);font-size:9px;letter-spacing:.12em;
+  text-transform:uppercase}
+.aichip.aichipflag{border-style:dashed;color:var(--ink3)}
+.aichips{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:6px}
+
+/* The thumbs: the .tog look at a full 44px square, ink when pressed. */
+.aichatrate{flex:0 0 auto;display:flex;gap:4px}
+.airate{width:44px;height:44px;display:inline-flex;align-items:center;justify-content:center;
+  margin:0;padding:0;border:1px solid var(--rule);border-radius:2px;background:transparent;
+  color:var(--ink2);cursor:pointer;-webkit-tap-highlight-color:transparent}
+.airate .aithumb{display:block}
+.airate.down .aithumb{transform:rotate(180deg)}
+.airate[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+.airate:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.airate[aria-disabled="true"]{opacity:.45;cursor:default}
+.aichaterr{margin:0 0 8px;font-size:13px}
+
+.aichatbody{min-width:0;padding:0 2px 14px}
+.aichatbody .lbl{margin:10px 0 4px}
+.aichatbody .lbl:first-child{margin-top:2px}
+.aichatquote{margin:0;padding:4px 0 4px 10px;border-left:2px solid var(--rule);font-size:14.5px;
+  color:var(--ink2);white-space:pre-wrap;overflow-wrap:anywhere}
+.aichatanswer{margin:0;font-size:15px;line-height:1.5;color:var(--ink);white-space:pre-wrap;
+  overflow-wrap:anywhere}
+.aichatbody .note{margin:0}
+.aichatinfo{margin:10px 0 0;overflow-wrap:anywhere}
+.aichatmore{margin-top:10px}
+
 @media (max-width:560px){
   .aifeatctl{grid-template-columns:minmax(0,1fr) 104px}
   .aifield.aimode{grid-column:1 / -1}

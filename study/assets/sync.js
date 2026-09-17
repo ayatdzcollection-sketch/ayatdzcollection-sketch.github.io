@@ -291,6 +291,61 @@ function mergeSettings(aVal, bVal, aM, bM) {
   return out;
 }
 
+/* Notes kept beside Ask in the APUSH material: [{ ts, t, del }]. ts is the creation time and
+ * the note's identity, t its text (at most 300 characters), del a tombstone. Newest write
+ * wins would lose a note written on the phone to one written on the laptop, and would bring
+ * a deleted note back from whichever device had not heard about the delete, so:
+ *   - union by ts;
+ *   - a note deleted on either side stays deleted: the tombstone is kept, its text dropped,
+ *     so the delete keeps travelling to devices that still hold the note;
+ *   - the same ts with different text keeps the longer (equal lengths: the greater string,
+ *     so both merge directions agree);
+ *   - sorted by ts, at most 80 kept: the oldest tombstones go first, then the oldest notes.
+ * Entries without a finite numeric ts are dropped, and neither input is touched. A tombstone
+ * comes out as { ts, t: '', del: true } so every entry has a string t. */
+var ASK_NOTES_CAP = 80;
+var ASK_NOTE_MAX = 300;
+
+function mergeAskNotes(aVal, bVal) {
+  var byTs = Object.create(null);
+  var take = function (arr) {
+    if (!Array.isArray(arr)) return;
+    for (var i = 0; i < arr.length; i++) {
+      var n = arr[i];
+      if (!n || typeof n !== 'object' || typeof n.ts !== 'number' || !isFinite(n.ts)) continue;
+      var k = String(n.ts);
+      var t = typeof n.t === 'string' ? n.t.slice(0, ASK_NOTE_MAX) : '';
+      var del = n.del === true;
+      var prev = byTs[k];
+      if (!prev) { byTs[k] = { ts: n.ts, t: t, del: del }; continue; }
+      if (del) prev.del = true;
+      if (t.length > prev.t.length || (t.length === prev.t.length && t > prev.t)) prev.t = t;
+    }
+  };
+  take(aVal);
+  take(bVal);
+
+  var notes = [], dead = [];
+  for (var k in byTs) {
+    var e = byTs[k];
+    if (e.del) dead.push({ ts: e.ts, t: '', del: true });
+    else notes.push({ ts: e.ts, t: e.t });
+  }
+  var byTime = function (x, y) { return x.ts - y.ts; };
+  notes.sort(byTime);
+  dead.sort(byTime);
+
+  var over = notes.length + dead.length - ASK_NOTES_CAP;
+  if (over > 0) {
+    var drop = Math.min(over, dead.length);
+    dead = dead.slice(drop);
+    over -= drop;
+  }
+  if (over > 0) notes = notes.slice(over);
+
+  return notes.concat(dead).sort(byTime);
+}
+
 /* Material-specific merges that the HUB also needs live here rather than being registered
  * by the material. The hub merges on load, on visibility and during import preview, all
  * while the quiz page may be closed. See README, "Adding a material". */
@@ -309,6 +364,7 @@ var BUILTIN_MERGES = {
   'acct1:fsrs': mergeCardsFsrs,                // accounting 1, topic 1: the same card schedule
   'la10crucible:fsrs': mergeCardsFsrs,         // The Crucible, acts 1 and 2: same record shape
   'apushp12:fsrs': mergeCardsFsrs,             // APUSH period 1 and 2 test: same record shape
+  'apushp12:asknotes': mergeAskNotes,          // notes kept beside Ask: union, deletes stick
   'psychu0:fsrs': mergeCardsFsrs,              // Unit 0 research and statistics: same record shape
   'la10vocab1:fsrs': mergeCardsFsrs,           // vocabulary chapter 1: same record shape
   'frchateaux:fsrs': mergeCardsFsrs,           // les chateaux vocabulary: same record shape
@@ -484,6 +540,7 @@ if (typeof module !== 'undefined' && module.exports) {
     mergeNumberSet: mergeNumberSet,
     mergeMax: mergeMax,
     mergeSettings: mergeSettings,
+    mergeAskNotes: mergeAskNotes,
     mergeExams: mergeExams,
     makeEventMerge: makeEventMerge,
     pickStateRecord: pickStateRecord,

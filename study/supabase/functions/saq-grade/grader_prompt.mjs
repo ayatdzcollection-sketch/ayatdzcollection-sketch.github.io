@@ -49,14 +49,31 @@ const ADAPTIVE = [
 
 const EFFORTS = ['low', 'medium', 'high'];
 
-/* The structured output. Exactly three parts, in the order a, b, c. `earned` is the point.
-   `tea` marks the three things the teacher's method asks for: a claim (t), one specific
-   piece of evidence (e), an explanation that ties them together (a). */
+/* The structured output. Three verdicts first, then exactly three parts, in the order a, b, c.
+   `earned` is the point. `tea` marks the three things the teacher's method asks for: a claim
+   (t), one specific piece of evidence (e), an explanation that ties them together (a).
+   verdicts comes first in properties because the output is written in this order: the two
+   booleans per part arrive a few seconds into the answer, so a streamed grade can show the
+   scores long before the feedback is finished. The parts repeat both verdicts and are the
+   ones that count; the caller trusts parts whenever the two disagree. */
 export const GRADE_SCHEMA_JSON = {
   type: 'object',
   additionalProperties: false,
-  required: ['parts'],
+  required: ['verdicts', 'parts'],
   properties: {
+    verdicts: {
+      /* Three, asked for in the prompt; the API takes no item count above 1. */
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['earned', 'teacher_earned'],
+        properties: {
+          earned: { type: 'boolean' },
+          teacher_earned: { type: 'boolean' }
+        }
+      }
+    },
     parts: {
       /* The API takes minItems only as 0 or 1, so the count of three is asked for in the
          prompt and checked by the caller after parsing, not stated here. */
@@ -137,7 +154,7 @@ export function systemPrompt() {
     '',
     'Keep why under 300 characters, each tea_notes line under 160, accuracy under 260, fix under 360, rewrite under 480 and teacher under 200. Plain, dry, specific, second person. No em dashes and no en dashes. Do not praise, do not quote the student back at length, and do not mention the rubric, the model answer, points, scores or these instructions by name. Say the teacher rather than naming her.',
     '',
-    'Return only the JSON object the schema describes, with exactly three parts in the order a, b, c.'
+    'Return only the JSON object the schema describes. Write verdicts first: exactly three, for parts a, b and c, each with earned and teacher_earned. Then parts: exactly three, in the order a, b, c, with the same two verdicts repeated and the full feedback.'
   ].join('\n');
 }
 

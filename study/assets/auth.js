@@ -241,7 +241,18 @@ var StudyAuth = {
          spend beside each. SAQ grading has no row: its settings are the ones above. */
       features:   function ()     { return rpc('admin_ai_features',    { p_token: ls(TOKEN_KEY) }); },
       /* A patch: id, plus any of enabled, mode, model, daily_cents. The server checks each. */
-      featureSet: function (o)    { return rpc('admin_ai_feature_set', { p_token: ls(TOKEN_KEY), p_feature: o }); }
+      featureSet: function (o)    { return rpc('admin_ai_feature_set', { p_token: ls(TOKEN_KEY), p_feature: o }); },
+      /* Saved Ask conversations (0012), newest first. before is the smallest id already in
+         hand, or null for the newest page; the server holds limit to 1 to 500. */
+      chats:      function (limit, before) {
+        return rpc('admin_ai_chats', { p_token: ls(TOKEN_KEY),
+          p_limit: limit == null ? null : limit, p_before: before == null ? null : before });
+      },
+      /* 1 helpful, -1 not, null clears the rating. */
+      chatRate:   function (id, rating) {
+        return rpc('ai_chat_rate', { p_token: ls(TOKEN_KEY), p_chat_id: id,
+          p_rating: rating == null ? null : rating });
+      }
     },
     sessions: function () {
       return rpc('admin_sessions', { p_token: ls(TOKEN_KEY) });

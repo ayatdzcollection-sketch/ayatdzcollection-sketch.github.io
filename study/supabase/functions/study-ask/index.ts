@@ -9,16 +9,20 @@
  *   streaming exactly one Claude call with the prompt in ask_prompt.mjs as Server Sent Events,
  *   closing the ledger row exactly once (ai_end), whatever happened, including a client that
  *   disconnects halfway,
+ *   saving the question and the answer once, as one study_ai_chats row through ai_chat_log
+ *   (0012, the owner only beta), after the answer has finished or failed, and handing the row id
+ *   back in the done event as chat_id,
  *   returning a small fixed set of error codes and never the API's own error text.
  *
- * What it never does: log, echo or return the API key; log, store or forward the question, the
- * passages or the answer; leave a pending ledger row open.
+ * What it never does: log, echo or return the API key; log the question, the passages or the
+ * answer, or store them anywhere but that one row; leave a pending ledger row open; let a failed
+ * chat row get in the way of the answer.
  *
  * Environment:
  *   ANTHROPIC_API_KEY          Edge Function secret, shared with saq-grade.
  *   SUPABASE_URL               injected by the platform.
- *   SUPABASE_SERVICE_ROLE_KEY  injected by the platform. ai_begin2 and ai_end are granted to
- *                              service_role only, so the anon key cannot reach them.
+ *   SUPABASE_SERVICE_ROLE_KEY  injected by the platform. ai_begin2, ai_end and ai_chat_log are
+ *                              granted to service_role only, so the anon key cannot reach them.
  *
  * Request, events, error codes and deploy: README.md beside this file.
  * No em dashes and no en dashes in this file.
@@ -47,6 +51,10 @@ const ALLOWED_ORIGINS = [
 const CALL_TIMEOUT_MS = 60_000;
 const CALL_MAX_RETRIES = 0;
 
+/* The chat row keeps at most this much answer; ai_chat_log clips to the same. 700 tokens of
+   answer is nowhere near it. */
+const ANSWER_MAX = 6000;
+
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY") ?? "";
@@ -67,9 +75,23 @@ type AskBody = {
   quote: string;
   focus: string;
   map: string;
-  chunks: Array<{ label: string; text: string }>;
+  chunks: Array<{ label: string; text: string; ref?: string }>;
   history: Array<{ role: "user" | "assistant"; text: string }>;
+  progress: string;
+  notes: string;
+  thread: string | null;
+  turn: number;
+  textbook: boolean;
+  practice: boolean;
+  widgets: boolean;
+  chapter: number | null;
+  textbookLabels?: string[];
 };
+
+/* Which private textbook corpus (migration 0013) a material may draw on. */
+const CORPUS: Record<string, string> = { "apush/period1-2-test": "fraser-1-4" };
+const TEXTBOOK_PASSAGES = 3;
+const TEXTBOOK_CHARS = 1000;
 
 type EndStatus = "ok" | "refused" | "error";
 
@@ -143,12 +165,21 @@ function effectiveIn(u: Usage): number {
   return Math.ceil(num(u.input_tokens) + 1.25 * num(u.cache_creation_input_tokens) + 0.1 * num(u.cache_read_input_tokens));
 }
 
-function costCents(model: string, inTok: number, outTok: number): number {
+function dollars(model: string, inTok: number, outTok: number): number {
   /* An unknown model is priced at the dearest candidate so the number shown can never be
      lower than what was actually billed. Postgres computes the ledger's own figure. */
   const price = (PRICES as Record<string, { in: number; out: number }>)[model] ?? { in: 5, out: 25 };
-  const dollars = (inTok / 1e6) * price.in + (outTok / 1e6) * price.out;
-  return Math.round(dollars * 100 * 1000) / 1000;
+  return (inTok / 1e6) * price.in + (outTok / 1e6) * price.out;
+}
+
+function costCents(model: string, inTok: number, outTok: number): number {
+  return Math.round(dollars(model, inTok, outTok) * 100 * 1000) / 1000;
+}
+
+/* The ledger's unit: dollars per million tokens times tokens, times 1e8 microcents per dollar,
+   as a whole number (the column is a bigint). */
+function costMicrocents(model: string, inTok: number, outTok: number): number {
+  return Math.round(dollars(model, inTok, outTok) * 1e8);
 }
 
 /* ---------------------------------------------------------------- the stream */
@@ -157,7 +188,8 @@ const encoder = new TextEncoder();
 
 /* Opens the SSE response for a call ai_begin2 has already let through. Every path out of here,
    including a throw, a timeout, a refusal and the client going away, reaches finish(), and
-   finish() calls ai_end at most once. */
+   finish() calls ai_end at most once. logChat() writes the chat row at most once: before done on
+   an answer that finished, and after ai_end, best effort, on every other path. */
 function streamAnswer(body: AskBody, callId: unknown, model: string, origin: string): Response {
   const started = Date.now();
   let status: EndStatus = "error";
@@ -167,6 +199,8 @@ function streamAnswer(body: AskBody, callId: unknown, model: string, origin: str
   let cancelled = false;
   let timedOut = false;
   let live: { abort(): void } | null = null;
+  let answer = "";
+  let logged = false;
 
   const finish = async (): Promise<void> => {
     if (ended) return;
@@ -182,6 +216,47 @@ function streamAnswer(body: AskBody, callId: unknown, model: string, origin: str
     } catch {
       console.error("study-ask: ai_end failed");
     }
+  };
+
+  /* The chat row, with the same effective token counts ai_end records. Returns the row id, or
+     null when the row was not written; it never throws, so a logging failure cannot break the
+     answer. */
+  const logChat = async (): Promise<number | string | null> => {
+    if (logged) return null;
+    logged = true;
+    const inTok = effectiveIn(usage);
+    const outTok = num(usage.output_tokens);
+    try {
+      const res = (await rpc("ai_chat_log", {
+        p_row: {
+          call_id: callId,
+          material: body.material,
+          feature: FEATURE,
+          install: body.install,
+          thread: body.thread,
+          turn: body.turn,
+          question: body.question,
+          quote: body.quote,
+          focus: body.focus.slice(0, LIMITS.focus),
+          /* Every chunk's label in the order sent, so Sources: [n] in the answer is labels[n - 1]. */
+          labels: body.chunks.map((c) => c.label),
+          progress: body.progress.length > 0,
+          notes: body.notes.length > 0,
+          answer: answer.slice(0, ANSWER_MAX),
+          status,
+          model,
+          input_tokens: inTok,
+          output_tokens: outTok,
+          cost_microcents: costMicrocents(model, inTok, outTok),
+          latency_ms: Date.now() - started,
+        },
+      })) as Record<string, unknown> | null;
+      if (res && res.ok === true && (typeof res.id === "number" || typeof res.id === "string")) return res.id;
+      console.error("study-ask: ai_chat_log refused the row");
+    } catch {
+      console.error("study-ask: ai_chat_log failed");
+    }
+    return null;
   };
 
   const run = async (controller: ReadableStreamDefaultController<Uint8Array>): Promise<void> => {
@@ -221,11 +296,14 @@ function streamAnswer(body: AskBody, callId: unknown, model: string, origin: str
             if (typeof d[k] === "number") usage[k] = d[k];
           }
         } else if (ev.type === "content_block_delta" && ev.delta.type === "text_delta" && ev.delta.text) {
+          answer += ev.delta.text;
           send({ type: "delta", text: ev.delta.text });
         }
       }
 
       const msg = await stream.finalMessage();
+      clearTimeout(timer);
+      timer = undefined;
       if (msg.usage) usage = { ...(msg.usage as Usage) };
 
       if (msg.stop_reason === "refusal") {
@@ -236,7 +314,11 @@ function streamAnswer(body: AskBody, callId: unknown, model: string, origin: str
       }
 
       status = "ok";
-      send({ type: "done", model, cost_cents: costCents(model, effectiveIn(usage), num(usage.output_tokens)) });
+      const done: Json = { type: "done", model, cost_cents: costCents(model, effectiveIn(usage), num(usage.output_tokens)) };
+      if (body.textbookLabels && body.textbookLabels.length) done.textbook = body.textbookLabels;
+      const chatId = await logChat();
+      if (chatId !== null) done.chat_id = chatId;
+      send(done);
     } catch (e) {
       /* Most specific first. The abort, connection and rate limit classes are all subclasses of
          APIError in the TypeScript SDK. Nothing from the error reaches the client or the log. */
@@ -263,6 +345,8 @@ function streamAnswer(body: AskBody, callId: unknown, model: string, origin: str
         }
       }
       await finish();
+      /* Refused, failed, timed out or abandoned: still one row, with whatever text streamed. */
+      await logChat();
     }
   };
 
@@ -296,7 +380,7 @@ function streamAnswer(body: AskBody, callId: unknown, model: string, origin: str
     console.error("study-ask: could not open the stream");
     cancelled = true;
     if (live) (live as { abort(): void }).abort();
-    if (!work) keepAlive(finish());
+    if (!work) keepAlive(finish().then(logChat));
     return reply({ ok: false, error: "grader_error" }, 200, origin);
   }
 }
@@ -333,6 +417,31 @@ Deno.serve(async (req: Request): Promise<Response> => {
     /* Not deployed fully. Say nothing about which piece is missing, and do not open a row. */
     console.error("study-ask: a required environment variable is not set");
     return reply({ ok: false, error: "grader_error" }, 200, origin);
+  }
+
+  /* Textbook passages, only when the page asked for them for this question. They go after the
+     material's own passages, so the numbers the client already holds stay valid, and their
+     labels travel back in the done event. A failed search just leaves them out. */
+  body.textbookLabels = [];
+  const corpus = CORPUS[body.material];
+  if (body.textbook && corpus) {
+    try {
+      const found = (await rpc("ai_passages_search", {
+        p_corpus: corpus,
+        p_query: (body.question + " " + body.quote).slice(0, 1000),
+        p_chapter: body.chapter,
+        p_limit: TEXTBOOK_PASSAGES,
+      })) as { ok?: boolean; passages?: Array<{ chapter?: number; heading?: string; body?: string }> } | null;
+      for (const p of (found && found.ok && Array.isArray(found.passages)) ? found.passages : []) {
+        if (!p || typeof p.body !== "string" || !p.body) continue;
+        if (body.chunks.length >= 14) break;
+        const label = ("Textbook, chapter " + (p.chapter ?? "") + (p.heading ? ", " + p.heading : "")).slice(0, 80);
+        body.chunks.push({ label, text: p.body.slice(0, TEXTBOOK_CHARS) });
+        body.textbookLabels.push(label);
+      }
+    } catch {
+      console.error("study-ask: textbook search failed");
+    }
   }
 
   /* The reserve is sized from what is about to be sent. The model only changes request fields

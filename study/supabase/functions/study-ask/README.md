@@ -2,15 +2,16 @@
 
 One Supabase Edge Function beside `saq-grade`. A student highlights text or types a question in a
 material tagged `ai-ask`; the material sends what is on screen, the highlight, the passages it
-picked and the question. The function asks Postgres for permission and a budget
-(`ai_begin2`, feature `ask`), streams one Claude answer back as Server Sent Events with the prompt
-in `ask_prompt.mjs`, and closes the ledger row (`ai_end`) exactly once, including when the
-student closes the page halfway.
+picked, the student's progress and saved notes, and the question. The function asks Postgres for
+permission and a budget (`ai_begin2`, feature `ask`), streams one Claude answer back as Server Sent
+Events with the prompt in `ask_prompt.mjs`, closes the ledger row (`ai_end`) exactly once,
+including when the student closes the page halfway, and saves the question and the answer as one
+row in `study_ai_chats` (`ai_chat_log`, see Saved chats below).
 
 It is **owner only** while the `ask` row in `study_ai_features` has `mode = 'owner'`, which is how
 0011 creates it: every call without the owner's admin token answers `owner_only`. The row also
 starts with `enabled = false`, so until the owner turns it on every call answers `off`. Run
-`0010_ai_grading.sql` and `0011_ai_features.sql` first.
+`0010_ai_grading.sql`, `0011_ai_features.sql` and `0012_ai_chats.sql` first.
 
 ## Request
 
@@ -30,12 +31,25 @@ else, or no header, is refused with 403), and a JSON body:
   chunks:     [{ label, text }],               optional, at most 14; label 0 to 80, text 0 to 2000,
                                                all text together at most 16000
   history:    [{ role: 'user'|'assistant', text }]   optional, at most 6; text 0 to 1500
+  progress:   'forecast, weak sections, ...',  optional, 0 to 3000
+  notes:      'what the student saved',        optional, 0 to 1500
+  thread:     'conversation id',               optional, ^[a-z0-9-]{8,64}$
+  turn:       2                                optional, integer 0 to 100
 }
 ```
 
-Lengths are counted after trimming. A field that is present must have the right type (send an
-empty string or leave it out, not `null`). The raw body is capped at 262144 characters. Anything
-outside these rules is `400 {ok:false, error:'bad_request'}` before any ledger row is opened.
+Lengths are counted after trimming, except `thread`, which must match as sent. A field that is
+present must have the right type (send an empty string or leave it out, not `null`). `thread` is
+stored as null and `turn` as 0 when they are left out. The raw body is capped at 327680
+characters. Anything outside these rules is `400 {ok:false, error:'bad_request'}` before any
+ledger row is opened.
+
+`progress` is the student's own record in this material (forecast, mock tests, weakest sections,
+questions they keep missing, short answer parts not earned) and `notes` are things the student
+saved earlier. They go into the question message as `PROGRESS` and `NOTES` blocks, in that order,
+before `FOCUS`, each left out when empty. The prompt uses progress only when the question is about
+the student, follows notes that state a preference, and ends an answer with a last line
+`Remember: <one sentence>` only when the question itself asks to remember or note something.
 
 Passage numbers are the 1 based position in `chunks` as sent, so `Sources: [2]` in an answer
 means `chunks[1]`. A chunk with empty text is skipped without renumbering the others. Keep `map`
@@ -51,8 +65,11 @@ Each event is one line `data: <json>` followed by a blank line. No other event t
 
 ```
 data: {"type":"delta","text":"..."}            zero or more, in order; append them
-data: {"type":"done","model":"claude-sonnet-4-6","cost_cents":0.412}
+data: {"type":"done","model":"claude-sonnet-4-6","cost_cents":0.412,"chat_id":123}
 ```
+
+`chat_id` is the `study_ai_chats` row the answer was saved as, for rating it later with
+`ai_chat_rate`. It is left out when the row could not be written; the answer is not affected.
 
 or, when something fails after the stream opened, instead of `done`:
 
@@ -90,7 +107,30 @@ ends with `done`. The answer's last line is `Sources: [n], [n]` when passages we
 latency)` then records `ok`, `refused` or `error` with input counted at what it cost:
 `input + 1.25 x cache writes + 0.1 x cache reads`. A stream cut short (client gone, timeout, API
 error mid stream) records the tokens reported so far, or 0 when none were. The ip is the last
-`x-forwarded-for` entry. No question, passage or answer text is logged or stored.
+`x-forwarded-for` entry. The input reserve counts every character sent, `progress` and `notes`
+included; `RESERVE_IN` (8300) is only the fallback. The ledger itself holds no text.
+
+## Saved chats
+
+Ask is an owner only beta, and its questions and answers are now stored so it can be improved:
+once per call, after the answer has finished or failed, the function calls
+`ai_chat_log(p_row)` (service role only, from `0012_ai_chats.sql`) with
+
+```
+{ call_id, material, feature: 'ask', install, thread, turn, question, quote,
+  focus (clipped to 2500), labels (every chunk label, in the order sent),
+  progress: true|false, notes: true|false (whether each was sent, not the text),
+  answer (the full text produced, or what streamed before a refusal or failure),
+  status: 'ok'|'refused'|'error', model, input_tokens (effective, as for ai_end),
+  output_tokens, cost_microcents (tokens times the PRICES rate times 1e8), latency_ms }
+```
+
+On an answer that finished the row is written before `done` is sent and its id comes back as
+`chat_id`. On a refusal, an error, a timeout or a client that left, the row is written after
+`ai_end`, best effort. A failed write logs one fixed line and never changes what the student gets.
+The rows are readable only through `admin_ai_chats` with the owner's token, and `ai_chat_rate`
+marks one helpful or not. If Ask ever opens beyond the owner, revisit the privacy row in
+`study/README.md` first. The function logs no question, passage or answer text.
 
 ## Models
 
@@ -133,6 +173,8 @@ token: `{"ok":false,"error":"owner_only"}`. Without the Origin header: 403.
 
 ## Local check
 
-`node test_prompt.mjs` (no API call) asserts the request shape, cache placement, block order,
-history merging, model params, the validation limits and that the prompt has no em or en dash.
+`node test_prompt.mjs` (no API call) asserts the request shape, cache placement, block order
+(PROGRESS and NOTES first), history merging, model params, the validation limits for every field
+including `progress`, `notes`, `thread` and `turn`, the appended PROGRESS, NOTES and Remember
+instructions, and that the prompt has no em or en dash.
 `deno check index.ts` needs the npm SDK in the Deno cache.

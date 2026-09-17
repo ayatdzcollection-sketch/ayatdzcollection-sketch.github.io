@@ -21,7 +21,11 @@ Rules that always apply:
   turned on (owner controlled, capped, off by default), and, from 2026-09-16, the owner only
   beta "ask about the material" feature (Edge Function `study-ask`, migration 0011, answers
   only from the material's own content, capped per feature and globally, off by default,
-  one material tagged `ai-ask`) with its small quality check run under a spend cap.
+  one material tagged `ai-ask`) with its small quality checks run under a spend cap. Ask may
+  draw on the course textbook (the owner's decision, 2026-09-17): the chapters live only in the
+  private `study_ai_passages` table (migration 0013, loaded by `study/src/tools/load_passages.mjs`),
+  are read only by the Edge Function when a question needs depth, and must never be written into
+  a material or the repo. Ask conversations are stored in `study_ai_chats` (migration 0012).
 - Do not open the retired "Adaptive Study System" project on the Desktop or anything in it.
 - Content only from the named course documents, never general knowledge.
 - No em dashes or en dashes anywhere, including commit messages.
