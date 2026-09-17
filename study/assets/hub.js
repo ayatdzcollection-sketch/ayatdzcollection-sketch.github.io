@@ -1201,6 +1201,10 @@ function buildAi(sec) {
   pmake.appendChild(aiField('aipassf aipasssw', 'Ask', e.passAsk).field);
   e.passDaily = aiTextInput();
   pmake.appendChild(aiField('aipassf', 'Their daily cap (dollars)', e.passDaily).field);
+  /* The textbook is the owner's own copy of their course book. Handing passages of it to someone
+     else is their call to make per person, so it is a tick rather than a rule. */
+  e.passBook = aiSwitch('May use the textbook');
+  pmake.appendChild(aiField('aipassf aipasssw', 'Textbook', e.passBook).field);
   e.passGroup.body.appendChild(pmake);
 
   var prow = el('div', 'row wrap');
@@ -1883,6 +1887,7 @@ function aiPassCreate() {
   var feats = [];
   if (aiSwitchOn(aiEl.passAsk)) feats.push('ask');
   if (!feats.length) { aiShowAt(aiEl.passErr, 'Tick at least one feature.'); return; }
+  if (aiSwitchOn(aiEl.passBook)) feats.push('textbook');
   var dailyRaw = aiEl.passDaily.value.trim().replace(/^\$/, '');
   var daily = dailyRaw === '' ? null : Number(dailyRaw);
   if (daily !== null && (!isFinite(daily) || daily < 0)) { aiShowAt(aiEl.passErr, 'A daily cap is a number of dollars.'); return; }

@@ -450,8 +450,7 @@ begin
   if v_label = '' then return jsonb_build_object('ok', false, 'error', 'range', 'field', 'label'); end if;
 
   if jsonb_typeof(p_pass -> 'features') = 'array' then
-    select array_agg(x) into v_feats from jsonb_array_elements_text(p_pass -> 'features') x
-     where x in (select id from public.study_ai_features);
+    v_feats := public._ai_pass_feats(p_pass -> 'features');
   end if;
   if v_feats is null or array_length(v_feats, 1) is null then v_feats := array['ask']; end if;
 
@@ -543,8 +542,7 @@ begin
   end if;
 
   if jsonb_typeof(p_pass -> 'features') = 'array' then
-    select array_agg(x) into v_feats from jsonb_array_elements_text(p_pass -> 'features') x
-     where x in (select id from public.study_ai_features);
+    v_feats := public._ai_pass_feats(p_pass -> 'features');
     if v_feats is null or array_length(v_feats, 1) is null then
       return jsonb_build_object('ok', false, 'error', 'range', 'field', 'features');
     end if;
