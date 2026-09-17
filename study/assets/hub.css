@@ -520,3 +520,33 @@ textarea.askinput{min-height:80px;padding:10px 12px}
 @media (prefers-reduced-motion:reduce){
   .aichev,.aiswitch::before,.aiswitch::after{transition:none}
 }
+
+/* Codes (migration 0017): one row per person, with their money, their switch and their end time. */
+.aipassmake{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,.8fr) minmax(0,1fr) max-content max-content;
+  gap:8px 12px;align-items:end;margin:10px 0 8px}
+.aipassmake .aipasssw{display:flex;flex-direction:column;align-items:flex-start;gap:4px}
+.aipasslist{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:10px}
+.aipass{border:1px solid var(--rule);border-radius:2px;padding:10px 12px;background:var(--sheet)}
+.aipasshead{display:flex;align-items:flex-start;gap:12px}
+.aipasswho{flex:1;min-width:0}
+.aipasstitle{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.aipassname{font-weight:600}
+.aipasstail{font:500 11px/1 var(--mono);color:var(--meta)}
+.aipassstate{font:500 10px/1.6 var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--meta);
+  border:1px solid var(--rule);border-radius:2px;padding:0 5px}
+.aipassstate.on{color:var(--ok,#2E6B4F);border-color:currentColor}
+.aipassctl{margin-top:8px;gap:6px}
+.aipassspend{margin-top:8px}
+.aipassnew{margin:8px 0;padding:10px 12px;border:1px solid var(--rule);border-radius:2px;background:var(--paper)}
+.aipassnewlab{margin:0 0 6px;font-size:13px;color:var(--meta)}
+.aipasscode{font:600 18px/1.2 var(--mono);letter-spacing:.12em;padding:4px 8px;border:1px solid var(--rule);border-radius:2px;background:var(--sheet)}
+@media (max-width:760px){ .aipassmake{grid-template-columns:minmax(0,1fr) minmax(0,1fr)} }
+
+/* Reports (migration 0018): what someone hit, where they were when they hit it. */
+.aitickets{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:10px}
+.aiticket{border:1px solid var(--rule);border-radius:2px;padding:10px 12px;background:var(--sheet)}
+.aiticket.done{opacity:.66}
+.aitickethead{display:flex;align-items:flex-start;gap:12px}
+.aiticketwho{flex:1;min-width:0}
+.aiticketbody{margin:6px 0 0;font-size:14px;white-space:pre-wrap}
+.aiticketctx{margin:6px 0 0;font:500 11.5px/1.5 var(--mono);color:var(--meta);word-break:break-word}

@@ -78,6 +78,12 @@ var StudyAuth = {
       }
       lsSet(TOKEN_KEY, r.token);
       lsSet(ROLE_KEY, r.role);
+      /* An access pass (migration 0017) is minted in the pairing alphabet, so the one code both
+         opens the AI features and carries this person's progress between their devices. Pairing
+         is best effort: a failure here must never cost them the sign in. */
+      if (r.pass && window.StudyStore && StudyStore.pair) {
+        try { StudyStore.pair(code); } catch (e) {}
+      }
       return r.role;
     }, function (err) {
       var e = new Error(err.message);
@@ -197,8 +203,10 @@ var StudyAuth = {
   /* The same question for any feature by id ('ask', and whatever comes after it). Just as
      thin: on or off, open or owner only, whether this material carries the feature's tag,
      whether that adds up to available, and whether it is still a beta. */
+  /* Asks for this caller, not in general: the answer's `may` is true only for the owner, for a
+     live pass that carries the feature and still has money, or for a feature set to open. */
   aiStatus2: function (material, feature) {
-    return rpc('ai_status2', { p_material: material, p_feature: feature });
+    return rpc('ai_status2', { p_material: material, p_feature: feature, p_token: ls(TOKEN_KEY) });
   },
 
   /* ---- admin ---- */
@@ -242,6 +250,18 @@ var StudyAuth = {
       features:   function ()     { return rpc('admin_ai_features',    { p_token: ls(TOKEN_KEY) }); },
       /* A patch: id, plus any of enabled, mode, model, daily_cents. The server checks each. */
       featureSet: function (o)    { return rpc('admin_ai_feature_set', { p_token: ls(TOKEN_KEY), p_feature: o }); },
+      /* Access passes (0017): one code per person, with its own money, switch and expiry. */
+      passes:     function ()     { return rpc('admin_passes',      { p_token: ls(TOKEN_KEY) }); },
+      passCreate: function (o)    { return rpc('admin_pass_create',  { p_token: ls(TOKEN_KEY), p_pass: o }); },
+      passSet:    function (o)    { return rpc('admin_pass_set',     { p_token: ls(TOKEN_KEY), p_pass: o }); },
+      passDelete: function (id)   { return rpc('admin_pass_delete',  { p_token: ls(TOKEN_KEY), p_id: id }); },
+      passSpend:  function (id)   { return rpc('admin_pass_spend',   { p_token: ls(TOKEN_KEY), p_id: id }); },
+      /* Bug reports (0018). Anyone may file one; only the owner reads them. */
+      tickets:    function (status, limit, before) {
+        return rpc('admin_tickets', { p_token: ls(TOKEN_KEY), p_status: status || null, p_limit: limit || 30, p_before: before || null });
+      },
+      ticketSet:  function (id, status, note) { return rpc('admin_ticket_set', { p_token: ls(TOKEN_KEY), p_id: id, p_status: status || null, p_note: note == null ? null : note }); },
+      ticketDelete: function (id) { return rpc('admin_ticket_delete', { p_token: ls(TOKEN_KEY), p_id: id }); },
       /* Extra budget for today only (0016). feature null is the global daily cap. It expires by
          itself at the next day boundary, so nothing has to be put back. */
       bonus:      function (f, c) { return rpc('admin_ai_bonus', { p_token: ls(TOKEN_KEY), p_feature: f || null, p_cents: c }); },

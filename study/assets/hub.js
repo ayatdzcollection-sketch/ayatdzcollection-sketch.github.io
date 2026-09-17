@@ -822,7 +822,9 @@ var AI_CHATS_EXPORT_PAGE = 500;
 var AI_CHATS_EXPORT_PAGES = 20;
 
 var aiEl = null;
-var aiState = { settings: null, models: [], usage: null, features: [], saq: null, featErr: '' };
+var aiState = { settings: null, models: [], usage: null, features: [], saq: null, featErr: '',
+  passes: [], passNow: null, passErr: '', passSkew: 0, passNew: null,
+  tickets: [], ticketStats: null, ticketErr: '', ticketOpenOnly: true };
 var aiUid = 0;
 /* gen moves on with every fresh load and every teardown, so an answer that lands after either
    is dropped instead of painting over newer rows or a signed out page. */
@@ -1171,6 +1173,81 @@ function buildAi(sec) {
     'limits. Open with caps lets anyone studying use it, held by every cap in Spend.'));
 
   /* ---- Models ---- */
+  /* ---- Codes ---- */
+  e.passGroup = aiGroup(e.body, 'passes', 'Codes');
+  e.passGroup.body.appendChild(el('p', 'note',
+    'A code is one person: it saves their progress under that code and lets them use the AI ' +
+    'features you tick, out of money you load onto it. It carries none of your own rights. ' +
+    'Switch it off, end it, or let it end by itself in the morning. Your caps above still hold.'));
+
+  var pmake = el('div', 'aipassmake');
+  e.passLabel = aiTextInput();
+  pmake.appendChild(aiField('aipassf', 'Who it is for', e.passLabel).field);
+  e.passMoney = aiTextInput();
+  pmake.appendChild(aiField('aipassf', 'Money on it (dollars)', e.passMoney).field);
+  e.passWhen = document.createElement('select');
+  e.passWhen.className = 'aisel';
+  [['none', 'No end date'], ['morning', 'Ends tomorrow 7am'], ['hours', 'Ends in 3 hours']].forEach(function (o) {
+    var opt = document.createElement('option');
+    opt.value = o[0];
+    opt.textContent = o[1];
+    e.passWhen.appendChild(opt);
+  });
+  pmake.appendChild(aiField('aipassf', 'When it ends', e.passWhen).field);
+  e.passAsk = aiSwitch('Ask about the material');
+  e.passAsk.setAttribute('aria-checked', 'true');
+  pmake.appendChild(aiField('aipassf aipasssw', 'Ask', e.passAsk).field);
+  e.passSaq = aiSwitch('Short answer grading');
+  pmake.appendChild(aiField('aipassf aipasssw', 'Grading', e.passSaq).field);
+  e.passGroup.body.appendChild(pmake);
+
+  var prow = el('div', 'row wrap');
+  e.passMake = el('button', 'btn sm', 'Make a code');
+  e.passMake.type = 'button';
+  prow.appendChild(e.passMake);
+  e.passErr = el('span', 'err-inline aipasserr');
+  e.passErr.hidden = true;
+  prow.appendChild(e.passErr);
+  e.passGroup.body.appendChild(prow);
+
+  e.passNew = el('div', 'aipassnew');
+  e.passNew.hidden = true;
+  e.passGroup.body.appendChild(e.passNew);
+
+  e.passList = el('ul', 'aipasslist');
+  e.passGroup.body.appendChild(e.passList);
+  e.passNote = el('p', 'err-inline');
+  e.passNote.hidden = true;
+  e.passGroup.body.appendChild(e.passNote);
+  e.passMake.addEventListener('click', aiPassCreate);
+
+  /* ---- Reports ---- */
+  e.ticketGroup = aiGroup(e.body, 'tickets', 'Reports');
+  e.ticketGroup.body.appendChild(el('p', 'note',
+    'Problems people reported from inside a material, with the tab and the card they were on. ' +
+    'Anyone can file one: Alt and B in a material, or a thumbs down on an answer.'));
+  var trow = el('div', 'row wrap');
+  e.ticketFilter = el('button', 'btn sm out', 'Open only');
+  e.ticketFilter.type = 'button';
+  e.ticketFilter.setAttribute('aria-pressed', 'true');
+  trow.appendChild(e.ticketFilter);
+  e.ticketRefresh = el('button', 'btn sm out', 'Refresh');
+  e.ticketRefresh.type = 'button';
+  trow.appendChild(e.ticketRefresh);
+  e.ticketGroup.body.appendChild(trow);
+  e.ticketList = el('ul', 'aitickets');
+  e.ticketGroup.body.appendChild(e.ticketList);
+  e.ticketNote = el('p', 'err-inline');
+  e.ticketNote.hidden = true;
+  e.ticketGroup.body.appendChild(e.ticketNote);
+  e.ticketFilter.addEventListener('click', function () {
+    aiState.ticketOpenOnly = !aiState.ticketOpenOnly;
+    e.ticketFilter.setAttribute('aria-pressed', String(aiState.ticketOpenOnly));
+    e.ticketFilter.textContent = aiState.ticketOpenOnly ? 'Open only' : 'All of them';
+    aiLoadTickets();
+  });
+  e.ticketRefresh.addEventListener('click', function () { aiLoadTickets(); });
+
   e.modelsGroup = aiGroup(e.body, 'models', 'Models');
   /* The selects alone would make each choice blind. This list is the reason for the choice:
      what the eval measured, and what one grade costs at that model's prices. */
@@ -1667,6 +1744,332 @@ function aiLoadUsage() {
   }, function () {});
 }
 
+/* ---- reports ---- */
+
+var TICKET_KIND = { material: 'In the material', answer: 'An answer', app: 'Broken or wrong', other: 'Other' };
+
+function aiTicketRow(t) {
+  var li = el('li', 'aiticket' + (t.status === 'open' ? '' : ' done'));
+  var head = el('div', 'aitickethead');
+  var who = el('div', 'aiticketwho');
+  var title = el('div', 'aipasstitle');
+  title.appendChild(el('span', 'aipassname', t.summary || ''));
+  title.appendChild(el('span', 'aipassstate' + (t.status === 'open' ? ' on' : ''), t.status));
+  who.appendChild(title);
+  who.appendChild(el('p', 'aifeatmeta',
+    (TICKET_KIND[t.kind] || t.kind) + ' · ' + (t.material || 'the hub') + ' · ' + t.by_role + ' · ' + aiWhen(t.created_at)));
+  head.appendChild(who);
+  li.appendChild(head);
+  if (t.body) li.appendChild(el('p', 'aiticketbody', t.body));
+  var ctx = t.context && typeof t.context === 'object' ? t.context : null;
+  if (ctx) {
+    var bits = [];
+    ['tab', 'screen', 'question', 'answer', 'card', 'chat_id'].forEach(function (k) {
+      if (ctx[k]) bits.push(k + ': ' + String(ctx[k]).slice(0, 220));
+    });
+    if (bits.length) li.appendChild(el('p', 'aiticketctx', bits.join(' · ')));
+  }
+  var ctl = el('div', 'row wrap aipassctl');
+  var err = el('p', 'err-inline');
+  err.hidden = true;
+  function act(text, status) {
+    var b = el('button', 'btn sm out', text);
+    b.type = 'button';
+    b.addEventListener('click', function () {
+      StudyAuth.admin.ticketSet(t.id, status, null).then(function (r) {
+        if (r && r.ok) return aiLoadTickets();
+        aiShowAt(err, aiRefusal(r));
+      }, function (e2) { aiShowAt(err, aiErrText(e2)); });
+    });
+    ctl.appendChild(b);
+  }
+  if (t.status !== 'fixed') act('Fixed', 'fixed');
+  if (t.status !== 'wontfix') act('Leave it', 'wontfix');
+  if (t.status !== 'open') act('Reopen', 'open');
+  var del = el('button', 'btn sm out', 'Delete');
+  del.type = 'button';
+  del.addEventListener('click', function () {
+    if (!window.confirm('Delete this report?')) return;
+    StudyAuth.admin.ticketDelete(t.id).then(function (r) {
+      if (r && r.ok) return aiLoadTickets();
+      aiShowAt(err, aiRefusal(r));
+    }, function (e2) { aiShowAt(err, aiErrText(e2)); });
+  });
+  ctl.appendChild(del);
+  li.appendChild(ctl);
+  li.appendChild(err);
+  return li;
+}
+
+function aiPaintTickets() {
+  if (!aiEl || !aiEl.ticketList) return;
+  aiEl.ticketList.innerHTML = '';
+  (aiState.tickets || []).forEach(function (t) { aiEl.ticketList.appendChild(aiTicketRow(t)); });
+  if (!(aiState.tickets || []).length) {
+    aiEl.ticketList.appendChild(el('li', 'note', aiState.ticketOpenOnly ? 'Nothing open.' : 'No reports yet.'));
+  }
+  aiEl.ticketNote.textContent = aiState.ticketErr || '';
+  aiEl.ticketNote.hidden = !aiState.ticketErr;
+  var st = aiState.ticketStats;
+  aiEl.ticketGroup.state.textContent = st
+    ? (Number(st.open) || 0) + ' open · ' + (Number(st.total) || 0) + ' all told'
+    : 'none yet';
+}
+
+function aiLoadTickets() {
+  if (!aiEl) return Promise.resolve();
+  return StudyAuth.admin.tickets(aiState.ticketOpenOnly ? 'open' : null, 40, null).then(function (r) {
+    if (!aiEl) return;
+    if (!r || !r.ok) {
+      aiState.tickets = [];
+      aiState.ticketErr = r && r.error === 'forbidden' ? 'That admin session was refused. Sign in again.'
+        : 'Run 0018_tickets.sql in Supabase to collect reports.';
+      aiPaintTickets();
+      return;
+    }
+    aiState.tickets = Array.isArray(r.tickets) ? r.tickets : [];
+    aiState.ticketStats = r.stats || null;
+    aiState.ticketErr = '';
+    aiPaintTickets();
+  }, function () {
+    if (!aiEl) return;
+    aiState.tickets = [];
+    aiState.ticketErr = 'Run 0018_tickets.sql in Supabase to collect reports.';
+    aiPaintTickets();
+  });
+}
+
+/* ---- codes ---- */
+
+/* The server's clock, not the device's: this machine was twelve hours out on 2026-09-17, and a
+   code that ends at seven in the morning must not look expired because a laptop says so. */
+function aiPassLeft(iso) {
+  if (!iso) return '';
+  var at = Date.parse(iso);
+  if (!isFinite(at)) return '';
+  var mins = Math.round((at - (Date.now() + aiState.passSkew)) / 60000);
+  if (mins <= 0) return 'ended';
+  if (mins < 60) return 'in ' + mins + ' min';
+  if (mins < 60 * 36) return 'in ' + Math.round(mins / 60) + ' h';
+  return 'in ' + Math.round(mins / 1440) + ' days';
+}
+
+/* Always printed in the owner's own zone, whatever zone the device is in. */
+function aiPassWhen(iso) {
+  if (!iso) return 'no end date';
+  try {
+    return new Date(iso).toLocaleString('en-GB', {
+      timeZone: 'America/New_York', weekday: 'short', hour: 'numeric', minute: '2-digit'
+    }) + ' New York';
+  } catch (e) { return String(iso); }
+}
+
+function aiPassState(p) {
+  if (p.revoked_at) return 'deleted';
+  if (!p.enabled) return 'off';
+  if (p.expires_at && Date.parse(p.expires_at) <= Date.now() + aiState.passSkew) return 'ended';
+  if (Number(p.left_cents) <= 0) return 'out of money';
+  return 'live';
+}
+
+function aiPassCreate() {
+  if (!aiEl) return;
+  aiShowAt(aiEl.passErr, '');
+  aiEl.passErr.hidden = true;
+  var label = aiEl.passLabel.value.trim();
+  if (!label) { aiShowAt(aiEl.passErr, 'Say who it is for.'); return; }
+  var money = Number(aiEl.passMoney.value.trim().replace(/^\$/, '') || '0');
+  if (!isFinite(money) || money < 0) { aiShowAt(aiEl.passErr, 'Money is a number of dollars.'); return; }
+  var feats = [];
+  if (aiSwitchOn(aiEl.passAsk)) feats.push('ask');
+  if (aiSwitchOn(aiEl.passSaq)) feats.push('saq');
+  if (!feats.length) { aiShowAt(aiEl.passErr, 'Tick at least one feature.'); return; }
+  var when = aiEl.passWhen.value, body = { label: label, budget_cents: Math.round(money * 100), features: feats };
+  if (when === 'morning') body.when = 'morning';
+  else if (when === 'hours') { body.when = 'at'; body.expires_at = new Date(Date.now() + aiState.passSkew + 3 * 3600 * 1000).toISOString(); }
+  else body.when = 'none';
+  aiDisable([aiEl.passMake], true);
+  StudyAuth.admin.ai.passCreate(body).then(function (r) {
+    aiDisable([aiEl.passMake], false);
+    if (!r || !r.ok) { aiShowAt(aiEl.passErr, aiRefusal(r)); return; }
+    aiEl.passLabel.value = '';
+    aiEl.passMoney.value = '';
+    aiState.passNew = r;
+    aiPaintNewPass();
+    aiLoadPasses();
+  }, function (err) {
+    aiDisable([aiEl.passMake], false);
+    aiShowAt(aiEl.passErr, aiErrText(err));
+  });
+}
+
+function aiPaintNewPass() {
+  var r = aiState.passNew;
+  if (!aiEl || !r) return;
+  aiEl.passNew.innerHTML = '';
+  aiEl.passNew.hidden = false;
+  aiEl.passNew.appendChild(el('p', 'aipassnewlab', 'Give them this code. It is shown once.'));
+  var row = el('div', 'row wrap');
+  row.appendChild(el('code', 'aipasscode', String(r.code || '')));
+  var copy = el('button', 'btn sm', 'Copy');
+  copy.type = 'button';
+  copy.addEventListener('click', function () {
+    try { navigator.clipboard.writeText(String(r.code || '')); copy.textContent = 'Copied'; } catch (e) {}
+  });
+  row.appendChild(copy);
+  var hide = el('button', 'btn sm out', 'Hide');
+  hide.type = 'button';
+  hide.addEventListener('click', function () { aiState.passNew = null; aiEl.passNew.hidden = true; });
+  row.appendChild(hide);
+  aiEl.passNew.appendChild(row);
+  aiEl.passNew.appendChild(el('p', 'note',
+    'It is their sync code as well, so their progress follows it. ' +
+    (r.expires_at ? 'It ends ' + aiPassWhen(r.expires_at) + '.' : 'It has no end date.')));
+}
+
+function aiPassSet(patch, row) {
+  return StudyAuth.admin.ai.passSet(patch).then(function (r) {
+    if (r && r.ok) return aiLoadPasses();
+    if (row) aiShowAt(row.err, aiRefusal(r));
+    return r;
+  }, function (err) {
+    if (row) aiShowAt(row.err, aiErrText(err));
+    return null;
+  });
+}
+
+function aiPassRow(p) {
+  var li = el('li', 'aipass');
+  var head = el('div', 'aipasshead');
+  var who = el('div', 'aipasswho');
+  var title = el('div', 'aipasstitle');
+  title.appendChild(el('span', 'aipassname', p.label || 'code'));
+  title.appendChild(el('span', 'aipasstail', 'ends ' + p.tail));
+  var state = aiPassState(p);
+  title.appendChild(el('span', 'aipassstate' + (state === 'live' ? ' on' : ''), state));
+  who.appendChild(title);
+  var meta = el('p', 'aifeatmeta',
+    dollars(Math.round(Number(p.left_cents) * 100)) + ' left of ' + dollars(Math.round(Number(p.budget_cents) * 100)) +
+    ' · ' + aiCount(p.calls, 'call') + ' · ' + (p.features || []).join(', ') +
+    ' · ' + (p.expires_at ? aiPassWhen(p.expires_at) + ' (' + aiPassLeft(p.expires_at) + ')' : 'no end date'));
+  who.appendChild(meta);
+  head.appendChild(who);
+  var sw = aiSwitch(p.label || 'code');
+  sw.setAttribute('aria-checked', String(!!p.enabled));
+  head.appendChild(sw);
+  li.appendChild(head);
+
+  var ctl = el('div', 'row wrap aipassctl');
+  var row = { err: el('p', 'err-inline'), li: li };
+  row.err.hidden = true;
+  function btn(text, patch, confirmText) {
+    var b = el('button', 'btn sm out', text);
+    b.type = 'button';
+    b.addEventListener('click', function () {
+      row.err.hidden = true;
+      if (confirmText && !window.confirm(confirmText)) return;
+      aiPassSet(patch(), row);
+    });
+    ctl.appendChild(b);
+    return b;
+  }
+  btn('Add $1', function () { return { id: p.id, add_cents: 100 }; });
+  btn('Ends in the morning', function () { return { id: p.id, when: 'morning' }; });
+  btn('End now', function () { return { id: p.id, when: 'now' }; }, 'End this code now? They lose the AI features straight away.');
+  var spendBtn = el('button', 'btn sm out', 'Where it went');
+  spendBtn.type = 'button';
+  ctl.appendChild(spendBtn);
+  var del = el('button', 'btn sm out', 'Delete');
+  del.type = 'button';
+  del.addEventListener('click', function () {
+    if (!window.confirm('Delete this code? Their saved progress stays, but the code stops working and cannot be brought back.')) return;
+    StudyAuth.admin.ai.passDelete(p.id).then(function (r) {
+      if (r && r.ok) return aiLoadPasses();
+      aiShowAt(row.err, aiRefusal(r));
+    }, function (err) { aiShowAt(row.err, aiErrText(err)); });
+  });
+  ctl.appendChild(del);
+  li.appendChild(ctl);
+
+  var spend = el('div', 'aipassspend');
+  spend.hidden = true;
+  li.appendChild(spend);
+  spendBtn.addEventListener('click', function () {
+    if (!spend.hidden) { spend.hidden = true; return; }
+    spend.innerHTML = '';
+    spend.hidden = false;
+    spend.appendChild(el('p', 'note', 'Loading.'));
+    StudyAuth.admin.ai.passSpend(p.id).then(function (r) {
+      spend.innerHTML = '';
+      if (!r || !r.ok) { spend.appendChild(el('p', 'err-inline', aiRefusal(r))); return; }
+      var mats = r.by_material || [];
+      if (!mats.length) { spend.appendChild(el('p', 'note', 'Nothing spent yet.')); return; }
+      var t = el('table', 'aitable');
+      var head2 = document.createElement('tr');
+      ['Material', 'Feature', 'Calls', 'Spent'].forEach(function (h) { head2.appendChild(el('th', null, h)); });
+      t.appendChild(head2);
+      mats.forEach(function (m) {
+        var tr = document.createElement('tr');
+        tr.appendChild(el('td', null, m.material || ''));
+        tr.appendChild(el('td', null, m.feature || ''));
+        tr.appendChild(el('td', null, String(m.calls)));
+        tr.appendChild(el('td', null, spendDollars(m.cents)));
+        t.appendChild(tr);
+      });
+      spend.appendChild(t);
+      (r.by_day || []).slice(0, 7).forEach(function (d) {
+        spend.appendChild(el('p', 'note', d.day + ': ' + spendDollars(d.cents) + ', ' + aiCount(d.calls, 'call')));
+      });
+    }, function (err) {
+      spend.innerHTML = '';
+      spend.appendChild(el('p', 'err-inline', aiErrText(err)));
+    });
+  });
+
+  li.appendChild(row.err);
+  sw.addEventListener('click', function () { aiPassSet({ id: p.id, enabled: !aiSwitchOn(sw) }, row); });
+  return li;
+}
+
+function aiPaintPasses() {
+  if (!aiEl || !aiEl.passList) return;
+  aiEl.passList.innerHTML = '';
+  (aiState.passes || []).forEach(function (p) { aiEl.passList.appendChild(aiPassRow(p)); });
+  if (!(aiState.passes || []).length) {
+    aiEl.passList.appendChild(el('li', 'note', 'No codes yet.'));
+  }
+  aiEl.passNote.textContent = aiState.passErr || '';
+  aiEl.passNote.hidden = !aiState.passErr;
+  var live = (aiState.passes || []).filter(function (p) { return aiPassState(p) === 'live'; }).length;
+  aiEl.passGroup.state.textContent = (aiState.passes || []).length
+    ? aiCount(aiState.passes.length, 'code') + ' · ' + live + ' live'
+    : 'none yet';
+}
+
+function aiLoadPasses() {
+  if (!aiEl) return Promise.resolve();
+  return StudyAuth.admin.ai.passes().then(function (r) {
+    if (!aiEl) return;
+    if (!r || !r.ok) {
+      aiState.passes = [];
+      aiState.passErr = r && r.error === 'forbidden' ? 'That admin session was refused. Sign in again.'
+        : 'Run 0017_ai_passes.sql in Supabase to hand out codes.';
+      aiPaintPasses();
+      return;
+    }
+    aiState.passes = Array.isArray(r.passes) ? r.passes : [];
+    aiState.passErr = '';
+    var serverNow = Date.parse(r.now);
+    aiState.passSkew = isFinite(serverNow) ? serverNow - Date.now() : 0;
+    aiPaintPasses();
+  }, function () {
+    if (!aiEl) return;
+    aiState.passes = [];
+    aiState.passErr = 'Run 0017_ai_passes.sql in Supabase to hand out codes.';
+    aiPaintPasses();
+  });
+}
+
 function aiLoad() {
   if (!aiEl) return Promise.resolve();
   aiNote('');
@@ -1707,6 +2110,8 @@ function aiLoad() {
     }
     aiEl.body.hidden = false;
     paintAi();
+    aiLoadPasses();
+    aiLoadTickets();
     return aiLoadUsage();
   }, function (err) {
     if (!aiEl) return;
