@@ -254,11 +254,12 @@ Separate from review logs, and only in a material where the owner has turned a f
 | Feature | Goes to Anthropic's API | Kept in this hub's database |
 |---|---|---|
 | Short answer grading (press "Grade it for me") | The question, its rubric lines and model answers, the source's text, and the three typed answers | One ledger row per call: material, install id, IP address (for the per address limit), model, tokens, cost, time. No text. |
-| Ask about the material (owner only, beta) | The question, the selected text, a line describing what is on screen, an outline of the material, the ten best matching passages from it, the last six turns of the conversation, a summary of the student's own progress in the material, and their saved notes | The ledger row as above, and the conversation itself in `study_ai_chats` (question, selection, screen line, passage labels, answer, rating, thread) so the beta can be improved. Saved notes live in the material's synced store under the student's sync code. |
+| Ask about the material (beta, in every material, owner only unless the owner opens it) | The question, the selected text, a line describing what is on screen, an outline of the material, the ten best matching passages from it, the last six turns of the conversation, and, each only while its switch in Ask settings is on, a summary of the student's own progress in the material, their saved notes, and (APUSH materials only) up to three short passages of the course textbook when the material alone does not cover the question | The ledger row as above, and the conversation itself in `study_ai_chats` (question, selection, screen line, passage labels, answer, rating, thread) so the beta can be improved. Saved notes live in the material's synced store under the student's sync code. |
 
 Nothing sent to Anthropic carries a name, a code or a session token; the owner's token is
-checked by the Edge Function and not forwarded. If Ask is ever opened beyond the owner, this
-table is the first thing to revisit.
+checked by the Edge Function and not forwarded. If Ask is ever opened beyond the owner (the
+Features group in the owner panel, mode "Open with caps"), this table is the first thing to
+revisit, because every student's conversations would then be kept too.
 
 Identity is a random 32-hex install id generated on the device, so one device's stream stays
 separable from another's without anyone being named. Clearing site data throws it away.

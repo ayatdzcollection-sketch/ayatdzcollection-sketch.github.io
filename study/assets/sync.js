@@ -365,6 +365,18 @@ var BUILTIN_MERGES = {
   'la10crucible:fsrs': mergeCardsFsrs,         // The Crucible, acts 1 and 2: same record shape
   'apushp12:fsrs': mergeCardsFsrs,             // APUSH period 1 and 2 test: same record shape
   'apushp12:asknotes': mergeAskNotes,          // notes kept beside Ask: union, deletes stick
+  'fraser12:asknotes': mergeAskNotes,
+  'fraser34:asknotes': mergeAskNotes,
+  'fraserall:asknotes': mergeAskNotes,
+  'acct1:asknotes': mergeAskNotes,
+  'chemunit:asknotes': mergeAskNotes,
+  'periodic:asknotes': mergeAskNotes,
+  'alg2u1:asknotes': mergeAskNotes,
+  'fifty-states:asknotes': mergeAskNotes,
+  'la10crucible:asknotes': mergeAskNotes,
+  'psychu0:asknotes': mergeAskNotes,
+  'la10vocab1:asknotes': mergeAskNotes,
+  'frchateaux:asknotes': mergeAskNotes,
   'psychu0:fsrs': mergeCardsFsrs,              // Unit 0 research and statistics: same record shape
   'la10vocab1:fsrs': mergeCardsFsrs,           // vocabulary chapter 1: same record shape
   'frchateaux:fsrs': mergeCardsFsrs,           // les chateaux vocabulary: same record shape

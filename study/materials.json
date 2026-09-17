@@ -8,6 +8,7 @@
       "materials": [
         {
           "id": "fifty-states",
+          "ask": true,
           "title": "The Fifty States: name and locate",
           "blurb": "Numbered blank-map quiz with spaced repetition and a readiness score.",
           "tags": ["map", "quiz", "spaced-repetition"],
@@ -17,6 +18,7 @@
         },
         {
           "id": "fraser-ch1-2",
+          "ask": true,
           "title": "Fraser Ch 1-2: reading quiz prep",
           "blurb": "Built for a 10-question general knowledge check, five from each chapter, no passages. A guide that covers both chapters in full, with a reading pass to suit the time you have, cover-and-recite tables and a question at the foot of every section; a rotating quiz drawn from 119 questions, six of every ten on cause, effect and significance; a full-screen Practice tab that hands you one card at a time, answerable from the number keys; and 62 names that matter, learned in groups.",
           "tags": ["fraser", "reading-quiz", "cause-and-effect", "spaced-repetition", "chapters-1-2"],
@@ -26,6 +28,7 @@
         },
         {
           "id": "fraser-ch3-4",
+          "ask": true,
           "title": "Fraser Ch 3-4: reading quiz prep",
           "blurb": "Calibrated against the real chapters 1 and 2 quiz: every mock quiz has three EXCEPT questions, and 26 are written from the chapter Quick Reviews the teacher draws on. Learn works a set the Quizlet way, see it, pick it, then write it or answer it before the choices appear, with an order that adapts to how you are doing. Cram runs every concept question once, names skipped, fastest route first. Eight guide sections, notecards including everything you have missed, endless practice and the full quiz.",
           "tags": ["fraser", "reading-quiz", "cause-and-effect", "except-questions", "spaced-repetition", "chapters-3-4", "learn-mode"],
@@ -45,6 +48,7 @@
         },
         {
           "id": "fraser-review",
+          "ask": true,
           "title": "Fraser Ch 1-4: full study",
           "blurb": "The one APUSH material for chapters 1 to 4 now that both chapter quizzes are done, kept alive for the extra credit later quizzes carry. A full guide in seventeen sections, chapters 1 and 2 rewritten to match chapters 3 and 4, each with its argument, a timeline, cause and effect to cover and recite, what changed for whom and a question at the foot. 301 questions and 138 names, the real chapters 1 and 2 quiz among them. Twenty-card errands for any one chapter, mock quizzes across all four with three EXCEPT questions, Learn, and Cram. Progress from the two chapter materials carries over.",
           "tags": ["fraser", "cumulative", "full-study", "extra-credit", "spaced-repetition", "chapters-1-4", "learn-mode"],
@@ -60,6 +64,7 @@
       "materials": [
         {
           "id": "periodic-table",
+          "ask": true,
           "title": "The Elements: symbol and name",
           "blurb": "Rebuilt around the table itself. Every cell carries its state at a glance, held, started, fading, untouched or out of range, with its family along the top edge, and on a phone a lens under the map shows the neighbours in true positions. The element range sits where you can see it and change it. Blocks show met and held as two bars that are never averaged. A drill card climbs three rungs, shown, picked out of four from real confusables, and written cold, with the keys 1 to 4, space and return. Board, Pairs and a keyed sixty-second Sprint, an endless feed, and settings that read as a summary.",
           "tags": ["elements", "quiz", "spaced-repetition", "periodic-table", "customisable"],
@@ -68,6 +73,7 @@
         },
         {
           "id": "unit-measurement",
+          "ask": true,
           "title": "Measurement and calculations: unit test prep",
           "blurb": "For the unit test on Tuesday 22 September. Worked problems on fresh numbers every time, twelve types from significant figures to factor-label conversions, with the working revealed a step at a time and the cancelled units struck through; a rule card for every topic with a drill under it; 110 concept cards; the teacher's own worked examples; notecards that keep every problem you miss; and a printable problem set with the key held back.",
           "tags": ["measurement", "significant-figures", "scientific-notation", "dimensional-analysis", "density", "unit-test"],
@@ -83,6 +89,7 @@
       "materials": [
         {
           "id": "u1-sequences",
+          "ask": true,
           "title": "Unit 1 Sequences: checkpoint prep",
           "blurb": "For you tab with an endless feed of single questions on fresh numbers, picked by weakest skill and stopped when you miss the same one three times running, plus the guide by skill, a focused drill, the 14-problem practice set in the teacher's style, timed mock quizzes, and printable sheets with separate keys.",
           "tags": ["sequences", "arithmetic", "geometric", "recursive", "practice-test", "mock-quiz", "drill", "checkpoint"],
@@ -99,6 +106,7 @@
       "materials": [
         {
           "id": "crucible-1-2",
+          "ask": true,
           "title": "The Crucible, Acts 1 and 2: quiz prep",
           "blurb": "For the quiz on Tuesday 15 September. The play in fourteen stretches with who is on stage, what happens, the lines that get quoted, and the teacher's study questions for both acts answered from the text. A feed of true or false and multiple choice cards that says why each one was picked and brings a miss back four cards later, the study questions as written cards, a People screen that draws who accuses whom act by act, a 20 question mock with a short answer, notecards of every miss, and a printable sheet with the key on its own page.",
           "tags": ["crucible", "miller", "acts-1-2", "true-or-false", "study-questions", "quiz"],
@@ -107,6 +115,7 @@
         },
         {
           "id": "vocab-ch1",
+          "ask": true,
           "title": "Vocabulary Chapter 1: ten words",
           "blurb": "For the chapter 1 vocabulary quiz: a passage with blanks and no word bank, the spelling, and the definitions. Three drills over the same ten words, mixed in one feed or worked one skill at a time. Ninety cards: forty blanks across four passages that each use all ten words, thirty single sentences, the definition of each word picked from the other nine, and a spelling card that marks the letters you missed and tells the right word in the wrong form apart from the wrong word. Four passages to fill straight through, a word page with the root, the spelling trap and the word it gets confused with, a spot the misspelling drill, a mock quiz marked out of 25, and a printable sheet with the key on its own page.",
           "tags": ["vocabulary", "chapter-1", "fill-in-the-blank", "spelling", "definitions", "passage"],
@@ -122,6 +131,7 @@
       "materials": [
         {
           "id": "chateaux",
+          "ask": true,
           "title": "Les châteaux: contrôle de vocabulaire",
           "blurb": "For the vocabulary quiz on Thursday 17 September, in the format the teacher gave: a picture, and you write the word beside it. Every line of the class Quizlet set and nothing else, forty three terms, and two real photographs for each of the thirty seven that can be pictured, shown in turn so no word is learned as one image. One castle drawn as a labelled plate where the seven parts of a building fill in as you earn them. Two rungs per word, picked out of four real confusables and then written cold on a ruled line with an accent row under it, and a grader that tells a missing accent, a wrong gender and a wrong word apart instead of calling all three wrong. The sheet's own mistakes are named where they are. A fifteen picture mock marked out of fifteen, notecards, and a printable sheet with the key on its own page.",
           "tags": ["vocabulaire", "châteaux", "photographs", "picture-to-word", "written-recall", "accents", "gender"],
@@ -137,6 +147,7 @@
       "materials": [
         {
           "id": "topic1",
+          "ask": true,
           "title": "Topic 1: What is Accounting? Review quiz prep",
           "blurb": "Built from the Topic 1 Review sheet and the Stukent lessons. A guide in four parts: the vocabulary as T-accounts, the career table with the course's own answers, market cap with a working calculator, and a card for each principle and assumption with the tell that gives it away. 115 questions including job and principle sorts, calculations judged as numbers, Learn, Cram, notecards and a 12-question mock quiz weighted like the sheet.",
           "tags": ["accounting", "stukent", "review-quiz", "market-cap", "principles", "learn-mode"],
@@ -152,6 +163,7 @@
       "materials": [
         {
           "id": "psych-unit0",
+          "ask": true,
           "title": "Unit 0: research, statistics and approaches",
           "blurb": "The whole Unit 0 slide deck in eighteen sections: the eight psychological approaches and the biopsychosocial model, the three biases and the scientific attitude, theory to replication, case studies, surveys, sampling, naturalistic observation, correlation and its problems, experiments and their controls, central tendency, standard deviation and the normal curve, significance and effect size, and the six ethics rules. A feed that says why each card was picked, every term the slides define as a card where you type the term, statistics problems on fresh numbers, a mock quiz, notecards of every miss and a printable sheet with the key on its own page.",
           "tags": ["psychology", "research-methods", "statistics", "approaches", "ethics", "unit-0"],

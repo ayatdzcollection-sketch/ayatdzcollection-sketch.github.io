@@ -89,7 +89,12 @@ type AskBody = {
 };
 
 /* Which private textbook corpus (migration 0013) a material may draw on. */
-const CORPUS: Record<string, string> = { "apush/period1-2-test": "fraser-1-4" };
+const CORPUS: Record<string, string> = {
+  "apush/period1-2-test": "fraser-1-4",
+  "apush/fraser-ch1-2": "fraser-1-4",
+  "apush/fraser-ch3-4": "fraser-1-4",
+  "apush/fraser-review": "fraser-1-4",
+};
 const TEXTBOOK_PASSAGES = 3;
 const TEXTBOOK_CHARS = 1000;
 

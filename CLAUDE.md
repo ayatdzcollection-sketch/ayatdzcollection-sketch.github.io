@@ -21,7 +21,7 @@ Rules that always apply:
   turned on (owner controlled, capped, off by default), and, from 2026-09-16, the owner only
   beta "ask about the material" feature (Edge Function `study-ask`, migration 0011, answers
   only from the material's own content, capped per feature and globally, off by default,
-  one material tagged `ai-ask`) with its small quality checks run under a spend cap. Ask may
+  each material that has it tagged `ai-ask`, switchable per material in the owner panel) with its small quality checks run under a spend cap. Ask may
   draw on the course textbook (the owner's decision, 2026-09-17): the chapters live only in the
   private `study_ai_passages` table (migration 0013, loaded by `study/src/tools/load_passages.mjs`),
   are read only by the Edge Function when a question needs depth, and must never be written into

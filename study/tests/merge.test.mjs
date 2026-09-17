@@ -661,3 +661,9 @@ test('asknotes: tolerates junk from a damaged device', () => {
   assert.equal(m[1].t.length, 300, 'text is held to 300 characters');
   assert.equal(m[2].t, '', 'a non string text becomes empty');
 });
+
+test('every material with Ask merges its saved notes the same way', () => {
+  for (const ns of ['apushp12', 'fraser12', 'fraser34', 'fraserall', 'acct1', 'chemunit', 'periodic', 'alg2u1', 'fifty-states', 'la10crucible', 'psychu0', 'la10vocab1', 'frchateaux']) {
+    assert.equal(BUILTIN_MERGES[ns + ':asknotes'], BUILTIN_MERGES['apushp12:asknotes'], ns);
+  }
+});
