@@ -1178,7 +1178,9 @@ function buildAi(sec) {
   e.passGroup.body.appendChild(el('p', 'note',
     'A code is one person: it saves their progress under that code and lets them use the AI ' +
     'features you tick, out of money you load onto it. It carries none of your own rights. ' +
-    'Switch it off, end it, or let it end by itself in the morning. Your caps above still hold.'));
+    'Switch it off, end it, or let it end by itself in the morning. A code\'s end time is New York ' +
+    'time. Your caps above still hold, and they run on a different clock: the day turns over at ' +
+    '8pm New York, 7pm in winter.'));
 
   var pmake = el('div', 'aipassmake');
   e.passLabel = aiTextInput();
@@ -1197,8 +1199,8 @@ function buildAi(sec) {
   e.passAsk = aiSwitch('Ask about the material');
   e.passAsk.setAttribute('aria-checked', 'true');
   pmake.appendChild(aiField('aipassf aipasssw', 'Ask', e.passAsk).field);
-  e.passSaq = aiSwitch('Short answer grading');
-  pmake.appendChild(aiField('aipassf aipasssw', 'Grading', e.passSaq).field);
+  e.passDaily = aiTextInput();
+  pmake.appendChild(aiField('aipassf', 'Their daily cap (dollars)', e.passDaily).field);
   e.passGroup.body.appendChild(pmake);
 
   var prow = el('div', 'row wrap');
@@ -1536,15 +1538,11 @@ function aiPaintModels() {
   aiEl.models.hidden = !aiState.models.length;
 }
 
-/* An extra granted today is spent by the next day boundary, so it is shown only while it
-   counts. The server decides that too; this is the same test in the panel's own words. */
+/* What an extra is worth today. The server works that out (it knows where the day starts, and
+   whether the spend was reset), and the panel prints what it is told. Reading a date off this
+   device would be wrong twice over: a wrong clock, and no idea about a reset. */
 function aiBonusToday(row) {
-  if (!row || !row.bonus_at) return 0;
-  var at = Date.parse(row.bonus_at);
-  if (!isFinite(at)) return 0;
-  var now = new Date();
-  var dayStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-  return at >= dayStart ? (Number(row.bonus_cents) || 0) : 0;
+  return row ? (Number(row.bonus_today_cents) || 0) : 0;
 }
 
 function aiPaintReadout() {
@@ -1859,15 +1857,17 @@ function aiPassWhen(iso) {
   if (!iso) return 'no end date';
   try {
     return new Date(iso).toLocaleString('en-GB', {
-      timeZone: 'America/New_York', weekday: 'short', hour: 'numeric', minute: '2-digit'
+      timeZone: 'America/New_York', weekday: 'short', day: 'numeric', month: 'short',
+      hour: 'numeric', minute: '2-digit'
     }) + ' New York';
   } catch (e) { return String(iso); }
 }
 
+/* live comes from the server, which owns the clock that decides. The rest only explains why. */
 function aiPassState(p) {
   if (p.revoked_at) return 'deleted';
   if (!p.enabled) return 'off';
-  if (p.expires_at && Date.parse(p.expires_at) <= Date.now() + aiState.passSkew) return 'ended';
+  if (p.live === false) return p.expires_at ? 'ended' : 'off';
   if (Number(p.left_cents) <= 0) return 'out of money';
   return 'live';
 }
@@ -1882,11 +1882,14 @@ function aiPassCreate() {
   if (!isFinite(money) || money < 0) { aiShowAt(aiEl.passErr, 'Money is a number of dollars.'); return; }
   var feats = [];
   if (aiSwitchOn(aiEl.passAsk)) feats.push('ask');
-  if (aiSwitchOn(aiEl.passSaq)) feats.push('saq');
   if (!feats.length) { aiShowAt(aiEl.passErr, 'Tick at least one feature.'); return; }
+  var dailyRaw = aiEl.passDaily.value.trim().replace(/^\$/, '');
+  var daily = dailyRaw === '' ? null : Number(dailyRaw);
+  if (daily !== null && (!isFinite(daily) || daily < 0)) { aiShowAt(aiEl.passErr, 'A daily cap is a number of dollars.'); return; }
   var when = aiEl.passWhen.value, body = { label: label, budget_cents: Math.round(money * 100), features: feats };
+  if (daily !== null) body.daily_cents = Math.round(daily * 100);
   if (when === 'morning') body.when = 'morning';
-  else if (when === 'hours') { body.when = 'at'; body.expires_at = new Date(Date.now() + aiState.passSkew + 3 * 3600 * 1000).toISOString(); }
+  else if (when === 'hours') { body.when = 'hours'; body.hours = 3; }
   else body.when = 'none';
   aiDisable([aiEl.passMake], true);
   StudyAuth.admin.ai.passCreate(body).then(function (r) {
@@ -1894,6 +1897,7 @@ function aiPassCreate() {
     if (!r || !r.ok) { aiShowAt(aiEl.passErr, aiRefusal(r)); return; }
     aiEl.passLabel.value = '';
     aiEl.passMoney.value = '';
+    aiEl.passDaily.value = '';
     aiState.passNew = r;
     aiPaintNewPass();
     aiLoadPasses();
@@ -1949,7 +1953,7 @@ function aiPassRow(p) {
   title.appendChild(el('span', 'aipassstate' + (state === 'live' ? ' on' : ''), state));
   who.appendChild(title);
   var meta = el('p', 'aifeatmeta',
-    dollars(Math.round(Number(p.left_cents) * 100)) + ' left of ' + dollars(Math.round(Number(p.budget_cents) * 100)) +
+    dollars(Number(p.left_cents)) + ' left of ' + dollars(Number(p.budget_cents)) +
     ' · ' + aiCount(p.calls, 'call') + ' · ' + (p.features || []).join(', ') +
     ' · ' + (p.expires_at ? aiPassWhen(p.expires_at) + ' (' + aiPassLeft(p.expires_at) + ')' : 'no end date'));
   who.appendChild(meta);

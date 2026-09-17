@@ -435,31 +435,6 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return reply({ ok: false, error: "grader_error" }, 200, origin);
   }
 
-  /* Textbook passages, only when the page asked for them for this question. They go after the
-     material's own passages, so the numbers the client already holds stay valid, and their
-     labels travel back in the done event. A failed search just leaves them out. */
-  body.textbookLabels = [];
-  const corpus = CORPUS[body.material];
-  if (body.textbook && corpus) {
-    try {
-      const found = (await rpc("ai_passages_search", {
-        p_corpus: corpus,
-        p_query: (body.question + " " + body.quote).slice(0, 1000),
-        p_chapter: body.chapter,
-        p_limit: TEXTBOOK_PASSAGES,
-      })) as { ok?: boolean; passages?: Array<{ chapter?: number; heading?: string; body?: string }> } | null;
-      for (const p of (found && found.ok && Array.isArray(found.passages)) ? found.passages : []) {
-        if (!p || typeof p.body !== "string" || !p.body) continue;
-        if (body.chunks.length >= 14) break;
-        const label = ("Textbook, chapter " + (p.chapter ?? "") + (p.heading ? ", " + p.heading : "")).slice(0, 80);
-        body.chunks.push({ label, text: p.body.slice(0, TEXTBOOK_CHARS) });
-        body.textbookLabels.push(label);
-      }
-    } catch {
-      console.error("study-ask: textbook search failed");
-    }
-  }
-
   /* The reserve is sized from what is about to be sent. The model only changes request fields
      that carry no text, so the default stands in until ai_begin2 names the real one. */
   const estimate = estimateInputTokens(buildRequest({ model: DEFAULT_MODEL, ...body }));
@@ -497,6 +472,32 @@ Deno.serve(async (req: Request): Promise<Response> => {
   /* Whether an answer may go past the material is the owner's switch, read here from ai_begin2
      and never from the request: a forged body cannot turn it on. */
   body.beyond = begun.beyond === true;
+
+  /* Textbook passages: the owner's own copy of their course book (0013), so ai_begin2 says
+     whether this caller may draw on it. The page's own textbook flag only asks; it never grants,
+     and a pass holder never gets one. They go after the material's own passages, so the numbers
+     the client already holds stay valid, and their labels travel back in the done event. */
+  body.textbookLabels = [];
+  const corpus = CORPUS[body.material];
+  if (body.textbook && begun.textbook === true && corpus) {
+    try {
+      const found = (await rpc("ai_passages_search", {
+        p_corpus: corpus,
+        p_query: (body.question + " " + body.quote).slice(0, 1000),
+        p_chapter: body.chapter,
+        p_limit: TEXTBOOK_PASSAGES,
+      })) as { ok?: boolean; passages?: Array<{ chapter?: number; heading?: string; body?: string }> } | null;
+      for (const p of (found && found.ok && Array.isArray(found.passages)) ? found.passages : []) {
+        if (!p || typeof p.body !== "string" || !p.body) continue;
+        if (body.chunks.length >= 14) break;
+        const label = ("Textbook, chapter " + (p.chapter ?? "") + (p.heading ? ", " + p.heading : "")).slice(0, 80);
+        body.chunks.push({ label, text: p.body.slice(0, TEXTBOOK_CHARS) });
+        body.textbookLabels.push(label);
+      }
+    } catch {
+      console.error("study-ask: textbook search failed");
+    }
+  }
 
   return streamAnswer(body, callId, model, origin);
 });
