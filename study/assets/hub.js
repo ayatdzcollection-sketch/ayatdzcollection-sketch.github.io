@@ -1871,6 +1871,15 @@ function aiPassWhen(iso) {
   } catch (e) { return String(iso); }
 }
 
+/* What a code may use, in words: everything the owner has, or the list it was given, and what
+   has been switched off for it either way. */
+function aiPassWhat(p) {
+  var on = p.all_features ? 'all features' : ((p.features || []).filter(function (f) { return f !== 'textbook'; }).join(', ') || 'nothing');
+  if (p.may_book) on += ', textbook';
+  var off = (p.denied || []).filter(function (f) { return f !== 'textbook'; });
+  return on + (off.length ? ' (' + off.join(', ') + ' off)' : '');
+}
+
 /* live comes from the server, which owns the clock that decides. The rest only explains why. */
 function aiPassState(p) {
   if (p.revoked_at) return 'deleted';
@@ -1961,13 +1970,15 @@ function aiPassRow(p) {
   var who = el('div', 'aipasswho');
   var title = el('div', 'aipasstitle');
   title.appendChild(el('span', 'aipassname', p.label || 'code'));
-  title.appendChild(el('span', 'aipasstail', 'ends ' + p.tail));
+  /* The code itself is shown once when it is made and never stored in the clear, so a code is
+     told apart by who it is for and when it was made, not by a piece of itself. */
+  title.appendChild(el('span', 'aipasstail', 'made ' + aiWhen(p.created_at)));
   var state = aiPassState(p);
   title.appendChild(el('span', 'aipassstate' + (state === 'live' ? ' on' : ''), state));
   who.appendChild(title);
   var meta = el('p', 'aifeatmeta',
     dollars(Number(p.left_cents)) + ' left of ' + dollars(Number(p.budget_cents)) +
-    ' · ' + aiCount(p.calls, 'call') + ' · ' + (p.features || []).join(', ') +
+    ' · ' + aiCount(p.calls, 'call') + ' · ' + aiPassWhat(p) +
     ' · ' + (p.expires_at ? aiPassWhen(p.expires_at) + ' (' + aiPassLeft(p.expires_at) + ')' : 'no end date'));
   who.appendChild(meta);
   head.appendChild(who);
