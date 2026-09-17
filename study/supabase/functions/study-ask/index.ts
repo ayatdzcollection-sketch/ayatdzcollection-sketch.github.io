@@ -90,6 +90,11 @@ type AskBody = {
   textbookLabels?: string[];
 };
 
+/* A request for a list, a set to copy out, or everything on a topic. Those answers are long by
+   nature, and the 700 token answer was cutting them in half. */
+const LIST_RE = /\b(list|every (term|word|item|one)|all (the )?(terms|words|items)|everything|quizlet|flash ?cards?|copy and paste|copy ?paste|export)\b/i;
+const LIST_MAX_TOKENS = 1500;
+
 /* Which private textbook corpus (migration 0013) a material may draw on. */
 const CORPUS: Record<string, string> = {
   "apush/period1-2-test": "fraser-1-4",
@@ -280,6 +285,10 @@ function streamAnswer(body: AskBody, callId: unknown, model: string, origin: str
     try {
       if (cancelled) return;
       const request = buildRequest({ model, ...body }) as Record<string, unknown>;
+      /* A question that asks for a list needs room for the list. The test is on the question the
+         student typed, here rather than in the page, so a forged request cannot buy a longer
+         answer than the words it asked for. */
+      if (LIST_RE.test(body.question)) request.max_tokens = LIST_MAX_TOKENS;
       const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
       const stream = client.messages.stream(
         { model, ...request } as never,
