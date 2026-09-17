@@ -823,7 +823,7 @@ var AI_CHATS_EXPORT_PAGES = 20;
 
 var aiEl = null;
 var aiState = { settings: null, models: [], usage: null, features: [], saq: null, featErr: '',
-  passes: [], passNow: null, passErr: '', passSkew: 0, passNew: null,
+  passes: [], passFeatures: [], passNow: null, passErr: '', passSkew: 0, passNew: null,
   tickets: [], ticketStats: null, ticketErr: '', ticketOpenOnly: true };
 var aiUid = 0;
 /* gen moves on with every fresh load and every teardown, so an answer that lands after either
@@ -1205,6 +1205,10 @@ function buildAi(sec) {
      else is their call to make per person, so it is a tick rather than a rule. */
   e.passBook = aiSwitch('May use the textbook');
   pmake.appendChild(aiField('aipassf aipasssw', 'Textbook', e.passBook).field);
+  /* Everything the owner has, including anything added later, minus what is switched off on the
+     code itself. */
+  e.passAll = aiSwitch('Everything the owner has');
+  pmake.appendChild(aiField('aipassf aipasssw', 'All features', e.passAll).field);
   e.passGroup.body.appendChild(pmake);
 
   var prow = el('div', 'row wrap');
@@ -1861,9 +1865,9 @@ function aiPassWhen(iso) {
   if (!iso) return 'no end date';
   try {
     return new Date(iso).toLocaleString('en-GB', {
-      timeZone: 'America/New_York', weekday: 'short', day: 'numeric', month: 'short',
+      timeZone: 'America/Detroit', weekday: 'short', day: 'numeric', month: 'short',
       hour: 'numeric', minute: '2-digit'
-    }) + ' New York';
+    }) + ' Detroit';
   } catch (e) { return String(iso); }
 }
 
@@ -1884,14 +1888,18 @@ function aiPassCreate() {
   if (!label) { aiShowAt(aiEl.passErr, 'Say who it is for.'); return; }
   var money = Number(aiEl.passMoney.value.trim().replace(/^\$/, '') || '0');
   if (!isFinite(money) || money < 0) { aiShowAt(aiEl.passErr, 'Money is a number of dollars.'); return; }
-  var feats = [];
+  var feats = [], body0 = {};
   if (aiSwitchOn(aiEl.passAsk)) feats.push('ask');
   if (!feats.length) { aiShowAt(aiEl.passErr, 'Tick at least one feature.'); return; }
   if (aiSwitchOn(aiEl.passBook)) feats.push('textbook');
+  if (aiSwitchOn(aiEl.passAll)) body0.all_features = true;
   var dailyRaw = aiEl.passDaily.value.trim().replace(/^\$/, '');
   var daily = dailyRaw === '' ? null : Number(dailyRaw);
   if (daily !== null && (!isFinite(daily) || daily < 0)) { aiShowAt(aiEl.passErr, 'A daily cap is a number of dollars.'); return; }
-  var when = aiEl.passWhen.value, body = { label: label, budget_cents: Math.round(money * 100), features: feats };
+  var when = aiEl.passWhen.value, body = body0;
+  body.label = label;
+  body.budget_cents = Math.round(money * 100);
+  body.features = feats;
   if (daily !== null) body.daily_cents = Math.round(daily * 100);
   if (when === 'morning') body.when = 'morning';
   else if (when === 'hours') { body.when = 'hours'; body.hours = 3; }
@@ -1968,9 +1976,33 @@ function aiPassRow(p) {
   head.appendChild(sw);
   li.appendChild(head);
 
-  var ctl = el('div', 'row wrap aipassctl');
+  /* One switch per feature, plus the textbook grant, plus the all features mode. Off is a denial
+     on the code, so it keeps holding when the code follows everything the owner has. */
+  var sws = el('div', 'aipassfeats');
   var row = { err: el('p', 'err-inline'), li: li };
   row.err.hidden = true;
+  function featSwitch(id, label, on) {
+    var wrap = el('div', 'aipassfeat');
+    wrap.appendChild(el('span', 'lbl', label));
+    var b = aiSwitch(label + ' for ' + (p.label || 'this code'));
+    b.setAttribute('aria-checked', String(!!on));
+    b.addEventListener('click', function () {
+      if (id === 'all') aiPassSet({ id: p.id, all_features: !aiSwitchOn(b) }, row);
+      else aiPassSet({ id: p.id, feature: id, on: !aiSwitchOn(b) }, row);
+    });
+    wrap.appendChild(b);
+    sws.appendChild(wrap);
+  }
+  featSwitch('all', 'All features', p.all_features);
+  (aiState.passFeatures || []).forEach(function (f) {
+    var denied = (p.denied || []).indexOf(f.id) >= 0;
+    var on = !denied && (p.all_features || (p.features || []).indexOf(f.id) >= 0);
+    featSwitch(f.id, f.name || f.id, on);
+  });
+  featSwitch('textbook', 'Textbook', p.may_book);
+  li.appendChild(sws);
+
+  var ctl = el('div', 'row wrap aipassctl');
   function btn(text, patch, confirmText) {
     var b = el('button', 'btn sm out', text);
     b.type = 'button';
@@ -1983,8 +2015,14 @@ function aiPassRow(p) {
     return b;
   }
   btn('Add $1', function () { return { id: p.id, add_cents: 100 }; });
-  btn('Ends in the morning', function () { return { id: p.id, when: 'morning' }; });
-  btn('End now', function () { return { id: p.id, when: 'now' }; }, 'End this code now? They lose the AI features straight away.');
+  if (aiPassState(p) === 'live') {
+    btn('Ends in the morning', function () { return { id: p.id, when: 'morning' }; });
+    btn('End now', function () { return { id: p.id, when: 'now' }; }, 'End this code now? They lose the AI features straight away.');
+  } else {
+    /* Bringing one back always sets a new end, so a revived code is never permanent by accident. */
+    btn('Back for 3 hours', function () { return { id: p.id, revive: true, when: 'hours', hours: 3 }; });
+    btn('Back until morning', function () { return { id: p.id, revive: true, when: 'morning' }; });
+  }
   var spendBtn = el('button', 'btn sm out', 'Where it went');
   spendBtn.type = 'button';
   ctl.appendChild(spendBtn);
@@ -2067,6 +2105,7 @@ function aiLoadPasses() {
       return;
     }
     aiState.passes = Array.isArray(r.passes) ? r.passes : [];
+    aiState.passFeatures = Array.isArray(r.features) ? r.features : [];
     aiState.passErr = '';
     var serverNow = Date.parse(r.now);
     aiState.passSkew = isFinite(serverNow) ? serverNow - Date.now() : 0;
