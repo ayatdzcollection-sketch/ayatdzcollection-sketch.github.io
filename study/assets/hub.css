@@ -403,6 +403,8 @@ textarea.askinput{min-height:80px;padding:10px 12px}
 .aimastertext .aimeta{display:block;margin:2px 0 0}
 .aireadout{margin:10px 0 2px;font-family:var(--mono);font-size:12px;letter-spacing:.02em;
   color:var(--ink2);overflow-wrap:anywhere}
+.aireadline{display:block}
+.aireadline + .aireadline{margin-top:4px;color:var(--ink3)}
 .aisaved{font-family:var(--mono);font-size:11px;letter-spacing:.06em;color:var(--ok)}
 
 /* Features */

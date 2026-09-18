@@ -261,6 +261,13 @@ checked by the Edge Function and not forwarded. If Ask is ever opened beyond the
 Features group in the owner panel, mode "Open with caps"), this table is the first thing to
 revisit, because every student's conversations would then be kept too.
 
+Spending on an access code comes out of the money loaded on that code (its own daily cap and
+per minute limit too) and nothing else: since migration 0026 it neither counts against the
+owner's daily, monthly and per feature caps nor is stopped by them, so a friend is never cut
+off with money left on their code. The owner panel's Spend group prints the two on separate
+lines, and the Calls list says whose each call was. The master switch and each feature's own
+switch still stop every call, codes included.
+
 Identity is a random 32-hex install id generated on the device, so one device's stream stays
 separable from another's without anyone being named. Clearing site data throws it away.
 

@@ -1514,7 +1514,9 @@ function aiPaintFeatRow(r, f, s) {
   var bonus = Number(f.bonus_cents) || 0;
   r.meta.textContent = 'Today ' + spendDollars(f.today_cents) + ' of ' +
     dollars((Number(f.daily_cents) || 0) + bonus) + (bonus ? ' (' + dollars(bonus) + ' extra today)' : '') +
-    ', ' + aiCount(f.today_calls, 'call') + ' · tag ' + String(f.tag || '');
+    ', ' + aiCount(f.today_calls, 'call') +
+    (Number(f.codes_today_cents) > 0 ? ' · codes ' + spendDollars(f.codes_today_cents) + ' from their own money' : '') +
+    ' · tag ' + String(f.tag || '');
   r.li.classList.toggle('off', !s.enabled || !f.enabled);
   aiPaintMode(r, f.mode);
   aiPaintModelSelect(r.model, f.model);
@@ -1579,12 +1581,24 @@ function aiPaintReadout() {
   if (aiEl.bonus && aiEl.bonus.getAttribute('data-editing') !== '1') {
     aiEl.bonus.value = bonus ? (bonus / 100).toFixed(2) : '';
   }
-  if (!u) { aiEl.readout.textContent = 'No spending recorded yet.'; return; }
-  aiEl.readout.textContent =
-    'Today ' + spendDollars(u.today_cents) + ' of ' + dollars((s ? Number(s.daily_cents) || 0 : 0) + bonus) +
+  aiEl.readout.innerHTML = '';
+  if (!u) {
+    aiEl.readout.textContent = aiState.usageErr ? 'Could not load the spending. Close and reopen the panel.' : 'Loading the spending.';
+    return;
+  }
+  /* Two lines since 0026: what counts against the caps above, and what codes spent from the
+     money loaded on them, which never counts against those caps and is never stopped by them. */
+  aiEl.readout.appendChild(el('span', 'aireadline',
+    'Your caps: today ' + spendDollars(u.today_cents) + ' of ' + dollars((s ? Number(s.daily_cents) || 0 : 0) + bonus) +
     (bonus ? ' (' + dollars(bonus) + ' extra today)' : '') + ', ' +
     aiCount(u.today_calls, 'call') + ' · month ' + spendDollars(u.month_cents) + ' of ' +
-    dollars(s && s.monthly_cents) + ', ' + aiCount(u.month_calls, 'call');
+    dollars(s && s.monthly_cents) + ', ' + aiCount(u.month_calls, 'call')));
+  if (u.codes_today_cents != null) {
+    aiEl.readout.appendChild(el('span', 'aireadline',
+      'Codes, from their own money: today ' + spendDollars(u.codes_today_cents) + ', ' +
+      aiCount(u.codes_today_calls, 'call') + ' · month ' + spendDollars(u.codes_month_cents) + ', ' +
+      aiCount(u.codes_month_calls, 'call') + '. Not counted in your caps.'));
+  }
 }
 
 function aiPaintCalls() {
@@ -1598,13 +1612,18 @@ function aiPaintCalls() {
   var withFeature = calls.some(function (c) { return c && c.feature != null; });
   var t = el('table', 'aitable');
   var head = document.createElement('tr');
-  ['Time'].concat(withFeature ? ['Feature'] : [], ['Material', 'Model', 'Cost', 'Status']).forEach(function (h) {
+  var withWho = calls.some(function (c) { return c && c.who != null; });
+  ['Time'].concat(withWho ? ['Who'] : [], withFeature ? ['Feature'] : [], ['Material', 'Model', 'Cost', 'Status']).forEach(function (h) {
     head.appendChild(el('th', null, h));
   });
   t.appendChild(head);
   calls.forEach(function (c) {
     var tr = document.createElement('tr');
     tr.appendChild(el('td', null, aiWhen(c.created_at)));
+    if (withWho) {
+      tr.appendChild(el('td', null, c.who === 'pass' ? 'Code ' + (c.pass_label || '#' + c.pass_id)
+        : c.who === 'owner' ? 'You' : c.who === 'open' ? 'Visitor' : ''));
+    }
     if (withFeature) {
       var info = aiFeatureInfo(c.feature);
       tr.appendChild(el('td', null, info ? info.short : String(c.feature || '')));
@@ -1623,7 +1642,8 @@ function aiPaintSummaries() {
   var s = aiState.settings, u = aiState.usage;
   if (s) {
     aiEl.spend.state.textContent = (s.enabled ? 'On' : 'Off') + ' · ' +
-      (u ? shortDollars(u.today_cents) + ' today of ' : 'daily cap ') + dollars(s.daily_cents);
+      (u ? shortDollars(u.today_cents) + ' today of ' : 'daily cap ') + dollars(s.daily_cents) +
+      (u && Number(u.codes_today_cents) > 0 ? ' · codes ' + shortDollars(u.codes_today_cents) : '');
     var feats = (aiState.features || []).filter(function (f) { return f && f.id !== 'saq'; });
     var n = 1 + feats.length;
     var on = 1 + feats.filter(function (f) { return f.enabled; }).length;
@@ -1762,12 +1782,15 @@ function aiLoadSettings() {
 }
 
 /* admin_ai_usage answers with the numbers at the top level of the payload, so the payload
-   itself is the readout's state. A failure here is left quiet: the ledger not loading is
-   no reason to make the switches above look broken. */
+   itself is the readout's state. A failure is said only in the readout: the ledger not
+   loading is no reason to make the switches above look broken, and "nothing spent" would be
+   a wrong thing to print in its place. */
 function aiLoadUsage() {
   return StudyAuth.admin.ai.usage().then(function (r) {
-    if (r && r.ok) { aiState.usage = r; paintAiUsage(); }
-  }, function () {});
+    if (r && r.ok) { aiState.usage = r; aiState.usageErr = false; }
+    else aiState.usageErr = true;
+    paintAiUsage();
+  }, function () { aiState.usageErr = true; paintAiUsage(); });
 }
 
 /* ---- reports ---- */
@@ -1802,7 +1825,7 @@ function aiTicketRow(t) {
     var b = el('button', 'btn sm out', text);
     b.type = 'button';
     b.addEventListener('click', function () {
-      StudyAuth.admin.ticketSet(t.id, status, null).then(function (r) {
+      StudyAuth.admin.ai.ticketSet(t.id, status, null).then(function (r) {
         if (r && r.ok) return aiLoadTickets();
         aiShowAt(err, aiRefusal(r));
       }, function (e2) { aiShowAt(err, aiErrText(e2)); });
@@ -1816,7 +1839,7 @@ function aiTicketRow(t) {
   del.type = 'button';
   del.addEventListener('click', function () {
     if (!window.confirm('Delete this report?')) return;
-    StudyAuth.admin.ticketDelete(t.id).then(function (r) {
+    StudyAuth.admin.ai.ticketDelete(t.id).then(function (r) {
       if (r && r.ok) return aiLoadTickets();
       aiShowAt(err, aiRefusal(r));
     }, function (e2) { aiShowAt(err, aiErrText(e2)); });
@@ -1844,7 +1867,7 @@ function aiPaintTickets() {
 
 function aiLoadTickets() {
   if (!aiEl) return Promise.resolve();
-  return StudyAuth.admin.tickets(aiState.ticketOpenOnly ? 'open' : null, 40, null).then(function (r) {
+  return StudyAuth.admin.ai.tickets(aiState.ticketOpenOnly ? 'open' : null, 40, null).then(function (r) {
     if (!aiEl) return;
     if (!r || !r.ok) {
       aiState.tickets = [];
@@ -2299,9 +2322,13 @@ function aiLoad() {
     }
     aiEl.body.hidden = false;
     paintAi();
-    aiLoadPasses();
-    aiLoadTickets();
-    return aiLoadUsage();
+    /* Each group loads on its own: one that throws must not stop the others (a misnamed
+       call in the reports loader once kept the spending from ever loading). */
+    var usage = aiLoadUsage();
+    [aiLoadPasses, aiLoadTickets].forEach(function (load) {
+      try { load(); } catch (e) { if (window.console) console.error(e); }
+    });
+    return usage;
   }, function (err) {
     if (!aiEl) return;
     aiEl.body.hidden = true;
