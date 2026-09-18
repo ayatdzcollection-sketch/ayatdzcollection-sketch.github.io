@@ -277,6 +277,11 @@ the page, and a fresh load shows nothing. The code keeps working as their save c
 pairing and sync never depend on it being live, and a code extended or revived later wakes up
 on its own without signing in again.
 
+Ask has no button on the screen for anyone, owner included: on a computer it opens from a
+highlight or the keys. The owner panel's Ask row has "Ask button on phones" (migration 0028,
+off by default), which puts a corner button on touch screens only, and only for someone who
+may use Ask at that moment.
+
 Identity is a random 32-hex install id generated on the device, so one device's stream stays
 separable from another's without anyone being named. Clearing site data throws it away.
 

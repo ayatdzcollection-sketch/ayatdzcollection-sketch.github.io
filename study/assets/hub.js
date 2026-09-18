@@ -466,7 +466,7 @@ function doPair() {
       return asCode.then(function (role) {
         if (role) {
           window.alert('Paired with ' + r.code + ', and signed in with it. ' +
-            'The AI features this code carries are on: highlight text in a material, or tap the Ask button.');
+            'The AI features this code carries are on: highlight text in a material and tap Ask, or press Alt and A.');
           try { renderAll(); } catch (e) {}
           return;
         }
@@ -1393,6 +1393,15 @@ function aiFeatRow(id) {
     r.beyondErr = f.err;
     r.beyondField.hidden = true;
     ctl.appendChild(f.field);
+
+    /* The corner Ask button on phones (0028). Off by default: nobody gets a button on screen
+       unless this is on, and then only on a touch screen and only someone who may use Ask. */
+    r.phone = aiSwitch('Ask button on phones');
+    f = aiField('aibeyondf', 'Ask button on phones', r.phone);
+    r.phoneField = f.field;
+    r.phoneErr = f.err;
+    r.phoneField.hidden = true;
+    ctl.appendChild(f.field);
   }
   r.li.appendChild(ctl);
 
@@ -1405,11 +1414,11 @@ function aiFeatRow(id) {
 }
 
 function aiRowControls(r) {
-  return [r.sw, r.seg.owner, r.seg.open, r.model, r.cap, r.beyond, r.bonus].filter(Boolean);
+  return [r.sw, r.seg.owner, r.seg.open, r.model, r.cap, r.beyond, r.phone, r.bonus].filter(Boolean);
 }
 
 function aiRowClear(r) {
-  [r.modeErr, r.modelErr, r.capErr, r.beyondErr, r.bonusErr, r.msg].forEach(function (n) {
+  [r.modeErr, r.modelErr, r.capErr, r.beyondErr, r.phoneErr, r.bonusErr, r.msg].forEach(function (n) {
     if (!n) return;
     n.hidden = true;
     n.textContent = '';
@@ -1435,6 +1444,9 @@ function aiWireRow(r) {
   }
   if (r.beyond) {
     r.beyond.addEventListener('click', function () { set({ beyond: !aiSwitchOn(r.beyond) }); });
+  }
+  if (r.phone) {
+    r.phone.addEventListener('click', function () { set({ phone_button: !aiSwitchOn(r.phone) }); });
   }
   if (r.bonus) {
     r.bonus.addEventListener('input', function () { r.bonus.setAttribute('data-editing', '1'); });
@@ -1527,8 +1539,13 @@ function aiPaintFeatRow(r, f, s) {
   aiPaintMode(r, f.mode);
   aiPaintModelSelect(r.model, f.model);
   if (r.beyond) {
-    r.beyondField.hidden = typeof f.beyond !== 'boolean';
+    /* Trap notes never read the beyond switch, so their row does not offer it. */
+    r.beyondField.hidden = typeof f.beyond !== 'boolean' || f.id === 'trap';
     r.beyond.setAttribute('aria-checked', String(!!f.beyond));
+  }
+  if (r.phone) {
+    r.phoneField.hidden = typeof f.phone_button !== 'boolean' || f.id !== 'ask';
+    r.phone.setAttribute('aria-checked', String(!!f.phone_button));
   }
   if (r.cap.getAttribute('data-editing') !== '1') {
     r.cap.value = f.daily_cents == null ? '' : (Number(f.daily_cents) / 100).toFixed(2);
@@ -1754,6 +1771,7 @@ function aiFeatureSet(row, patch) {
       : field === 'model' ? row.modelErr
       : field === 'daily_cents' ? row.capErr
       : field === 'beyond' ? row.beyondErr
+      : field === 'phone_button' ? row.phoneErr
       : null;
     if (at) aiShowAt(at, aiRangeText(field));
     else aiShowAt(row.msg, field ? aiRangeText(field) : aiRefusal(r));
@@ -1773,7 +1791,7 @@ function aiMergeFeature(f) {
   var cur = null;
   list.forEach(function (x) { if (x && x.id === f.id) cur = x; });
   if (!cur) { list.push(f); return; }
-  ['name', 'enabled', 'mode', 'model', 'daily_cents', 'tag', 'beta', 'beyond', 'bonus_cents', 'updated_at'].forEach(function (k) {
+  ['name', 'enabled', 'mode', 'model', 'daily_cents', 'tag', 'beta', 'beyond', 'phone_button', 'bonus_cents', 'updated_at'].forEach(function (k) {
     if (Object.prototype.hasOwnProperty.call(f, k)) cur[k] = f[k];
   });
 }
