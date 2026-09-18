@@ -442,18 +442,38 @@ function paintStatus(st) {
 function doPair() {
   var errEl = $('pairerr');
   errEl.hidden = true;
+  var typed = $('paircode').value;
   try {
-    StudyStore.pair($('paircode').value).then(function (r) {
+    StudyStore.pair(typed).then(function (r) {
       $('paircode').value = '';
-      if (r.found === false) {
-        /* A mistyped code does not fail: it quietly starts a new, empty sync group that the
-           other device is not in. The absence of any stored progress is the only tell. */
-        window.alert('Paired with ' + r.code + ', but nothing is stored under that code yet. ' +
-          'If your other device already has progress, check the code against it and pair again. ' +
-          'Otherwise this device\'s progress will be the first to go up.');
-      } else {
-        window.alert('Paired. Your progress will merge with code ' + r.code + '.');
-      }
+      /* An AI code (0017) is a save code and a sign in at once, and people put it in whichever
+         box they see first. Pairing alone synced their progress and left the AI off, with
+         nothing to say why: on 2026-09-17 a friend's code went in here and Ask never appeared.
+         So a pairing also tries the code as a sign in, unless this device is already signed
+         in. The try goes through auth_login, which is rate limited per address, so it cannot be
+         used to guess codes; a plain save code that is not an AI code costs one failed attempt,
+         and a device pairs rarely enough that the limit is never near. */
+      var signedIn = !!(window.StudyAuth && StudyAuth.token && StudyAuth.token());
+      var asCode = (!signedIn && window.StudyAuth && StudyAuth.login)
+        ? StudyAuth.login(typed).then(function (role) { return role; }, function () { return null; })
+        : Promise.resolve(null);
+      return asCode.then(function (role) {
+        if (role) {
+          window.alert('Paired with ' + r.code + ', and signed in with it. ' +
+            'The AI features this code carries are on: highlight text in a material, or tap the Ask button.');
+          try { renderAll(); } catch (e) {}
+          return;
+        }
+        if (r.found === false) {
+          /* A mistyped code does not fail: it quietly starts a new, empty sync group that the
+             other device is not in. The absence of any stored progress is the only tell. */
+          window.alert('Paired with ' + r.code + ', but nothing is stored under that code yet. ' +
+            'If your other device already has progress, check the code against it and pair again. ' +
+            'Otherwise this device\'s progress will be the first to go up.');
+        } else {
+          window.alert('Paired. Your progress will merge with code ' + r.code + '.');
+        }
+      });
     });
   } catch (e) {
     errEl.textContent = e.message; errEl.hidden = false;
