@@ -555,3 +555,8 @@ textarea.askinput{min-height:80px;padding:10px 12px}
 .aipassfeats{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:8px;padding-top:8px;border-top:1px solid var(--rule)}
 .aipassfeat{display:flex;align-items:center;gap:8px}
 .aipassfeat .lbl{margin:0;font-size:13px}
+
+/* Typing a code's end time, next to the quick extensions. */
+.aipasswhen{margin-top:8px;align-items:center;gap:8px}
+.aipasswhen .lbl{margin:0;font-size:13px}
+.aipasswhen input{font:inherit;font-size:13px;padding:5px 8px;border:1px solid var(--rule);border-radius:2px;background:var(--sheet);color:inherit}

@@ -27,12 +27,12 @@ for (const m of [...PLAIN_MODELS, ...EFFORT_MODELS, DEFAULT_MODEL]) assert.ok(PR
 const sys = systemPrompt();
 assert.equal(sys, systemPrompt(), 'the prompt must be byte stable or the cache never hits');
 assert.ok(!DASH.test(sys), 'dash in system prompt');
-for (const s of ['MATERIAL MAP', 'FOCUS', 'HIGHLIGHT', 'PASSAGES', 'QUESTION', 'On the test:', 'Sources: [1], [3]', '1491 to 1754', 'TEA', 'nothing outside it', '150 words', '**double asterisks**', 'yes or no', 'PROGRESS', 'NOTES', 'Remember:']) {
+for (const s of ['MATERIAL MAP', 'FOCUS', 'HIGHLIGHT', 'PASSAGES', 'QUESTION', 'On the test:', 'Sources: [1], [3]', '1491 to 1754', 'TEA', 'nothing outside it', 'about 200 words', '**double asterisks**', 'yes or no', 'PROGRESS', 'NOTES', 'Remember:']) {
   assert.ok(sys.includes(s), 'system prompt is missing ' + s);
 }
 /* The PROGRESS, NOTES and Remember instructions close the prompt, word for word. */
 const APPENDED = [
-  "PROGRESS, when it is sent, is the student's own record in this material: the forecast, mock tests, weakest sections, questions they keep missing with the option they keep picking and the right answer, and short answer parts not earned. Use it only when the student asks about themselves (what to review, what they are weak at, a plan for tonight, why they keep missing something) or when the question is directly about something PROGRESS shows they keep getting wrong, and then say so in one short sentence. Recommend concretely from it: name the section, where in the material to do it (use the places PROGRESS names) and roughly how long. Rank weakness by how much of a section is held, lowest share first. Never invent progress that is not in PROGRESS, and never mention PROGRESS when the question has nothing to do with it.",
+  "PROGRESS, when it is sent, is the student's own record in this material: the forecast, mock tests, weakest sections, questions they keep missing with the option they keep picking and the right answer, and short answer parts not earned. Use it only when the student asks about themselves (what to review, what they are weak at, a plan for tonight, why they keep missing something) or when the question is directly about something PROGRESS shows they keep getting wrong, and then say so in one short sentence. Recommend concretely from it: name the section and where in the material to do it, using the places PROGRESS names. Do not say how long it will take: you do not know. Rank weakness by how much of a section is held, lowest share first. Never invent progress that is not in PROGRESS, and never mention PROGRESS when the question has nothing to do with it.",
   'NOTES are things the student saved earlier. Follow a note that states a preference, such as how long answers should be, and keep a note about a difficulty in mind when it is relevant.',
   "Only when the QUESTION itself asks you to remember or note something (remember, note that, don't forget, keep in mind), confirm it in one short sentence, add one line that helps with it from the material, and end with one extra line after everything else, exactly: Remember: followed by one short sentence to save. Never write a Remember line in any other case."
 ].join('\n');
@@ -53,10 +53,11 @@ const full = {
   history: []
 };
 
-/* Sonnet 4.6: no thinking parameter, no output_config, max_tokens 700, cache on the map block. */
+/* Sonnet 4.6 at the default effort: no thinking parameter, no output_config, cache on the map
+   block, and the room that level asks for. */
 let r = buildRequest({ model: 'claude-sonnet-4-6', ...full });
 assert.deepEqual(Object.keys(r).sort(), ['max_tokens', 'messages', 'system']);
-assert.equal(r.max_tokens, 700);
+assert.equal(r.max_tokens, 1000);
 assert.ok(!('thinking' in r) && !('output_config' in r));
 assert.equal(r.system.length, 2);
 assert.equal(r.system[0].text, sys);
@@ -167,7 +168,7 @@ assert.equal(v.turn, 2);
 const minimal = validateAsk({ material: good.material, install: good.install, question: 'x' });
 assert.deepEqual(minimal, {
   material: good.material, install: good.install, adminToken: null, question: 'x', quote: '', focus: '', map: '', chunks: [], history: [],
-  progress: '', notes: '', thread: null, turn: 0, textbook: false, practice: true, widgets: true, math: false, chapter: null
+  progress: '', notes: '', thread: null, turn: 0, textbook: false, practice: true, widgets: true, math: false, effort: 'normal', chapter: null
 });
 assert.equal(validateAsk({ material: good.material, install: good.install, question: 'x', chunks: [{ label: 'a', text: 'b', ref: 'q:abc_1' }] }).chunks[0].ref, 'q:abc_1');
 assert.equal(validateAsk({ material: good.material, install: good.install, question: 'x', chunks: [{ label: 'a', text: 'b', ref: 'bad ref' }] }), null);
@@ -183,6 +184,21 @@ assert.equal(validateAsk({ material: good.material, install: good.install, quest
   assert.ok(on.system[0].text.includes(MATH_RULE));
   assert.ok(on.system[1].cache_control);
   assert.ok(!/[\u2014\u2013]/.test(MATH_RULE));
+}
+
+/* Effort: the same prompt with more or less room, and the level is what decides. */
+{
+  const q = systemPrompt({ effort: 'quick' }), c = systemPrompt({ effort: 'careful' });
+  assert.ok(q.includes('about 110 words') && q.includes('at most three short bullet'), 'quick did not shorten the prompt');
+  assert.ok(c.includes('about 350 words') && c.includes('at most six short bullet'), 'careful did not lengthen the prompt');
+  assert.equal(systemPrompt({ effort: 'nonsense' }), sys, 'an unknown effort must fall back to the default');
+  const r = buildRequest({ model: 'claude-sonnet-4-6', map: 'm', question: 'q', effort: 'careful' });
+  assert.equal(r.max_tokens, 2400, 'careful must have room to finish');
+  assert.deepEqual(r.thinking, { type: 'adaptive' }, 'careful must think');
+  assert.ok(!buildRequest({ model: 'claude-sonnet-4-6', map: 'm', question: 'q', effort: 'quick' }).thinking, 'quick must not think');
+  assert.equal(validateAsk({ material: good.material, install: good.install, question: 'x', effort: 'auto' }).effort, 'auto');
+  assert.equal(validateAsk({ material: good.material, install: good.install, question: 'x', effort: 'huge' }), null);
+  assert.equal(validateAsk({ material: good.material, install: good.install, question: 'x' }).effort, 'normal');
 }
 
 const s = (n) => 'a'.repeat(n);

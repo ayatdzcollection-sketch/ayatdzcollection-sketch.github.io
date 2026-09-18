@@ -29,8 +29,13 @@
  */
 import Anthropic, { RateLimitError, APIConnectionError, APIError, APIUserAbortError } from "npm:@anthropic-ai/sdk";
 import {
+  DEFAULT_EFFORT,
   DEFAULT_MODEL,
+  EFFORTS,
   FEATURE,
+  INTENT_EFFORT,
+  INTENT_MODEL,
+  INTENT_SYSTEM,
   LIMITS,
   PRICES,
   RESERVE_OUT,
@@ -85,6 +90,9 @@ type AskBody = {
   practice: boolean;
   widgets: boolean;
   math: boolean;
+  effort: string;
+  level?: string;
+  intent?: string;
   beyond?: boolean;
   chapter: number | null;
   textbookLabels?: string[];
@@ -284,11 +292,13 @@ function streamAnswer(body: AskBody, callId: unknown, model: string, origin: str
 
     try {
       if (cancelled) return;
-      const request = buildRequest({ model, ...body }) as Record<string, unknown>;
-      /* A question that asks for a list needs room for the list. The test is on the question the
-         student typed, here rather than in the page, so a forged request cannot buy a longer
-         answer than the words it asked for. */
-      if (LIST_RE.test(body.question)) request.max_tokens = LIST_MAX_TOKENS;
+      const request = buildRequest({ model, ...body, effort: body.level }) as Record<string, unknown>;
+      /* A question that asks for a list needs room for the list, whatever effort it is on. The
+         test is on the question the student typed, here rather than in the page, so a forged
+         request cannot buy a longer answer than the words it asked for. */
+      if (LIST_RE.test(body.question)) {
+        request.max_tokens = Math.max(Number(request.max_tokens) || 0, LIST_MAX_TOKENS);
+      }
       const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
       const stream = client.messages.stream(
         { model, ...request } as never,
@@ -332,6 +342,9 @@ function streamAnswer(body: AskBody, callId: unknown, model: string, origin: str
       status = "ok";
       const done: Json = { type: "done", model, cost_cents: costCents(model, effectiveIn(usage), num(usage.output_tokens)) };
       if (body.textbookLabels && body.textbookLabels.length) done.textbook = body.textbookLabels;
+      /* Which level this answer was given, so the panel can say what auto chose. */
+      done.level = body.level;
+      if (body.intent) done.intent = body.intent;
       const chatId = await logChat();
       if (chatId !== null) done.chat_id = chatId;
       send(done);
@@ -469,6 +482,36 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return reply({ ok: false, error: "grader_error" }, 200, origin);
   }
   const model = typeof begun.model === "string" && begun.model ? begun.model : DEFAULT_MODEL;
+
+  /* Effort: how much room and care this answer gets. The student picks it, or leaves it on auto
+     and a small model reads the question. Auto runs here rather than in the page, so the cost
+     lands in the ledger and one place decides. A classifier that is slow or unsure costs the
+     question nothing: the default stands. */
+  const levels = EFFORTS as Record<string, { words: number; max_tokens: number; think: boolean; bullets: string }>;
+  const byIntent = INTENT_EFFORT as Record<string, string>;
+  body.level = levels[body.effort] ? body.effort : DEFAULT_EFFORT;
+  if (body.effort === "auto") {
+    try {
+      const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), 1200);
+      const r = await client.messages.create({
+        model: INTENT_MODEL,
+        max_tokens: 6,
+        system: INTENT_SYSTEM,
+        messages: [{ role: "user", content: body.question }],
+      }, { signal: ctl.signal });
+      clearTimeout(timer);
+      const first = r.content.find((c) => c.type === "text") as { text?: string } | undefined;
+      const intent = String(first?.text || "").trim().toLowerCase().replace(/[^a-z]/g, "");
+      if (byIntent[intent]) {
+        body.intent = intent;
+        body.level = byIntent[intent];
+      }
+    } catch {
+      console.error("study-ask: the intent call did not answer in time");
+    }
+  }
   /* Whether an answer may go past the material is the owner's switch, read here from ai_begin2
      and never from the request: a forged body cannot turn it on. */
   body.beyond = begun.beyond === true;

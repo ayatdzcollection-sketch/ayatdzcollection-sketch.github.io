@@ -2027,7 +2027,15 @@ function aiPassRow(p) {
   }
   btn('Add $1', function () { return { id: p.id, add_cents: 100 }; });
   if (aiPassState(p) === 'live') {
+    /* An extension adds to the end it already has, so pressing it at half past five on a code
+       that ends at six leaves it ending at seven, not at half past six. */
+    if (p.expires_at) {
+      btn('+1 h', function () { return { id: p.id, extend_hours: 1 }; });
+      btn('+3 h', function () { return { id: p.id, extend_hours: 3 }; });
+      btn('An hour less', function () { return { id: p.id, extend_hours: -1 }; });
+    }
     btn('Ends in the morning', function () { return { id: p.id, when: 'morning' }; });
+    btn('No end date', function () { return { id: p.id, when: 'none' }; }, 'Let this code run with no end date?');
     btn('End now', function () { return { id: p.id, when: 'now' }; }, 'End this code now? They lose the AI features straight away.');
   } else {
     /* Bringing one back always sets a new end, so a revived code is never permanent by accident. */
@@ -2048,6 +2056,27 @@ function aiPassRow(p) {
   });
   ctl.appendChild(del);
   li.appendChild(ctl);
+
+  /* A time the owner types, read in their own zone by the server. The device clock plays no
+     part, which is the point: this laptop was twelve hours out on the day this was built. */
+  var when = el('div', 'row wrap aipasswhen');
+  var whenInput = document.createElement('input');
+  whenInput.type = 'datetime-local';
+  whenInput.className = 'in sm';
+  whenInput.setAttribute('aria-label', 'When ' + (p.label || 'this code') + ' ends, Detroit time');
+  when.appendChild(el('span', 'lbl', 'Ends at'));
+  when.appendChild(whenInput);
+  var whenSet = el('button', 'btn sm out', 'Set');
+  whenSet.type = 'button';
+  whenSet.addEventListener('click', function () {
+    row.err.hidden = true;
+    var v = whenInput.value.trim();
+    if (!v) { aiShowAt(row.err, 'Pick a date and time first.'); return; }
+    aiPassSet({ id: p.id, when: 'local', local: v }, row);
+  });
+  when.appendChild(whenSet);
+  when.appendChild(el('span', 'note', 'Detroit time'));
+  li.appendChild(when);
 
   var spend = el('div', 'aipassspend');
   spend.hidden = true;
