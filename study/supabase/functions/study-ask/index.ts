@@ -52,6 +52,7 @@ import {
   cleanTrapNote,
   purposeOf,
   validateTrap,
+  formNumbers,
 } from "./ask_prompt.mjs";
 
 /* ---------------------------------------------------------------- configuration */
@@ -106,6 +107,10 @@ type AskBody = {
   beyond?: boolean;
   chapter: number | null;
   textbookLabels?: string[];
+  facts: string[];
+  tools: string[];
+  kinds: string;
+  check: boolean;
 };
 
 /* A request for a list, a set to copy out, or everything on a topic. Those answers are long by
@@ -118,9 +123,21 @@ const CORPUS: Record<string, string> = {
   "apush/fraser-ch1-2": "fraser-1-4",
   "apush/fraser-ch3-4": "fraser-1-4",
   "apush/fraser-review": "fraser-1-4",
+  /* The chemistry teacher's review form (migration 0029): one row per question with the key. */
+  "chem/unit-measurement": "chem-unit-form",
 };
 const TEXTBOOK_PASSAGES = 3;
 const TEXTBOOK_CHARS = 1000;
+
+/* Corpora whose rows are numbered questions, fetched whole by number (formNumbers in
+   ask_prompt.mjs) before any keyword search. */
+const NUMBERED: Record<string, boolean> = { "chem-unit-form": true };
+/* The label a private passage travels under: the row's own heading for the review form
+   ("Review form, question 22"), and the textbook's chapter and heading for the APUSH book. */
+function passageLabel(corpus: string, p: { chapter?: number; heading?: string }): string {
+  if (NUMBERED[corpus]) return String(p.heading || "Review form").slice(0, 80);
+  return ("Textbook, chapter " + (p.chapter ?? "") + (p.heading ? ", " + p.heading : "")).slice(0, 80);
+}
 
 type EndStatus = "ok" | "refused" | "error";
 
@@ -679,6 +696,26 @@ Deno.serve(async (req: Request): Promise<Response> => {
   body.textbookLabels = [];
   const corpus = CORPUS[body.material];
   if (body.textbook && begun.textbook === true && corpus) {
+    const seen = new Set<string>();
+    /* A form question named by its number comes first, exactly, before the keyword search. */
+    const asked = NUMBERED[corpus] ? formNumbers(body.question + " " + body.quote) : [];
+    if (asked.length) {
+      try {
+        const got = (await rpc("ai_passages_get", { p_corpus: corpus, p_ords: asked })) as
+          { ok?: boolean; passages?: Array<{ chapter?: number; heading?: string; body?: string }> } | null;
+        for (const p of (got && got.ok && Array.isArray(got.passages)) ? got.passages : []) {
+          if (!p || typeof p.body !== "string" || !p.body) continue;
+          if (body.chunks.length >= 14) break;
+          const label = passageLabel(corpus, p);
+          if (seen.has(label)) continue;
+          seen.add(label);
+          body.chunks.push({ label, text: p.body.slice(0, TEXTBOOK_CHARS) });
+          body.textbookLabels.push(label);
+        }
+      } catch {
+        console.error("study-ask: form lookup failed");
+      }
+    }
     try {
       const found = (await rpc("ai_passages_search", {
         p_corpus: corpus,
@@ -689,7 +726,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
       for (const p of (found && found.ok && Array.isArray(found.passages)) ? found.passages : []) {
         if (!p || typeof p.body !== "string" || !p.body) continue;
         if (body.chunks.length >= 14) break;
-        const label = ("Textbook, chapter " + (p.chapter ?? "") + (p.heading ? ", " + p.heading : "")).slice(0, 80);
+        const label = passageLabel(corpus, p);
+        if (seen.has(label)) continue;
+        seen.add(label);
         body.chunks.push({ label, text: p.body.slice(0, TEXTBOOK_CHARS) });
         body.textbookLabels.push(label);
       }

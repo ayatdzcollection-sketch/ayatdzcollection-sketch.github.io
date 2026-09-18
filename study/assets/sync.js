@@ -444,6 +444,7 @@ var BUILTIN_MERGES = {
   'la10vocab1:trapnotes': mergeTrapNotes,
   'frchateaux:trapnotes': mergeTrapNotes,
   'apushp12:trapnotes': mergeTrapNotes,
+  'chemunit:trapnotes': mergeTrapNotes,       // chemistry concept cards (2026-09-18), asked for from the Ask panel
   'psychu0:fsrs': mergeCardsFsrs,              // Unit 0 research and statistics: same record shape
   'la10vocab1:fsrs': mergeCardsFsrs,           // vocabulary chapter 1: same record shape
   'frchateaux:fsrs': mergeCardsFsrs,           // les chateaux vocabulary: same record shape

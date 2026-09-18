@@ -35,6 +35,10 @@ else, or no header, is refused with 403), and a JSON body:
   notes:      'what the student saved',        optional, 0 to 1500
   thread:     'conversation id',               optional, ^[a-z0-9-]{8,64}$
   turn:       2                                optional, integer 0 to 100
+  facts:      ['Checked by the page: ...'],    optional, at most 6, each 1 to 300
+  tools:      ['practice', 'figs'],            optional, known ids only (TOOL_IDS), each once
+  kinds:      'sigmul: Sig figs when ...',     optional, 0 to 1500, the practice tokens the page can draw
+  check:      true                             optional, the student tapped Check my progress
 }
 ```
 
@@ -231,3 +235,40 @@ Response, always JSON:
 { ok: false, error }                              nothing spent: every ai_begin2 refusal above,
                                                   'bad_request', or 'grader_error'
 ```
+
+## Checked facts, tools and Check my progress (2026-09-18)
+
+**facts** are lines the page worked out itself with the functions that mark the student's answers
+(chemistry: counting significant figures, rounding to n of them, into and out of scientific
+notation, metric prefix and length conversions, Kelvin and Celsius). They go into the question
+message as a `CHECKED` block before `QUESTION`, and `CHECKED_RULE` says they are exact: the answer
+uses them as written and never contradicts, recounts or rounds them another way. A page sends none
+when it recognises nothing.
+
+**tools** are the widgets the page can draw and compute itself, called by one machine line at the
+end of an answer: `Practice:` (a mixed typed and four option set the page marks and records),
+`Steps:` (a fresh worked problem revealed a step at a time), `Cards:`, `Match:`, and the chemistry
+views `Figs:`, `Convert:`, `Sci:` and the vocabulary views `Forms:`, `Spell:`. The page names the
+ids it has; the server writes what each one means (`TOOL_TEXT`), so a request can choose tools but
+never word their instructions. They ride in a third cached system block, `TOOLS`, after the map,
+with the page's `kinds` as `PRACTICE KINDS` when practice or steps is offered; a request without
+tools builds exactly the request it built before. `TOOLS_RULE` allows at most one tool line after
+the Sources line and forbids writing what a tool will show. Nothing a tool shows is generated.
+
+**check** marks a question the student asked by tapping Check my progress. The message says so in
+one line and `CHECK_RULE` asks for a short diagnosis from PROGRESS and a `Practice:` line of three
+to eight tokens from PRACTICE KINDS or the bracketed tokens PROGRESS carries. The page turns that
+line into a Start this practice button; every item in it is drawn and marked by the page.
+
+## The chemistry review form (migration 0029)
+
+`chem/unit-measurement` draws on corpus `chem-unit-form` the way the APUSH materials draw on the
+textbook: only when `ai_begin2` grants the textbook and the page asked for it. When the question or
+the highlight names a form question by number ("question 22", "number 22", "#22", "q22",
+"problem 22", "questions 3 and 4"), `formNumbers` in `ask_prompt.mjs` reads the numbers (at most
+four) and `ai_passages_get(p_corpus, p_ords)` returns those rows exactly, every lettered part, before
+the keyword search, which fills in after them without repeating a row. Form rows travel under their
+own heading ("Review form, question 22"). `FORM_RULE` tells the model to go by a "Correct:" line
+over the answer written on the student's copy, that a written answer without one was checked and
+is right, and that where a long calculation also gives the value to the correct significant
+figures, that value is the one to teach.

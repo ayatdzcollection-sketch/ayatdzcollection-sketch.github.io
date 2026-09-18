@@ -678,7 +678,7 @@ const trapNote = (ts, t, w = 1) => ({ ts, t, w });
 const trapNone = (ts, w = 1) => ({ ts, none: true, w });
 
 test('trapnotes: registered for every page that can write one, and it syncs', () => {
-  for (const ns of ['la10crucible', 'psychu0', 'la10vocab1', 'frchateaux', 'apushp12']) {
+  for (const ns of ['la10crucible', 'psychu0', 'la10vocab1', 'frchateaux', 'apushp12', 'chemunit']) {
     assert.equal(BUILTIN_MERGES[ns + ':trapnotes'], mergeTrapNotes, ns);
     assert.equal(askExcluded(ns, 'trapnotes'), false, ns + ': the notes travel');
   }
@@ -766,4 +766,15 @@ test('trapnotes: tolerates junk from a damaged device', () => {
   assert.deepEqual(m.q11, { ts: 11, t: 'kept' });
   assert.deepEqual(m.q12, { ts: 12, none: true }, 'none wins over text on one entry');
   assert.equal(Object.getPrototypeOf(m), Object.prototype);
+});
+
+test('trapnotes: chemistry concept card notes merge per card like every other page', () => {
+  /* Concept card ids are 'c' plus a base 36 hash; the problem types are never trap notes. */
+  const a = env({ 'chemunit:trapnotes': [{ c1ygsiby: trapNote(10, 'Looks right: phone.\nRuled out: phone.', 2) }, 100] });
+  const b = env({ 'chemunit:trapnotes': [{ c0abc12: trapNone(20, 1) }, 900] });
+  const want = { c0abc12: trapNone(20, 1), c1ygsiby: trapNote(10, 'Looks right: phone.\nRuled out: phone.', 2) };
+  assert.deepEqual(merge(a, b).ns.chemunit.trapnotes.value, want, 'a note from the phone and a marker from the laptop both survive');
+  assert.deepEqual(merge(b, a).ns.chemunit.trapnotes.value, want);
+  assert.deepEqual(mergeTrapNotes({ c1ygsiby: trapNone(5) }, { c1ygsiby: trapNote(9, 'the note') }), { c1ygsiby: trapNote(9, 'the note') }, 'a note beats a paid for marker');
+  assert.equal(askExcluded('chemunit', 'trapnotes'), false, 'the notes travel with the sync code');
 });

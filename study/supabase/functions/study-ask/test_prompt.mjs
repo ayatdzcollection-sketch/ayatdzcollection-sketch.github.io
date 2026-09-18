@@ -18,7 +18,7 @@ assert.equal(CHARS_PER_TOKEN, 3.5);
 assert.deepEqual(LIMITS, {
   body: 327680, material: 120, adminToken: 128, question: 600, quote: 1200, focus: 2500, map: 9000,
   chunks: 14, chunkLabel: 80, chunkText: 2000, chunksTotal: 16000, history: 6, historyText: 1500,
-  progress: 3000, notes: 1500, turn: 100, chunkRef: 60, chapter: 12
+  progress: 3000, notes: 1500, turn: 100, chunkRef: 60, chapter: 12, facts: 6, fact: 300, kinds: 1500
 });
 assert.equal(String(THREAD_RE), String(/^[a-z0-9-]{8,64}$/));
 assert.equal(PRICES, GRADER_PRICES, 'prices must come from the grader module');
@@ -170,7 +170,8 @@ assert.equal(v.turn, 2);
 const minimal = validateAsk({ material: good.material, install: good.install, question: 'x' });
 assert.deepEqual(minimal, {
   material: good.material, install: good.install, adminToken: null, question: 'x', quote: '', focus: '', map: '', chunks: [], history: [],
-  progress: '', notes: '', thread: null, turn: 0, textbook: false, practice: true, widgets: true, math: false, effort: 'normal', chapter: null
+  progress: '', notes: '', thread: null, turn: 0, textbook: false, practice: true, widgets: true, math: false, effort: 'normal', chapter: null,
+  facts: [], tools: [], kinds: '', check: false
 });
 assert.equal(validateAsk({ material: good.material, install: good.install, question: 'x', chunks: [{ label: 'a', text: 'b', ref: 'q:abc_1' }] }).chunks[0].ref, 'q:abc_1');
 assert.equal(validateAsk({ material: good.material, install: good.install, question: 'x', chunks: [{ label: 'a', text: 'b', ref: 'bad ref' }] }), null);
@@ -243,7 +244,8 @@ const biggest = {
   ...good, adminToken: s(128), question: s(600), quote: s(1200), focus: s(2500), map: s(9000),
   chunks: [...at(8, { label: s(80), text: s(2000) }), ...at(6, { label: s(80), text: '' })],
   history: at(6, { role: 'user', text: s(1500) }),
-  progress: s(3000), notes: s(1500), thread: s(64), turn: 100
+  progress: s(3000), notes: s(1500), thread: s(64), turn: 100,
+  facts: at(6, s(300)), tools: ['practice', 'steps', 'cards', 'match', 'figs', 'convert', 'sci', 'forms', 'spell'], kinds: s(1500), check: true
 };
 assert.ok(validateAsk(biggest));
 const jsonChars = JSON.stringify(biggest).length;
@@ -414,3 +416,74 @@ import {
   assert.ok(!DASHES.test(src), 'dash in index.ts');
 }
 console.log('trap notes ok');
+
+/* ---------------------------------------------------------------- CHECKED, TOOLS, Check my progress, the review form */
+import { TOOL_IDS, TOOL_TEXT, toolsText, CHECKED_RULE, TOOLS_RULE, CHECK_RULE, FORM_RULE, formNumbers } from './ask_prompt.mjs';
+{
+  const DASHES = new RegExp('[' + String.fromCharCode(0x2013, 0x2014) + ']');
+  const base = { material: 'chem/unit-measurement', install: '0123456789abcdef0123456789abcdef', question: 'x' };
+  const sys = systemPrompt();
+  for (const rule of [CHECKED_RULE, TOOLS_RULE, CHECK_RULE, FORM_RULE]) {
+    assert.ok(sys.includes(rule), 'a new rule is missing from the system prompt: ' + rule.slice(0, 40));
+    assert.ok(!DASHES.test(rule), 'dash in a new rule');
+  }
+  assert.ok(/CHECKED or the student's own message/.test(sys), 'the numbers rule allows CHECKED');
+  assert.ok(FORM_RULE.includes('Correct:') && FORM_RULE.includes("Answer written on the student's copy") && FORM_RULE.includes('correct significant figures'), 'the review form rule says to go by Correct');
+  assert.ok(CHECK_RULE.includes('PRACTICE KINDS') && CHECK_RULE.includes('square brackets'), 'check my progress builds the set from the kinds');
+
+  /* facts: at most six, each 1 to 300 characters; they go in a CHECKED block before QUESTION. */
+  assert.deepEqual(validateAsk({ ...base, facts: ['a', ' b '] }).facts, ['a', 'b']);
+  for (const bad of [[], {}, 'a', null].slice(1)) assert.equal(validateAsk({ ...base, facts: bad }), null, 'facts must be an array');
+  assert.ok(validateAsk({ ...base, facts: [] }));
+  assert.ok(validateAsk({ ...base, facts: at(6, s(300)) }));
+  for (const bad of [at(7, 'x'), [s(301)], [''], ['  '], [3], [null]]) assert.equal(validateAsk({ ...base, facts: bad }), null, 'bad facts: ' + JSON.stringify(bad).slice(0, 40));
+  const withFacts = buildRequest({ model: 'claude-sonnet-4-6', question: 'how many sig figs in 0.00450', facts: [' Checked by the page: 0.00450 has 3 significant figures. ', ' '] });
+  assert.equal(withFacts.messages[0].content, 'CHECKED\n- Checked by the page: 0.00450 has 3 significant figures.\n\nQUESTION\nhow many sig figs in 0.00450');
+
+  /* tools: known ids only, each once; they add a cached TOOLS block after the map, never to the
+     instructions, so every other material keeps its cache. */
+  assert.deepEqual(TOOL_IDS, ['practice', 'steps', 'cards', 'match', 'figs', 'convert', 'sci', 'forms', 'spell']);
+  for (const id of TOOL_IDS) { assert.ok(TOOL_TEXT[id] && TOOL_TEXT[id].toLowerCase().startsWith(id), 'tool text for ' + id); assert.ok(!DASHES.test(TOOL_TEXT[id])); }
+  assert.deepEqual(validateAsk({ ...base, tools: ['figs', 'practice'] }).tools, ['figs', 'practice']);
+  for (const bad of [['nope'], ['figs', 'figs'], [1], 'figs', {}, at(10, 'figs'), ['Figs']]) assert.equal(validateAsk({ ...base, tools: bad }), null, 'bad tools: ' + JSON.stringify(bad).slice(0, 40));
+  assert.equal(validateAsk({ ...base, kinds: s(1501) }), null);
+  assert.equal(validateAsk({ ...base, kinds: 7 }), null);
+  assert.equal(validateAsk({ ...base, check: 'yes' }), null);
+  assert.equal(validateAsk({ ...base, check: true }).check, true);
+  const plain = buildRequest({ model: 'claude-sonnet-4-6', map: 'm', question: 'q' });
+  const tooled = buildRequest({ model: 'claude-sonnet-4-6', map: 'm', question: 'q', tools: ['practice', 'figs'], kinds: 'sigmul: Sig figs when multiplying' });
+  assert.equal(plain.system.length, 2, 'no tools, no third block');
+  assert.equal(tooled.system.length, 3);
+  assert.deepEqual(tooled.system.slice(0, 2), plain.system, 'the instructions and the map are unchanged by tools');
+  assert.equal(tooled.system[2].text, 'TOOLS\n' + TOOL_TEXT.practice + '\n' + TOOL_TEXT.figs + '\n\nPRACTICE KINDS\nsigmul: Sig figs when multiplying');
+  assert.deepEqual(tooled.system[2].cache_control, { type: 'ephemeral' });
+  assert.equal(toolsText(['figs'], 'kinds'), 'TOOLS\n' + TOOL_TEXT.figs, 'kinds only ride with practice or steps');
+  assert.equal(toolsText([], 'k'), '');
+  assert.equal(buildRequest({ model: 'claude-sonnet-4-6', map: 'm', question: 'q', tools: ['figs'], widgets: false }).system.length, 2, 'widgets off drops the tools');
+  const checkReq = buildRequest({ model: 'claude-sonnet-4-6', question: 'Check my progress', progress: 'p', check: true });
+  assert.equal(checkReq.messages[0].content, 'PROGRESS\np\n\nThe student tapped Check my progress.\n\nQUESTION\nCheck my progress');
+  assert.ok(!DASHES.test(JSON.stringify(tooled)));
+
+  /* A form question by its number. */
+  const nums = (q) => JSON.stringify(formNumbers(q));
+  assert.equal(nums('what is question 22'), '[22]');
+  assert.equal(nums('explain #33 please'), '[33]');
+  assert.equal(nums('q7'), '[7]');
+  assert.equal(nums('questions 3 and 4'), '[3,4]');
+  assert.equal(nums('problem 12, 13, 14, 15, 16'), '[12,13,14,15]', 'at most four');
+  assert.equal(nums('question 33a'), '[33]');
+  assert.equal(nums('the numbers 100 and 250'), '[]', 'a number that is not a question number');
+  assert.equal(nums('how many sig figs in 1500'), '[]');
+  assert.equal(nums('question 900'), '[]');
+
+  /* The Edge Function: the chemistry form is a corpus, fetched by number first, still gated. */
+  const idx = fs.readFileSync(new URL('./index.ts', import.meta.url), 'utf8');
+  assert.ok(/"chem\/unit-measurement": "chem-unit-form"/.test(idx), 'chemistry maps to the review form corpus');
+  assert.ok(/"apush\/period1-2-test": "fraser-1-4"/.test(idx), 'the APUSH textbook is unchanged');
+  const tb = idx.slice(idx.indexOf('body.textbookLabels = [];'), idx.indexOf('return streamAnswer('));
+  assert.ok(tb.includes('body.textbook && begun.textbook === true && corpus'), 'the form is behind the same grant as the textbook');
+  assert.ok(tb.indexOf('ai_passages_get') > 0 && tb.indexOf('ai_passages_get') < tb.indexOf('ai_passages_search'), 'the numbered rows come before the search');
+  assert.ok(tb.includes('p_ords: asked') && tb.includes('formNumbers('), 'fetched by the numbers asked');
+  assert.ok(!DASHES.test(idx));
+}
+console.log('checked facts, tools, check my progress and the review form ok');
