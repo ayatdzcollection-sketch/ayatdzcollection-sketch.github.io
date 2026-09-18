@@ -222,7 +222,10 @@
         <section class="block">
           <h3 class="rubric">Sessions</h3>
           <p class="note" id="sessnote"></p>
-          <button class="btn ghost danger" id="revokeothers" type="button">Sign out every other device</button>
+          <div class="row wrap">
+            <button class="btn ghost" id="revokestale" type="button" hidden>Clear one time sign ins</button>
+            <button class="btn ghost danger" id="revokeothers" type="button">Sign out every other device</button>
+          </div>
         </section>
 
         <section class="block" id="inboxblock">

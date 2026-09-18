@@ -2317,7 +2317,12 @@ function aiLoadPasses() {
       return;
     }
     aiState.passes = Array.isArray(r.passes) ? r.passes : [];
-    aiState.passFeatures = Array.isArray(r.features) ? r.features : [];
+    aiState.passFeatures = Array.isArray(r.features) ? r.features.slice() : [];
+    /* SAQ grading has no feature row (its settings are the global ones), but a code can carry it
+       since 0030, so it gets a switch on every code like the rest. */
+    if (!aiState.passFeatures.some(function (f) { return f && f.id === 'saq'; })) {
+      aiState.passFeatures.push({ id: 'saq', name: 'SAQ grading' });
+    }
     aiState.passErr = '';
     var serverNow = Date.parse(r.now);
     aiState.passSkew = isFinite(serverNow) ? serverNow - Date.now() : 0;
@@ -2861,18 +2866,40 @@ function initAdmin() {
     });
   });
 
-  StudyAuth.admin.sessions().then(function (r) {
-    if (r && r.ok) {
-      var n = r.sessions.length;
-      var admins = r.sessions.filter(function (s) { return s.role === 'admin'; }).length;
-      $('sessnote').textContent = n + ' active device' + (n === 1 ? '' : 's') +
-        ' (' + admins + ' admin, ' + (n - admins) + ' viewer).';
-    }
+  $('revokestale').addEventListener('click', function () {
+    StudyAuth.admin.revokeStale().then(function (r) {
+      if (!r || !r.ok) { $('sessnote').textContent = 'Could not do that.'; return; }
+      paintSessions('Cleared ' + aiCount(r.revoked, 'one time sign in') + '. ');
+    });
   });
+  paintSessions('');
 
   renderAdminItems();
   initInbox();
   initAi();
+}
+
+/* What the count is made of (0031). A session counts as a device only once it has been used
+   again after signing in: the publish and request scripts, and a single visit, sign in once and
+   never come back, and until 2026-09-18 the scripts left one behind on every run. Code holders
+   are counted apart, by the code's name. */
+function paintSessions(lead) {
+  StudyAuth.admin.sessions().then(function (r) {
+    if (!r || !r.ok) return;
+    var mine = [], once = [], codes = [];
+    r.sessions.forEach(function (s) {
+      if (s.code) { codes.push(s); return; }
+      var used = s.is_you || (s.last_seen && new Date(s.last_seen) - new Date(s.created_at) > 5 * 60 * 1000);
+      (used ? mine : once).push(s);
+    });
+    var names = {};
+    codes.forEach(function (s) { var k = s.code_label || 'a deleted code'; names[k] = (names[k] || 0) + 1; });
+    var parts = [aiCount(mine.length, 'device') + ' you have come back to, this one included'];
+    if (once.length) parts.push(aiCount(once.length, 'one time sign in') + ' (script runs and single visits, safe to clear)');
+    if (codes.length) parts.push(Object.keys(names).map(function (k) { return k + ' on ' + aiCount(names[k], 'device'); }).join(', ') + ' with an access code');
+    $('sessnote').textContent = lead + parts.join('; ') + '.';
+    $('revokestale').hidden = !once.length;
+  });
 }
 
 /* ============================================================ offline cache */

@@ -282,6 +282,15 @@ highlight or the keys. The owner panel's Ask row has "Ask button on phones" (mig
 off by default), which puts a corner button on touch screens only, and only for someone who
 may use Ask at that moment.
 
+SAQ grading follows the same rules since migration 0030: owner only, plus any code that carries
+it (its own switch on each code in the panel, or a code that has everything), paid from the
+code's money. A visitor is never shown the grade button.
+
+The owner panel's Sessions line counts devices you have come back to, one time sign ins and code
+holders apart (0031). The publish and request scripts sign out when they finish; before
+2026-09-18 each run left a 180 day session behind, which is what made the count balloon.
+"Clear one time sign ins" removes those leftovers and never touches this device or a code holder.
+
 Identity is a random 32-hex install id generated on the device, so one device's stream stays
 separable from another's without anyone being named. Clearing site data throws it away.
 

@@ -56,8 +56,17 @@ async function adminToken() {
   const r = await rpc('auth_login', { p_code: normalizeCode(code) });
   if (!r.ok) die('That admin code was rejected.');
   if (r.role !== 'admin') die(`That code is a ${r.role} code, not an admin code.`);
+  /* Every sign in makes a session that lives 180 days, and one run of this script used to
+     leave one behind each time: the owner panel's device count grew by one per run and could
+     not be told apart from a real device. The session is closed once the run has finished. */
+  if (!openSession) process.once('beforeExit', async () => {
+    const t = openSession; openSession = null;
+    if (t) { try { await rpc('auth_logout', { p_token: t }); } catch (e) {} }
+  });
+  openSession = r.token;
   return r.token;
 }
+let openSession = null;
 
 const safeName = s => String(s || 'file').replace(/[^A-Za-z0-9._-]+/g, '_').slice(0, 120);
 

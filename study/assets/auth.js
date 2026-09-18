@@ -295,6 +295,11 @@ var StudyAuth = {
     },
     revokeOthers: function () {
       return rpc('admin_revoke_others', { p_token: ls(TOKEN_KEY) });
+    },
+    /* One time sign ins (a script run, a single visit) and anything unseen for 30 days (0031).
+       Never the caller, never a code holder. */
+    revokeStale: function () {
+      return rpc('admin_revoke_stale', { p_token: ls(TOKEN_KEY) });
     }
   }
 };
