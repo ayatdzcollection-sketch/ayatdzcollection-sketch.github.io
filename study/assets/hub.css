@@ -153,6 +153,7 @@ body{
 .retiredwrap summary::-webkit-details-marker{display:none}
 .retiredwrap summary .kname{color:var(--ink3)}
 .retiredwrap[open] summary{border-bottom-color:var(--accent)}
+.retiredwrap.adminretired{margin:18px 0 0}
 
 .empty{margin:26px 0;font-size:15px;color:var(--ink2)}
 

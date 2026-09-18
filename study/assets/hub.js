@@ -611,9 +611,14 @@ function initSyncPanel() {
 
 function renderAdminItems() {
   var box = $('adminitems');
+  /* Retired materials go under one collapsed heading at the foot of this list, the way the hub
+     list files them, so a pile of old hidden ones does not crowd out what is current. Whether
+     it was open survives a redraw, so switching one of them does not snap it shut. */
+  var wasOpen = !!(box.querySelector('.retiredwrap') && box.querySelector('.retiredwrap').open);
   aiPopOpen = null;
   box.innerHTML = '';
   if (!items.length) { box.innerHTML = '<p class="note">Nothing published yet.</p>'; return; }
+  var retiredRows = [];
 
   items.forEach(function (m, i) {
     var row = document.createElement('div');
@@ -638,7 +643,14 @@ function renderAdminItems() {
         b.disabled = true;
         apply(next).then(function (r) {
           b.disabled = false;
-          if (r && r.ok) { b.setAttribute('aria-pressed', String(next)); loadCatalog().then(function () { renderAll($('filter').value.trim().toLowerCase()); }); }
+          if (r && r.ok) {
+            b.setAttribute('aria-pressed', String(next));
+            loadCatalog().then(function () {
+              renderAll($('filter').value.trim().toLowerCase());
+              /* Retiring or un-retiring moves the row between the two lists. */
+              if (label === 'Retired') renderAdminItems();
+            });
+          }
         }, function () { b.disabled = false; });
       });
       return b;
@@ -663,8 +675,20 @@ function renderAdminItems() {
     if (StudyAuth.isAdmin()) togs.appendChild(aiTagControl(m, i));
 
     row.appendChild(name); row.appendChild(togs);
-    box.appendChild(row);
+    if (isRetired(m)) retiredRows.push(row); else box.appendChild(row);
   });
+
+  if (retiredRows.length) {
+    var det = document.createElement('details');
+    det.className = 'retiredwrap adminretired';
+    det.open = wasOpen;
+    var sum = document.createElement('summary');
+    sum.innerHTML = '<span class="kname">Retired</span><span class="kterm"></span>';
+    sum.lastChild.textContent = retiredRows.length + (retiredRows.length === 1 ? ' material' : ' materials');
+    det.appendChild(sum);
+    retiredRows.forEach(function (row) { det.appendChild(row); });
+    box.appendChild(det);
+  }
 }
 
 /* The per material AI control: a small button that says how many features this material
