@@ -2042,6 +2042,40 @@ function aiPassRow(p) {
     btn('Back for 3 hours', function () { return { id: p.id, revive: true, when: 'hours', hours: 3 }; });
     btn('Back until morning', function () { return { id: p.id, revive: true, when: 'morning' }; });
   }
+  /* Show the code itself. Codes minted before it was kept have nothing to show, and say so. */
+  var codeBtn = el('button', 'btn sm out', 'Show the code');
+  codeBtn.type = 'button';
+  var codeOut = el('div', 'aipasscodeout');
+  codeOut.hidden = true;
+  codeBtn.addEventListener('click', function () {
+    if (!codeOut.hidden) { codeOut.hidden = true; codeOut.innerHTML = ''; codeBtn.textContent = 'Show the code'; return; }
+    StudyAuth.admin.ai.passCode(p.id).then(function (r) {
+      codeOut.innerHTML = '';
+      codeOut.hidden = false;
+      if (!r || !r.ok) {
+        codeOut.appendChild(el('p', 'note', r && r.error === 'not_kept'
+          ? 'This one was made before codes were kept, so there is nothing to show. It still works; if you have lost it, make a new one.'
+          : aiRefusal(r)));
+        return;
+      }
+      codeBtn.textContent = 'Hide the code';
+      var row2 = el('div', 'row wrap');
+      row2.appendChild(el('code', 'aipasscode', String(r.code || '')));
+      var copy2 = el('button', 'btn sm', 'Copy');
+      copy2.type = 'button';
+      copy2.addEventListener('click', function () {
+        try { navigator.clipboard.writeText(String(r.code || '')); copy2.textContent = 'Copied'; } catch (e) {}
+      });
+      row2.appendChild(copy2);
+      codeOut.appendChild(row2);
+    }, function (err) {
+      codeOut.hidden = false;
+      codeOut.innerHTML = '';
+      codeOut.appendChild(el('p', 'err-inline', aiErrText(err)));
+    });
+  });
+  ctl.appendChild(codeBtn);
+
   var spendBtn = el('button', 'btn sm out', 'Where it went');
   spendBtn.type = 'button';
   ctl.appendChild(spendBtn);
@@ -2077,6 +2111,8 @@ function aiPassRow(p) {
   when.appendChild(whenSet);
   when.appendChild(el('span', 'note', 'Detroit time'));
   li.appendChild(when);
+
+  li.appendChild(codeOut);
 
   var spend = el('div', 'aipassspend');
   spend.hidden = true;

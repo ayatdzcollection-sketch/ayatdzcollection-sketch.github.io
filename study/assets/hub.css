@@ -560,3 +560,6 @@ textarea.askinput{min-height:80px;padding:10px 12px}
 .aipasswhen{margin-top:8px;align-items:center;gap:8px}
 .aipasswhen .lbl{margin:0;font-size:13px}
 .aipasswhen input{font:inherit;font-size:13px;padding:5px 8px;border:1px solid var(--rule);border-radius:2px;background:var(--sheet);color:inherit}
+
+/* A code read back in the panel, for the ones minted since they are kept. */
+.aipasscodeout{margin-top:8px}

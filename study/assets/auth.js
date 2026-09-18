@@ -256,6 +256,8 @@ var StudyAuth = {
       passSet:    function (o)    { return rpc('admin_pass_set',     { p_token: ls(TOKEN_KEY), p_pass: o }); },
       passDelete: function (id)   { return rpc('admin_pass_delete',  { p_token: ls(TOKEN_KEY), p_id: id }); },
       passSpend:  function (id)   { return rpc('admin_pass_spend',   { p_token: ls(TOKEN_KEY), p_id: id }); },
+      /* The code itself, one at a time, and only for codes minted since 0023 kept it. */
+      passCode:   function (id)   { return rpc('admin_pass_code',    { p_token: ls(TOKEN_KEY), p_id: id }); },
       /* Bug reports (0018). Anyone may file one; only the owner reads them. */
       tickets:    function (status, limit, before) {
         return rpc('admin_tickets', { p_token: ls(TOKEN_KEY), p_status: status || null, p_limit: limit || 30, p_before: before || null });
