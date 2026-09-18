@@ -271,7 +271,7 @@ console.log('study-ask prompt module ok');
 }
 console.log('one list rule everywhere');
 
-/* ---------------------------------------------------------------- trap notes (0024) */
+/* ---------------------------------------------------------------- trap notes (0025) */
 import {
   TRAP_FEATURE, TRAP_MAX_TOKENS, TRAP_MAX_TOKENS_THINKING, TRAP_THINK_OFF, TRAP_LIMITS, TRAP_SYSTEM,
   purposeOf, trapParams, buildTrapRequest, validateTrap, cleanTrapNote

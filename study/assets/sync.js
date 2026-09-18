@@ -346,7 +346,7 @@ function mergeAskNotes(aVal, bVal) {
   return notes.concat(dead).sort(byTime);
 }
 
-/* Trap notes kept beside Ask (the 'trap' feature, migration 0024): { <card id>: { ts, t, w } },
+/* Trap notes kept beside Ask (the 'trap' feature, migration 0025): { <card id>: { ts, t, w } },
  * one per card, written once after the single AI call that card is ever allowed. t is the note
  * (at most 400 characters), ts when it was written, w the option it explains. { ts, none: true }
  * marks a call that was paid for but gave no usable note, so no device pays for that card
@@ -439,7 +439,7 @@ var BUILTIN_MERGES = {
   'psychu0:asknotes': mergeAskNotes,
   'la10vocab1:asknotes': mergeAskNotes,
   'frchateaux:asknotes': mergeAskNotes,
-  'la10crucible:trapnotes': mergeTrapNotes,    // trap notes (0024): one per card, a note beats a marker
+  'la10crucible:trapnotes': mergeTrapNotes,    // trap notes (0025): one per card, a note beats a marker
   'psychu0:trapnotes': mergeTrapNotes,
   'la10vocab1:trapnotes': mergeTrapNotes,
   'frchateaux:trapnotes': mergeTrapNotes,

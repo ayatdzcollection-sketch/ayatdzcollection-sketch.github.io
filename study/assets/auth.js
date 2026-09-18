@@ -106,6 +106,15 @@ var StudyAuth = {
     }, function () { return ls(ROLE_KEY); });
   },
 
+  /* The stored session as the server sees it: role, and for a code that is live right now its
+     label, end and money left. A code that has ended, run dry or been switched off answers with
+     the role alone, which is how a page tells it apart from a live one. */
+  session: function () {
+    var t = ls(TOKEN_KEY);
+    if (!t) return Promise.resolve(null);
+    return rpc('auth_session', { p_token: t }).then(function (r) { return r && r.ok ? r : null; }, function () { return null; });
+  },
+
   signOut: function () {
     var t = ls(TOKEN_KEY);
     lsDel(TOKEN_KEY); lsDel(ROLE_KEY); lsDel(KEY_CACHE);

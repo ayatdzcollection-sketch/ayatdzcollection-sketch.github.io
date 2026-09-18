@@ -380,7 +380,7 @@ export function validateAsk(raw) {
 }
 
 /* ---------------------------------------------------------------- trap notes
-   The 'trap' feature (migration 0024). When a student keeps picking the same wrong option on a
+   The 'trap' feature (migration 0025). When a student keeps picking the same wrong option on a
    multiple choice card, the page asks once, ever, for two short lines from the material's own
    passages: why that option looks right, and the thing that rules it out. The page keeps the
    note with the student's progress and shows it on every later review of that card, so this is

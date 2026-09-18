@@ -667,3 +667,103 @@ test('every material with Ask merges its saved notes the same way', () => {
     assert.equal(BUILTIN_MERGES[ns + ':asknotes'], BUILTIN_MERGES['apushp12:asknotes'], ns);
   }
 });
+
+/* ---------- <ns>:trapnotes ----------
+   Trap notes (migration 0025): { <card id>: { ts, t, w } }, one per card, bought with the one AI
+   call that card is ever allowed. { ts, none: true } marks a call that gave no usable note. Newest
+   write wins would drop a note written on the other device and make someone pay for it again. */
+
+const { mergeTrapNotes } = require('../assets/sync.js');
+const trapNote = (ts, t, w = 1) => ({ ts, t, w });
+const trapNone = (ts, w = 1) => ({ ts, none: true, w });
+
+test('trapnotes: registered for every page that can write one, and it syncs', () => {
+  for (const ns of ['la10crucible', 'psychu0', 'la10vocab1', 'frchateaux', 'apushp12']) {
+    assert.equal(BUILTIN_MERGES[ns + ':trapnotes'], mergeTrapNotes, ns);
+    assert.equal(askExcluded(ns, 'trapnotes'), false, ns + ': the notes travel');
+  }
+});
+
+test('trapnotes: notes from both devices are unioned by card id, whichever envelope is newer', () => {
+  const a = env({ 'la10crucible:trapnotes': [{ q1: trapNote(10, 'phone') }, 100] });
+  const b = env({ 'la10crucible:trapnotes': [{ q2: trapNote(20, 'laptop', 2) }, 900] });
+  const want = { q1: trapNote(10, 'phone'), q2: trapNote(20, 'laptop', 2) };
+  assert.deepEqual(merge(a, b).ns.la10crucible.trapnotes.value, want, 'the older envelope loses no note');
+  assert.deepEqual(merge(b, a).ns.la10crucible.trapnotes.value, want);
+});
+
+test('trapnotes: a note beats a paid for marker, from either side', () => {
+  assert.deepEqual(mergeTrapNotes({ q1: trapNone(5) }, { q1: trapNote(9, 'the note') }), { q1: trapNote(9, 'the note') });
+  assert.deepEqual(mergeTrapNotes({ q1: trapNote(9, 'the note') }, { q1: trapNone(5) }), { q1: trapNote(9, 'the note') });
+  assert.deepEqual(mergeTrapNotes({ q1: trapNone(5) }, { q1: trapNone(3) }), { q1: trapNone(3) }, 'two markers keep the earlier');
+});
+
+test('trapnotes: two notes for one card keep the earlier, then the longer', () => {
+  const early = trapNote(100, 'written first'), late = trapNote(200, 'written second, longer');
+  assert.deepEqual(mergeTrapNotes({ q1: early }, { q1: late }), { q1: early });
+  assert.deepEqual(mergeTrapNotes({ q1: late }, { q1: early }), { q1: early });
+  assert.deepEqual(mergeTrapNotes({ q1: trapNote(7, 'short') }, { q1: trapNote(7, 'short, longer') }), { q1: trapNote(7, 'short, longer') });
+  assert.deepEqual(mergeTrapNotes({ q1: trapNote(7, 'short, longer') }, { q1: trapNote(7, 'short') }), { q1: trapNote(7, 'short, longer') });
+});
+
+test('trapnotes: deterministic, order independent, idempotent, keys sorted', () => {
+  const a = { q9: trapNote(40, 'd'), q1: trapNote(10, 'abc'), q5: trapNone(25) };
+  const b = { q1: trapNote(10, 'xyz'), q3: trapNote(30, 'c'), q5: trapNote(26, 'late note') };
+  const m = mergeTrapNotes(a, b);
+  assert.deepEqual(Object.keys(m), ['q1', 'q3', 'q5', 'q9']);
+  assert.equal(m.q1.t, 'xyz', 'an equal ts, equal length tie is broken the same way from both sides');
+  assert.equal(m.q5.t, 'late note', 'the note replaced the marker');
+  assert.deepEqual(mergeTrapNotes(b, a), m, 'same result in either direction');
+  assert.equal(JSON.stringify(mergeTrapNotes(b, a)), JSON.stringify(m), 'same key order too');
+  assert.deepEqual(mergeTrapNotes(m, a), m, 'idempotent');
+  assert.deepEqual(mergeTrapNotes(m, m), m);
+});
+
+test('trapnotes: inputs are never mutated and entries are copies', () => {
+  const a = deepFreeze({ q1: trapNote(3, 'x'.repeat(500)), q2: trapNone(4) });
+  const b = deepFreeze({ q2: trapNote(5, 'real'), q3: trapNote(1, 'y') });
+  const before = JSON.stringify([a, b]);
+  const m = mergeTrapNotes(a, b);
+  assert.equal(JSON.stringify([a, b]), before);
+  assert.notEqual(m.q3, b.q3, 'entries are copies, not the input objects');
+  assert.equal(m.q1.t.length, 400, 'text is held to 400 characters');
+});
+
+test('trapnotes: capped at 500 cards, oldest markers dropped before any note', () => {
+  const a = {}, b = {};
+  for (let i = 0; i < 480; i++) a['n' + i] = trapNote(1000 + i, 'note ' + i);
+  for (let i = 0; i < 40; i++) b['m' + i] = trapNone(i + 1);
+  const m = mergeTrapNotes(a, b);
+  assert.equal(Object.keys(m).length, 500);
+  assert.equal(Object.values(m).filter(e => e.t).length, 480, 'every note survives');
+  assert.deepEqual(Object.keys(m).filter(k => k[0] === 'm').sort((x, y) => m[x].ts - m[y].ts).map(k => m[k].ts),
+    Array.from({ length: 20 }, (_, i) => i + 21), 'the twenty oldest markers are the ones dropped');
+  const many = {};
+  for (let i = 0; i < 520; i++) many['c' + i] = trapNote(i + 1, 'n');
+  const capped = mergeTrapNotes(many, {});
+  assert.equal(Object.keys(capped).length, 500);
+  assert.equal(capped.c0, undefined, 'the oldest notes go last, and only past the cap');
+  assert.equal(capped.c519.ts, 520);
+  assert.deepEqual(mergeTrapNotes(capped, capped), capped, 'a capped map stays put');
+});
+
+test('trapnotes: tolerates junk from a damaged device', () => {
+  assert.deepEqual(mergeTrapNotes(null, undefined), {});
+  assert.deepEqual(mergeTrapNotes([trapNote(1, 'x')], 'notes'), {}, 'non objects count as empty');
+  assert.deepEqual(mergeTrapNotes(42, { q2: trapNote(2, 'ok') }), { q2: trapNote(2, 'ok') });
+  const junk = JSON.parse('{"__proto__": {"ts": 1, "t": "proto"}}');
+  Object.assign(junk, {
+    'has space': trapNote(1, 'bad id'), ['x'.repeat(81)]: trapNote(1, 'long id'), q1: null, q2: 7, q3: 'text',
+    q4: { t: 'no ts' }, q5: { ts: '5', t: 'string ts' }, q6: { ts: NaN, t: 'nan' }, q7: { ts: Infinity, t: 'inf' },
+    q8: { ts: 8, t: 12345 }, q9: { ts: 9, t: '' }, q10: { ts: 10, t: 'kept', w: 1.5 }, q11: { ts: 11, t: 'kept', w: 11 },
+    q12: { ts: 12, t: 'contradiction', none: true }
+  });
+  const m = mergeTrapNotes(junk, {});
+  assert.deepEqual(Object.keys(m), ['q10', 'q11', 'q12', 'q8', 'q9'], 'only plain ids with a finite numeric ts survive');
+  assert.deepEqual(m.q8, { ts: 8, none: true }, 'a non string text is a marker, not a note');
+  assert.deepEqual(m.q9, { ts: 9, none: true });
+  assert.deepEqual(m.q10, { ts: 10, t: 'kept' }, 'a w that is not a small whole number is dropped');
+  assert.deepEqual(m.q11, { ts: 11, t: 'kept' });
+  assert.deepEqual(m.q12, { ts: 12, none: true }, 'none wins over text on one entry');
+  assert.equal(Object.getPrototypeOf(m), Object.prototype);
+});

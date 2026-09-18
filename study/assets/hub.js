@@ -454,8 +454,14 @@ function doPair() {
          used to guess codes; a plain save code that is not an AI code costs one failed attempt,
          and a device pairs rarely enough that the limit is never near. */
       var signedIn = !!(window.StudyAuth && StudyAuth.token && StudyAuth.token());
+      /* Signed in is not the same as live: a code whose time is up still signs in, so that it
+         wakes up by itself if the owner extends or revives it, but until then its holder is told
+         what any visitor pairing a save code is told, and sees no AI at all. */
       var asCode = (!signedIn && window.StudyAuth && StudyAuth.login)
-        ? StudyAuth.login(typed).then(function (role) { return role; }, function () { return null; })
+        ? StudyAuth.login(typed).then(function (role) {
+            if (!role || !StudyAuth.session) return null;
+            return StudyAuth.session().then(function (s) { return s && s.pass ? role : null; });
+          }, function () { return null; })
         : Promise.resolve(null);
       return asCode.then(function (role) {
         if (role) {

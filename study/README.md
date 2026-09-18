@@ -245,7 +245,9 @@ anonymous line and sends it when there is a connection.
 | Grade, and how long the answer took | Your name, codes, tokens or session |
 | Stability, difficulty and predicted retrievability *before* the review | Your IP address |
 | Days since the last review, reps, lapses, scheduler version | Anything that identifies a person |
-| On a multiple choice miss, the position of the option picked (migration 0009), never any text | |
+| On a miss where options were offered, the position of the option picked (migration 0009), never any text | |
+| Whether the answer was right, apart from the grade, which also carries how hard it was (migration 0027) | |
+| The build of the material: its id and a hash of its own code, so two cached copies can be told apart (migration 0027) | |
 
 ### AI features
 
@@ -267,6 +269,13 @@ owner's daily, monthly and per feature caps nor is stopped by them, so a friend 
 off with money left on their code. The owner panel's Spend group prints the two on separate
 lines, and the Calls list says whose each call was. The master switch and each feature's own
 switch still stop every call, codes included.
+
+When a code ends, is ended early, switched off, emptied or deleted, its holder is a visitor
+again: every AI control leaves an open page within a few seconds of a set end time and within
+two minutes of anything the owner does, the Ask keys stop answering, trap notes are taken off
+the page, and a fresh load shows nothing. The code keeps working as their save code, since
+pairing and sync never depend on it being live, and a code extended or revived later wakes up
+on its own without signing in again.
 
 Identity is a random 32-hex install id generated on the device, so one device's stream stays
 separable from another's without anyone being named. Clearing site data throws it away.

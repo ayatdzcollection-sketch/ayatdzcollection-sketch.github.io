@@ -13,7 +13,7 @@
  *   (0012, the owner only beta), after the answer has finished or failed, and handing the row id
  *   back in the done event as chat_id,
  *   returning a small fixed set of error codes and never the API's own error text,
- *   and, for a request with purpose 'trap' (migration 0024), one short call that is not streamed
+ *   and, for a request with purpose 'trap' (migration 0025), one short call that is not streamed
  *   and answers a two line trap note as JSON, under the 'trap' row's own switch and cap
  *   (trapNote below).
  *
@@ -445,7 +445,7 @@ type TrapBody = {
 /* Two short lines, not streamed. Half the Ask budget is plenty. */
 const TRAP_TIMEOUT_MS = 30_000;
 
-/* The 'trap' feature (migration 0024), for a request with purpose 'trap': the same order as an
+/* The 'trap' feature (migration 0025), for a request with purpose 'trap': the same order as an
    Ask question (validate, ai_begin2 with feature 'trap', one call, ai_end exactly once), then a
    chat row for the owner, best effort, after the ledger is closed. The reply is JSON:
      { ok: true, note, model, cost_cents }
@@ -589,7 +589,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return reply({ ok: false, error: "bad_request" }, 400, origin);
   }
 
-  /* A trap note (purpose 'trap', migration 0024) takes its own short path; an unknown purpose is
+  /* A trap note (purpose 'trap', migration 0025) takes its own short path; an unknown purpose is
      refused like any other bad shape. */
   const purpose = purposeOf(raw);
   if (purpose === null) return reply({ ok: false, error: "bad_request" }, 400, origin);

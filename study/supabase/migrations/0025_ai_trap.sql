@@ -1,4 +1,4 @@
--- 0024_ai_trap.sql
+-- 0025_ai_trap.sql
 --
 -- Trap notes: when a student keeps picking the same wrong option on a multiple choice card,
 -- the page spends one AI call, ever, on that card. It writes two short lines from the

@@ -176,5 +176,58 @@ token: `{"ok":false,"error":"owner_only"}`. Without the Origin header: 403.
 `node test_prompt.mjs` (no API call) asserts the request shape, cache placement, block order
 (PROGRESS and NOTES first), history merging, model params, the validation limits for every field
 including `progress`, `notes`, `thread` and `turn`, the appended PROGRESS, NOTES and Remember
-instructions, and that the prompt has no em or en dash.
+instructions, and that the prompt has no em or en dash. Its trap notes block asserts the trap
+limits, prompt rules, request shape, model params, validation and note cleaning, and that
+`trapNote` in `index.ts` spends against `trap` and closes the ledger.
 `deno check index.ts` needs the npm SDK in the Deno cache.
+
+## Trap notes (purpose `trap`, migration 0025)
+
+When a student keeps picking the same wrong option on a multiple choice card, the page asks this
+function once, ever, for that card: two lines from the material's own passages, why that option
+looks right and the thing that rules it out. The page keeps the note with the student's progress
+under `trapnotes` (merged per card by `assets/sync.js`) and shows it under the why line on every
+later review, with no further call. It is its own row in `study_ai_features` (`trap`, "Trap
+notes"), created by `0025_ai_trap.sql` off, in owner mode, on Ask's model, with a 10 cent daily cap
+and Ask's tag, so it runs wherever Ask is tagged and only once the owner switches it on in the
+panel. Run 0025 before a page asks for one; until then every trap request answers `off`.
+
+Request: the same endpoint and headers as an Ask question, with this body.
+
+```
+{
+  purpose:    'trap',                           required; no purpose, or 'ask', is an Ask question,
+                                                any other purpose is a 400
+  material, install, adminToken                 as for Ask
+  question:   'the card as asked',              required, 1 to 600
+  options:    ['...', '...'],                   required, 2 to 6, each 1 to 300
+  picked:     0,                                required, the option kept being picked (an index)
+  answer:     1,                                required, the key (an index); must differ from picked
+  why:        'the card's own why line',        optional, 0 to 800
+  chunks:     [{ label, text }]                 optional, at most 4; label 0 to 80, text 0 to 1500,
+                                                all text together at most 6000
+}
+```
+
+`ai_begin2('trap', ...)` holds the reserve against the `trap` row's own cap, never Ask's. One call,
+not streamed, 30 seconds, no retry, with the fixed prompt `TRAP_SYSTEM` in `ask_prompt.mjs` (two
+lines starting "Looks right:" and "Ruled out:", under 60 words, only from what was sent, the
+numbers rule and the no dashes rule of the Ask prompt). `max_tokens` is 200. Sonnet 4.6 and Haiku
+4.5 get nothing else; Sonnet 5, Opus 5 and Opus 4.8 get `thinking: { type: 'disabled' }` and
+effort low, so thinking cannot spend the 200; a model id not listed keeps effort low and gets 600.
+`cleanTrapNote` keeps the reply only in that two line shape, drops stray tags, bold and bullets,
+turns a dash between numbers into "to" and any other em or en dash into a comma, and holds each
+line to 180 characters. `ai_end` closes the ledger row once, and one `study_ai_chats` row is
+written after it, best effort, with `feature: 'trap'` (the question, the option kept being picked
+as the quote, the key and why line as the focus, the passage labels and the note).
+
+Response, always JSON:
+
+```
+{ ok: true, note: 'Looks right: ...\nRuled out: ...', model, cost_cents }
+{ ok: false, error, spent: true, cost_cents }     billed: 'refused', or 'bad_note' (a reply that
+                                                  was not two lines); the page stores a marker so
+                                                  the card is never paid for again
+{ ok: false, error }                              nothing spent: every ai_begin2 refusal above,
+                                                  'bad_request', or 'grader_error'
+```
