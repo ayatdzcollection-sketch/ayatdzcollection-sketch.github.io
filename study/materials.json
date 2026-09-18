@@ -75,8 +75,8 @@
           "id": "unit-measurement",
           "ask": true,
           "title": "Measurement and calculations: unit test prep",
-          "blurb": "For the unit test on Tuesday 22 September. Worked problems on fresh numbers every time, twelve types from significant figures to factor-label conversions, with the working revealed a step at a time and the cancelled units struck through; a rule card for every topic with a drill under it; 110 concept cards; the teacher's own worked examples; notecards that keep every problem you miss; and a printable problem set with the key held back.",
-          "tags": ["measurement", "significant-figures", "scientific-notation", "dimensional-analysis", "density", "unit-test"],
+          "blurb": "Calibrated to the teacher's review form, question by question. Worked problems on fresh numbers every time, seventeen types from significant figures to factor-label conversions, now including prefixes and SI units written out by name and symbol, numbers written to a stated number of significant digits, derived units on a product, and the three student trials table the accuracy and precision questions are built on. The working is revealed a step at a time with the cancelled units struck through; a rule card for every topic with a drill under it; 144 concept cards, every one of them tied to something the form asks; the teacher's worked examples and the four the form is hardest on; notecards that keep every problem you miss; and a printable problem set with the key held back.",
+          "tags": ["measurement", "significant-figures", "scientific-notation", "dimensional-analysis", "density", "metric-prefixes", "si-units", "accuracy-and-precision", "unit-test"],
           "added": "2026-09-10",
           "sort": 5
         }
