@@ -2287,6 +2287,29 @@ function aiPassRow(p) {
 
   li.appendChild(row.err);
   sw.addEventListener('click', function () { aiPassSet({ id: p.id, enabled: !aiSwitchOn(sw) }, row); });
+  /* Everything under the name folds away. A code that is not live starts folded, so ended and
+     switched off codes stop filling the list; a live one starts open. Opening or folding one is
+     remembered while the panel stays open, so a repaint after a change does not undo it. */
+  var body = el('div', 'aipassbody');
+  while (head.nextSibling) body.appendChild(head.nextSibling);
+  li.appendChild(body);
+  li.appendChild(row.err);   /* outside the fold: the switch by the name can fail while folded */
+  var open = aiState.passOpen && Object.prototype.hasOwnProperty.call(aiState.passOpen, p.id)
+    ? aiState.passOpen[p.id] : state === 'live';
+  var fold = el('button', 'aipassfold', open ? 'Hide' : 'Show');
+  fold.type = 'button';
+  fold.setAttribute('aria-expanded', String(open));
+  fold.setAttribute('aria-label', (open ? 'Hide' : 'Show') + ' the controls for ' + (p.label || 'this code'));
+  body.hidden = !open;
+  fold.addEventListener('click', function () {
+    var now = body.hidden;
+    body.hidden = !now;
+    (aiState.passOpen = aiState.passOpen || {})[p.id] = now;
+    fold.textContent = now ? 'Hide' : 'Show';
+    fold.setAttribute('aria-expanded', String(now));
+    fold.setAttribute('aria-label', (now ? 'Hide' : 'Show') + ' the controls for ' + (p.label || 'this code'));
+  });
+  head.insertBefore(fold, sw);
   return li;
 }
 

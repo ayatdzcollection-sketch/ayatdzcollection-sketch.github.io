@@ -531,6 +531,10 @@ textarea.askinput{min-height:80px;padding:10px 12px}
 .aipasslist{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:10px}
 .aipass{border:1px solid var(--rule);border-radius:2px;padding:10px 12px;background:var(--sheet)}
 .aipasshead{display:flex;align-items:flex-start;gap:12px}
+.aipassfold{flex:0 0 auto;min-height:38px;padding:0 10px;border:1px solid var(--rule);border-radius:2px;
+  background:transparent;color:var(--ink2);font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;
+  text-transform:uppercase;cursor:pointer}
+.aipassfold[aria-expanded="true"]{border-color:var(--ink3)}
 .aipasswho{flex:1;min-width:0}
 .aipasstitle{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .aipassname{font-weight:600}
