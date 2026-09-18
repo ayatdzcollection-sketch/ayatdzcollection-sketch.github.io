@@ -12,7 +12,10 @@
  *   saving the question and the answer once, as one study_ai_chats row through ai_chat_log
  *   (0012, the owner only beta), after the answer has finished or failed, and handing the row id
  *   back in the done event as chat_id,
- *   returning a small fixed set of error codes and never the API's own error text.
+ *   returning a small fixed set of error codes and never the API's own error text,
+ *   and, for a request with purpose 'trap' (migration 0024), one short call that is not streamed
+ *   and answers a two line trap note as JSON, under the 'trap' row's own switch and cap
+ *   (trapNote below).
  *
  * What it never does: log, echo or return the API key; log the question, the passages or the
  * answer, or store them anywhere but that one row; leave a pending ledger row open; let a failed
@@ -33,6 +36,7 @@ import {
   DEFAULT_MODEL,
   EFFORTS,
   FEATURE,
+  LIST_RE,
   INTENT_EFFORT,
   INTENT_MODEL,
   INTENT_SYSTEM,
@@ -42,6 +46,12 @@ import {
   buildRequest,
   estimateInputTokens,
   validateAsk,
+  TRAP_FEATURE,
+  TRAP_MAX_TOKENS,
+  buildTrapRequest,
+  cleanTrapNote,
+  purposeOf,
+  validateTrap,
 } from "./ask_prompt.mjs";
 
 /* ---------------------------------------------------------------- configuration */
@@ -100,7 +110,6 @@ type AskBody = {
 
 /* A request for a list, a set to copy out, or everything on a topic. Those answers are long by
    nature, and the 700 token answer was cutting them in half. */
-const LIST_RE = /\b(list|every (term|word|item|one)|all (the )?(terms|words|items)|everything|quizlet|flash ?cards?|copy and paste|copy ?paste|export)\b/i;
 const LIST_MAX_TOKENS = 1500;
 
 /* Which private textbook corpus (migration 0013) a material may draw on. */
@@ -260,6 +269,10 @@ function streamAnswer(body: AskBody, callId: unknown, model: string, origin: str
           focus: body.focus.slice(0, LIMITS.focus),
           /* Every chunk's label in the order sent, so Sources: [n] in the answer is labels[n - 1]. */
           labels: body.chunks.map((c) => c.label),
+          /* How much care it was given, and what auto read the question as. Which code asked is
+             not sent from here: ai_chat_log reads it from the call the ledger opened. */
+          level: body.level,
+          intent: body.intent,
           progress: body.progress.length > 0,
           notes: body.notes.length > 0,
           answer: answer.slice(0, ANSWER_MAX),
@@ -414,6 +427,143 @@ function streamAnswer(body: AskBody, callId: unknown, model: string, origin: str
   }
 }
 
+/* ---------------------------------------------------------------- trap notes */
+
+type TrapBody = {
+  purpose: "trap";
+  material: string;
+  install: string;
+  adminToken: string | null;
+  question: string;
+  options: string[];
+  picked: number;
+  answer: number;
+  why: string;
+  chunks: Array<{ label: string; text: string }>;
+};
+
+/* Two short lines, not streamed. Half the Ask budget is plenty. */
+const TRAP_TIMEOUT_MS = 30_000;
+
+/* The 'trap' feature (migration 0024), for a request with purpose 'trap': the same order as an
+   Ask question (validate, ai_begin2 with feature 'trap', one call, ai_end exactly once), then a
+   chat row for the owner, best effort, after the ledger is closed. The reply is JSON:
+     { ok: true, note, model, cost_cents }
+     { ok: false, error, spent: true, cost_cents }   the call was billed: a refusal, or a reply
+                                                     that is not a two line note
+     { ok: false, error }                             nothing was spent
+   spent is what lets the page record that this card has had its one call. */
+async function trapNote(raw: unknown, req: Request, origin: string): Promise<Response> {
+  const body = validateTrap(raw) as TrapBody | null;
+  if (!body) return reply({ ok: false, error: "bad_request" }, 400, origin);
+
+  if (!ANTHROPIC_API_KEY || !SUPABASE_URL || !SERVICE_ROLE_KEY) {
+    console.error("study-ask: a required environment variable is not set");
+    return reply({ ok: false, error: "grader_error" }, 200, origin);
+  }
+
+  let begun: Record<string, unknown> | null;
+  try {
+    begun = (await rpc("ai_begin2", {
+      p_feature: TRAP_FEATURE,
+      p_material: body.material,
+      p_install: body.install,
+      p_ip: clientIp(req),
+      p_token: body.adminToken,
+      p_in: estimateInputTokens(buildTrapRequest({ model: DEFAULT_MODEL, ...body })),
+      p_out: TRAP_MAX_TOKENS,
+    })) as Record<string, unknown> | null;
+  } catch {
+    console.error("study-ask: ai_begin2 failed (trap)");
+    return reply({ ok: false, error: "grader_error" }, 200, origin);
+  }
+  if (!begun || begun.ok !== true) {
+    /* off, unavailable, owner_only, the caps and the pass refusals pass through, as for Ask. */
+    const error = begun && typeof begun.error === "string" && begun.error ? begun.error : "grader_error";
+    return reply({ ok: false, error }, 200, origin);
+  }
+  const callId = begun.call_id;
+  if (typeof callId !== "number" && typeof callId !== "string") {
+    console.error("study-ask: ai_begin2 returned no call id (trap)");
+    return reply({ ok: false, error: "grader_error" }, 200, origin);
+  }
+  const model = typeof begun.model === "string" && begun.model ? begun.model : DEFAULT_MODEL;
+
+  const started = Date.now();
+  let status: EndStatus = "error";
+  let usage: Usage = {};
+  let text = "";
+  let note: string | null = null;
+  let error = "grader_error";
+  try {
+    const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
+    const msg = (await client.messages.create(
+      { model, ...buildTrapRequest({ model, ...body }) } as never,
+      { timeout: TRAP_TIMEOUT_MS, maxRetries: CALL_MAX_RETRIES },
+    )) as unknown as { content: Array<{ type: string; text?: string }>; stop_reason: string | null; usage?: Usage };
+    if (msg.usage) usage = { ...msg.usage };
+    text = (msg.content || []).map((c) => (c.type === "text" && typeof c.text === "string" ? c.text : "")).join("");
+    if (msg.stop_reason === "refusal") {
+      status = "refused";
+      error = "refused";
+    } else {
+      status = "ok";
+      note = cleanTrapNote(text, msg.stop_reason);
+      if (!note) error = "bad_note";
+    }
+  } catch (e) {
+    /* Nothing from the error reaches the client or the log. */
+    status = "error";
+    let kind = "unknown";
+    if (e instanceof APIUserAbortError) kind = "aborted";
+    else if (e instanceof RateLimitError) kind = "rate_limit";
+    else if (e instanceof APIConnectionError) kind = "connection";
+    else if (e instanceof APIError) kind = `api_${e.status ?? 0}`;
+    console.error(`study-ask: trap call failed (${kind})`);
+  }
+
+  const inTok = effectiveIn(usage);
+  const outTok = num(usage.output_tokens);
+  try {
+    await rpc("ai_end", { p_call_id: callId, p_status: status, p_in: inTok, p_out: outTok, p_latency: Date.now() - started });
+  } catch {
+    console.error("study-ask: ai_end failed (trap)");
+  }
+
+  /* The owner reads trap notes beside the Ask chats (0012, feature 'trap'): the question, the
+     option kept being picked as the quote, the key and why line as the focus, the passage labels
+     and the note. A failed row never changes what the student gets. */
+  keepAlive(
+    rpc("ai_chat_log", {
+      p_row: {
+        call_id: callId,
+        material: body.material,
+        feature: TRAP_FEATURE,
+        install: body.install,
+        turn: 0,
+        question: body.question,
+        quote: body.options[body.picked],
+        focus: ("Key: " + body.options[body.answer] + (body.why ? ". Why: " + body.why : "")).slice(0, LIMITS.focus),
+        labels: body.chunks.map((c) => c.label),
+        progress: false,
+        notes: false,
+        answer: (note ?? text).slice(0, ANSWER_MAX),
+        status,
+        model,
+        input_tokens: inTok,
+        output_tokens: outTok,
+        cost_microcents: costMicrocents(model, inTok, outTok),
+        latency_ms: Date.now() - started,
+      },
+    }).catch(() => console.error("study-ask: ai_chat_log failed (trap)")),
+  );
+
+  const cents = costCents(model, inTok, outTok);
+  if (note) return reply({ ok: true, note, model, cost_cents: cents }, 200, origin);
+  const spent = status !== "error" || inTok + outTok > 0;
+  return reply(spent ? { ok: false, error, spent: true, cost_cents: cents } : { ok: false, error }, 200, origin);
+}
+
 /* ---------------------------------------------------------------- the handler */
 
 Deno.serve(async (req: Request): Promise<Response> => {
@@ -438,6 +588,12 @@ Deno.serve(async (req: Request): Promise<Response> => {
   } catch {
     return reply({ ok: false, error: "bad_request" }, 400, origin);
   }
+
+  /* A trap note (purpose 'trap', migration 0024) takes its own short path; an unknown purpose is
+     refused like any other bad shape. */
+  const purpose = purposeOf(raw);
+  if (purpose === null) return reply({ ok: false, error: "bad_request" }, 400, origin);
+  if (purpose === "trap") return await trapNote(raw, req, origin);
 
   const body = validateAsk(raw) as AskBody | null;
   if (!body) return reply({ ok: false, error: "bad_request" }, 400, origin);

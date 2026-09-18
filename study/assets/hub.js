@@ -2096,6 +2096,50 @@ function aiPassRow(p) {
   });
   ctl.appendChild(codeBtn);
 
+  /* Their conversations, in full. The owner tells a code holder these are kept when handing the
+     code over; this is where they are read. Newest first, with a copy of the lot as JSON for
+     taking them elsewhere. */
+  var chatsBtn = el('button', 'btn sm out', 'Their chats');
+  chatsBtn.type = 'button';
+  var chatsOut = el('div', 'aipasschats');
+  chatsOut.hidden = true;
+  chatsBtn.addEventListener('click', function () {
+    if (!chatsOut.hidden) { chatsOut.hidden = true; chatsOut.innerHTML = ''; chatsBtn.textContent = 'Their chats'; return; }
+    chatsOut.hidden = false;
+    chatsOut.innerHTML = '';
+    chatsOut.appendChild(el('p', 'note', 'Loading.'));
+    StudyAuth.admin.ai.passChats(p.id).then(function (r) {
+      chatsOut.innerHTML = '';
+      if (!r || !r.ok) { chatsOut.appendChild(el('p', 'err-inline', aiRefusal(r))); return; }
+      var list = Array.isArray(r.chats) ? r.chats : [];
+      chatsBtn.textContent = 'Hide chats';
+      if (!list.length) { chatsOut.appendChild(el('p', 'note', 'No chats yet.')); return; }
+      var head = el('div', 'row wrap');
+      head.appendChild(el('span', 'note', (r.total || list.length) + ' in all' + (list.length < (r.total || 0) ? ', newest ' + list.length + ' shown' : '')));
+      var dump = el('button', 'btn sm', 'Copy all as JSON');
+      dump.type = 'button';
+      dump.addEventListener('click', function () {
+        try { navigator.clipboard.writeText(JSON.stringify(list, null, 1)); dump.textContent = 'Copied'; } catch (e) {}
+      });
+      head.appendChild(dump);
+      chatsOut.appendChild(head);
+      list.forEach(function (c) {
+        var item = el('div', 'aipasschat');
+        item.appendChild(el('p', 'aifeatmeta', aiWhen(c.created_at) + ' · ' + (c.material || '') +
+          (c.level ? ' · ' + (c.level === 'careful' ? 'thorough' : c.level) : '') + (c.intent ? ' (' + c.intent + ')' : '') +
+          (c.rating === 1 ? ' · rated helpful' : c.rating === -1 ? ' · rated not helpful' : '')));
+        if (c.quote) item.appendChild(el('p', 'aipasschatq', 'Selected: ' + c.quote));
+        item.appendChild(el('p', 'aipasschatq', 'Q: ' + (c.question || '')));
+        item.appendChild(el('p', 'aipasschata', c.answer || (c.status !== 'ok' ? '(no answer: ' + c.status + ')' : '')));
+        chatsOut.appendChild(item);
+      });
+    }, function (err) {
+      chatsOut.innerHTML = '';
+      chatsOut.appendChild(el('p', 'err-inline', aiErrText(err)));
+    });
+  });
+  ctl.appendChild(chatsBtn);
+
   var spendBtn = el('button', 'btn sm out', 'Where it went');
   spendBtn.type = 'button';
   ctl.appendChild(spendBtn);
@@ -2133,6 +2177,7 @@ function aiPassRow(p) {
   li.appendChild(when);
 
   li.appendChild(codeOut);
+  li.appendChild(chatsOut);
 
   var spend = el('div', 'aipassspend');
   spend.hidden = true;

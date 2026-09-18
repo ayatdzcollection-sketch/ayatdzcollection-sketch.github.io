@@ -346,6 +346,68 @@ function mergeAskNotes(aVal, bVal) {
   return notes.concat(dead).sort(byTime);
 }
 
+/* Trap notes kept beside Ask (the 'trap' feature, migration 0024): { <card id>: { ts, t, w } },
+ * one per card, written once after the single AI call that card is ever allowed. t is the note
+ * (at most 400 characters), ts when it was written, w the option it explains. { ts, none: true }
+ * marks a call that was paid for but gave no usable note, so no device pays for that card
+ * again. Newest write wins would drop a note written on the other device, so:
+ *   - union by card id;
+ *   - a note beats a marker; two notes for one card (both devices asked before a sync) keep the
+ *     earlier, then the longer, then the greater string, so both merge directions agree;
+ *   - at most 500 cards: the oldest markers go first, then the oldest notes.
+ * Entries without a finite numeric ts and ids that are not plain card ids are dropped, entries
+ * are copied, and neither input is touched. Keys come out sorted. */
+var TRAP_NOTES_CAP = 500;
+var TRAP_NOTE_MAX = 400;
+var TRAP_ID_RE = /^[A-Za-z0-9_.:-]{1,80}$/;
+
+function cleanTrapEntry(e) {
+  if (!e || typeof e !== 'object' || Array.isArray(e) || typeof e.ts !== 'number' || !isFinite(e.ts)) return null;
+  var t = typeof e.t === 'string' ? e.t.slice(0, TRAP_NOTE_MAX) : '';
+  var out = { ts: e.ts };
+  if (t && e.none !== true) out.t = t; else out.none = true;
+  if (typeof e.w === 'number' && e.w >= 0 && e.w < 10 && Math.floor(e.w) === e.w) out.w = e.w;
+  return out;
+}
+
+function betterTrap(a, b) {
+  if (!!a.t !== !!b.t) return a.t ? a : b;
+  if (a.ts !== b.ts) return a.ts < b.ts ? a : b;
+  var at = a.t || '', bt = b.t || '';
+  if (at.length !== bt.length) return at.length > bt.length ? a : b;
+  return canonicalJson(a) >= canonicalJson(b) ? a : b;
+}
+
+function mergeTrapNotes(aVal, bVal) {
+  var byId = Object.create(null);
+  var take = function (m) {
+    if (!m || typeof m !== 'object' || Array.isArray(m)) return;
+    for (var id in m) {
+      if (!Object.prototype.hasOwnProperty.call(m, id) || id === '__proto__' || !TRAP_ID_RE.test(id)) continue;
+      var e = cleanTrapEntry(m[id]);
+      if (!e) continue;
+      byId[id] = byId[id] ? betterTrap(byId[id], e) : e;
+    }
+  };
+  take(aVal);
+  take(bVal);
+
+  var ids = Object.keys(byId);
+  var over = ids.length - TRAP_NOTES_CAP;
+  if (over > 0) {
+    ids.sort(function (x, y) {
+      var ex = byId[x], ey = byId[y];
+      if (!!ex.t !== !!ey.t) return ex.t ? 1 : -1;
+      if (ex.ts !== ey.ts) return ex.ts - ey.ts;
+      return x < y ? -1 : x > y ? 1 : 0;
+    });
+    for (var i = 0; i < over; i++) delete byId[ids[i]];
+  }
+  var out = {};
+  Object.keys(byId).sort().forEach(function (id) { out[id] = byId[id]; });
+  return out;
+}
+
 /* Material-specific merges that the HUB also needs live here rather than being registered
  * by the material. The hub merges on load, on visibility and during import preview, all
  * while the quiz page may be closed. See README, "Adding a material". */
@@ -377,6 +439,11 @@ var BUILTIN_MERGES = {
   'psychu0:asknotes': mergeAskNotes,
   'la10vocab1:asknotes': mergeAskNotes,
   'frchateaux:asknotes': mergeAskNotes,
+  'la10crucible:trapnotes': mergeTrapNotes,    // trap notes (0024): one per card, a note beats a marker
+  'psychu0:trapnotes': mergeTrapNotes,
+  'la10vocab1:trapnotes': mergeTrapNotes,
+  'frchateaux:trapnotes': mergeTrapNotes,
+  'apushp12:trapnotes': mergeTrapNotes,
   'psychu0:fsrs': mergeCardsFsrs,              // Unit 0 research and statistics: same record shape
   'la10vocab1:fsrs': mergeCardsFsrs,           // vocabulary chapter 1: same record shape
   'frchateaux:fsrs': mergeCardsFsrs,           // les chateaux vocabulary: same record shape
@@ -553,6 +620,7 @@ if (typeof module !== 'undefined' && module.exports) {
     mergeMax: mergeMax,
     mergeSettings: mergeSettings,
     mergeAskNotes: mergeAskNotes,
+    mergeTrapNotes: mergeTrapNotes,
     mergeExams: mergeExams,
     makeEventMerge: makeEventMerge,
     pickStateRecord: pickStateRecord,

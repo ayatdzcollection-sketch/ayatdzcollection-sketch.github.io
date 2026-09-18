@@ -563,3 +563,9 @@ textarea.askinput{min-height:80px;padding:10px 12px}
 
 /* A code read back in the panel, for the ones minted since they are kept. */
 .aipasscodeout{margin-top:8px}
+
+/* A code holder's conversations, read in the panel. */
+.aipasschats{margin-top:8px;display:grid;gap:8px;max-height:520px;overflow:auto}
+.aipasschat{border-top:1px solid var(--rule);padding-top:8px}
+.aipasschatq{margin:4px 0 0;font-size:13.5px;font-weight:600;white-space:pre-wrap}
+.aipasschata{margin:4px 0 0;font-size:13.5px;white-space:pre-wrap;color:var(--meta)}
