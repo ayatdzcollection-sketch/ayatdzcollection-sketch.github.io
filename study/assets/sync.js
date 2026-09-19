@@ -42,6 +42,7 @@ var SYNC_EXCLUDE = {
   'fraser12': ['ui'],
   'fraser34': ['ui'],
   'fraserall': ['ui'],
+  'fraser5': ['ui'],
   'chemunit': ['ui'],
   'acct1': ['ui'],
   'la10crucible': ['ui'],
@@ -64,6 +65,19 @@ var SYNC_EXCLUDE = {
  * device, parked material keys in the sync row, and undid every sign-out: the next merge
  * found the keys on the server and put them back. */
 var SYNC_EXCLUDE_NS = { 'auth': true };
+
+/* Progress that lives inside a device-only key. 'ui' stays on the device because it is mostly
+ * which tab was open, but three materials also keep real progress in it: the Crucible stretches
+ * walked, the APUSH must knows marked, the vocabulary words met. Those fields alone travel,
+ * under the virtual key 'uimarks', which exists in the envelope and never in localStorage: it is
+ * read out of 'ui' when the envelope is built and written back into 'ui' when one is applied. */
+var SYNC_PARTIAL_KEY = 'uimarks';
+var SYNC_PARTIAL = {
+  'la10crucible': ['walked'],
+  'apushp12': ['mk'],
+  'la10vocab1': ['intro', 'ready'],
+  'fraser5': ['mk', 'tfb']
+};
 
 /* Captured at parse time: document.currentScript is only valid while this script runs. */
 var SCRIPT_URL = (typeof document !== 'undefined' && document.currentScript)
@@ -135,7 +149,7 @@ function defaultMerge(aVal, bVal, aM, bM) {
 /* FSRS state records are only coherent as a set: stability, difficulty, last, reps and
  * lapses are computed together from one review. Merging them field-by-field would invent
  * a review that never happened, so the whole record travels or it does not. */
-function pickStateRecord(a, b) {
+function pickStateRecord(a, b, aM, bM) {
   var aLast = (a && typeof a.last === 'number') ? a.last : 0;
   var bLast = (b && typeof b.last === 'number') ? b.last : 0;
   if (aLast > bLast) return a;
@@ -144,6 +158,10 @@ function pickStateRecord(a, b) {
   var bReps = (b && typeof b.reps === 'number') ? b.reps : 0;
   if (aReps > bReps) return a;
   if (bReps > aReps) return b;
+  /* Same review on both sides, yet the records differ: something that is not a review was
+   * changed (a star set or cleared on a notecard). The side written later carries it. Without
+   * this the winner was decided by spelling, so a star could not be taken off once synced. */
+  if (typeof aM === 'number' && typeof bM === 'number' && aM !== bM) return aM > bM ? a : b;
   return canonicalJson(a) >= canonicalJson(b) ? a : b;
 }
 
@@ -176,7 +194,8 @@ var mergeExams = makeEventMerge(20);
 /* Every spaced-repetition material shares one shape: a map of records keyed by whatever
    it drills, plus exams and a quiz date. Only the name of that map differs, so the rule
    is written once and bound to each material's field. */
-function makeFsrsMerge(mapField) {
+function makeFsrsMerge(mapField, extras, examCap) {
+  var examMerge = examCap ? makeEventMerge(examCap) : mergeExams;
   return function (aVal, bVal, aM, bM) {
     var a = aVal && typeof aVal === 'object' ? aVal : {};
     var b = bVal && typeof bVal === 'object' ? bVal : {};
@@ -189,7 +208,7 @@ function makeFsrsMerge(mapField) {
     for (name in bMap) {
       if (!Object.prototype.hasOwnProperty.call(bMap, name)) continue;
       out[name] = Object.prototype.hasOwnProperty.call(aMap, name)
-        ? pickStateRecord(aMap[name], bMap[name])
+        ? pickStateRecord(aMap[name], bMap[name], aM, bM)
         : bMap[name];
     }
 
@@ -201,14 +220,55 @@ function makeFsrsMerge(mapField) {
     else quizDate = (String(a.quizDate) >= String(b.quizDate)) ? a.quizDate : b.quizDate;
 
     var merged = { quizDate: typeof quizDate === 'undefined' ? null : quizDate,
-                   exams: mergeExams(a.exams, b.exams) };
+                   exams: examMerge(a.exams, b.exams) };
     merged[mapField] = out;
+
+    /* Anything else a material keeps beside its cards. This rule used to rebuild the value from
+     * the three fields it knew, so every other field was deleted by the first merge after it was
+     * written, on the device that wrote it as well: the chemistry unit lost its list of missed
+     * problems, its start date and its last worked time that way, every sync. A field with a rule
+     * in extras is merged by it; any other field is kept, from the only side that has it or
+     * else from the side written later. */
+    var seen = {}, f;
+    for (f in a) if (Object.prototype.hasOwnProperty.call(a, f)) seen[f] = true;
+    for (f in b) if (Object.prototype.hasOwnProperty.call(b, f)) seen[f] = true;
+    for (f in seen) {
+      if (!Object.prototype.hasOwnProperty.call(seen, f)) continue;
+      if (f === mapField || f === 'quizDate' || f === 'exams' || f === '__proto__') continue;
+      var inA = Object.prototype.hasOwnProperty.call(a, f), inB = Object.prototype.hasOwnProperty.call(b, f);
+      if (extras && typeof extras[f] === 'function') merged[f] = extras[f](inA ? a[f] : undefined, inB ? b[f] : undefined, aM, bM);
+      else if (!inB) merged[f] = a[f];
+      else if (!inA) merged[f] = b[f];
+      else merged[f] = defaultMerge(a[f], b[f], aM, bM);
+    }
     return merged;
   };
 }
 
+/* Rules for the extra fields. A missed list is a log kept newest first: union by ts, newest kept.
+ * A start date is the earliest day either device saw. A last worked time is the latest. */
+function makeNewestFirstLog(cap) {
+  var inner = makeEventMerge(cap);
+  return function (aArr, bArr) { return inner(aArr, bArr).reverse(); };
+}
+function mergeEarliestDay(aVal, bVal) {
+  var a = typeof aVal === 'string' && aVal ? aVal : null, b = typeof bVal === 'string' && bVal ? bVal : null;
+  if (!a || !b) return a || b || null;
+  return a <= b ? a : b;
+}
+function mergeLatestNumber(aVal, bVal) {
+  var a = typeof aVal === 'number' && isFinite(aVal) ? aVal : 0, b = typeof bVal === 'number' && isFinite(bVal) ? bVal : 0;
+  return Math.max(a, b);
+}
+
 var mergeFsrsValue  = makeFsrsMerge('states');   // fifty-states
 var mergeCardsFsrs  = makeFsrsMerge('cards');    // periodic table, both Fraser reading quizzes
+/* The chemistry unit keeps 30 problem sets, the 40 newest missed problems, the day it was
+ * started, when it was last worked and which topics it has taught, all inside its fsrs value. */
+var mergeChemUnitFsrs = makeFsrsMerge('cards', {
+  missed: makeNewestFirstLog(40), start: mergeEarliestDay, lastWorked: mergeLatestNumber,
+  taught: mergeMarks                 // topics whose rule card the feed has shown: a union
+}, 30);
 
 function mergeRegionsDone(aVal, bVal) {
   var seen = {};
@@ -408,6 +468,26 @@ function mergeTrapNotes(aVal, bVal) {
   return out;
 }
 
+/* Marks are maps, sometimes nested ({ section: { index: 1 } }, { word: timestamp }). Union all
+ * the way down. Where both sides hold a leaf: two timestamps keep the later, anything else is
+ * taken from the side written later, a tie by spelling so both merge directions agree. */
+function mergeMarks(aVal, bVal, aM, bM) {
+  var isMap = function (v) { return !!v && typeof v === 'object' && !Array.isArray(v); };
+  if (!isMap(aVal) || !isMap(bVal)) {
+    if (typeof aVal === 'undefined' || aVal === null) return typeof bVal === 'undefined' ? null : bVal;
+    if (typeof bVal === 'undefined' || bVal === null) return aVal;
+    if (typeof aVal === 'number' && typeof bVal === 'number' && aVal > 1e11 && bVal > 1e11) return Math.max(aVal, bVal);
+    return defaultMerge(aVal, bVal, aM || 0, bM || 0);
+  }
+  var out = {}, k;
+  for (k in aVal) if (Object.prototype.hasOwnProperty.call(aVal, k) && k !== '__proto__') out[k] = aVal[k];
+  for (k in bVal) {
+    if (!Object.prototype.hasOwnProperty.call(bVal, k) || k === '__proto__') continue;
+    out[k] = Object.prototype.hasOwnProperty.call(aVal, k) ? mergeMarks(aVal[k], bVal[k], aM, bM) : bVal[k];
+  }
+  return out;
+}
+
 /* Material-specific merges that the HUB also needs live here rather than being registered
  * by the material. The hub merges on load, on visibility and during import preview, all
  * while the quiz page may be closed. See README, "Adding a material". */
@@ -422,7 +502,8 @@ var BUILTIN_MERGES = {
   'fraser12:fsrs': mergeCardsFsrs,
   'fraser34:fsrs': mergeCardsFsrs,
   'fraserall:fsrs': mergeCardsFsrs,
-  'chemunit:fsrs': mergeCardsFsrs,             // chemistry unit test: problem types and concept cards
+  'fraser5:fsrs': mergeCardsFsrs,               // Fraser chapter 5 reading quiz: same record shape
+  'chemunit:fsrs': mergeChemUnitFsrs,          // chemistry unit test: cards, plus missed, start, lastWorked
   'acct1:fsrs': mergeCardsFsrs,                // accounting 1, topic 1: the same card schedule
   'la10crucible:fsrs': mergeCardsFsrs,         // The Crucible, acts 1 and 2: same record shape
   'apushp12:fsrs': mergeCardsFsrs,             // APUSH period 1 and 2 test: same record shape
@@ -430,6 +511,7 @@ var BUILTIN_MERGES = {
   'fraser12:asknotes': mergeAskNotes,
   'fraser34:asknotes': mergeAskNotes,
   'fraserall:asknotes': mergeAskNotes,
+  'fraser5:asknotes': mergeAskNotes,
   'acct1:asknotes': mergeAskNotes,
   'chemunit:asknotes': mergeAskNotes,
   'periodic:asknotes': mergeAskNotes,
@@ -445,9 +527,23 @@ var BUILTIN_MERGES = {
   'frchateaux:trapnotes': mergeTrapNotes,
   'apushp12:trapnotes': mergeTrapNotes,
   'chemunit:trapnotes': mergeTrapNotes,       // chemistry concept cards (2026-09-18), asked for from the Ask panel
+  /* Every kit material writes trap notes; these had no rule, so a note paid for on one device
+   * could be dropped by the other device's later write. */
+  'periodic:trapnotes': mergeTrapNotes,
+  'fraser12:trapnotes': mergeTrapNotes,
+  'fraser34:trapnotes': mergeTrapNotes,
+  'fraserall:trapnotes': mergeTrapNotes,
+  'fraser5:trapnotes': mergeTrapNotes,
+  'acct1:trapnotes': mergeTrapNotes,
+  'alg2u1:trapnotes': mergeTrapNotes,
+  'fifty-states:trapnotes': mergeTrapNotes,
   'psychu0:fsrs': mergeCardsFsrs,              // Unit 0 research and statistics: same record shape
   'la10vocab1:fsrs': mergeCardsFsrs,           // vocabulary chapter 1: same record shape
   'frchateaux:fsrs': mergeCardsFsrs,           // les chateaux vocabulary: same record shape
+  'la10crucible:uimarks': mergeMarks,          // progress kept inside the device-only ui key
+  'apushp12:uimarks': mergeMarks,
+  'la10vocab1:uimarks': mergeMarks,
+  'fraser5:uimarks': mergeMarks,
   'periodic:best': mergeMax,                   // sprint best: the higher score, from either device
   'periodic:setsDone': mergeRegionsDone,     // legacy ids; kept so an old device loses nothing
   'periodic:started': mergeNumberSet,        // set-size-independent successor to setsDone
@@ -616,12 +712,15 @@ if (typeof module !== 'undefined' && module.exports) {
     mergeFsrsValue: mergeFsrsValue,
     mergeCardsFsrs: mergeCardsFsrs,
     makeFsrsMerge: makeFsrsMerge,
+    mergeChemUnitFsrs: mergeChemUnitFsrs,
     mergeRegionsDone: mergeRegionsDone,
     mergeNumberSet: mergeNumberSet,
     mergeMax: mergeMax,
     mergeSettings: mergeSettings,
     mergeAskNotes: mergeAskNotes,
     mergeTrapNotes: mergeTrapNotes,
+    mergeMarks: mergeMarks,
+    SYNC_PARTIAL: SYNC_PARTIAL,
     mergeExams: mergeExams,
     makeEventMerge: makeEventMerge,
     pickStateRecord: pickStateRecord,
@@ -756,7 +855,36 @@ function collectEntries() {
       }
     }
   }
-  return { entries: entries, mtimes: meta.mtimes };
+  /* The travelling part of each device-only 'ui' value, as the virtual key. */
+  var mtimes = meta.mtimes;
+  for (var pns in SYNC_PARTIAL) {
+    if (!Object.prototype.hasOwnProperty.call(SYNC_PARTIAL, pns)) continue;
+    var uiRaw = rawGet(storageKey(pns, 'ui'));
+    if (uiRaw === null) continue;
+    var ui = null;
+    try { ui = JSON.parse(uiRaw); } catch (e2) { ui = null; }
+    if (!ui || typeof ui !== 'object') continue;
+    var part = {}, any = false, fields = SYNC_PARTIAL[pns];
+    for (var fi = 0; fi < fields.length; fi++) {
+      var fv = ui[fields[fi]];
+      if (fv && typeof fv === 'object') { part[fields[fi]] = fv; any = true; }
+    }
+    if (!any) continue;
+    var vk = pns + ':' + SYNC_PARTIAL_KEY;
+    entries[vk] = part;
+    if (mtimes === meta.mtimes) { mtimes = {}; for (var mk in meta.mtimes) if (Object.prototype.hasOwnProperty.call(meta.mtimes, mk)) mtimes[mk] = meta.mtimes[mk]; }
+    /* Stamped by set() when the marks themselves move, so switching tabs does not look like
+     * new progress. Marks older than this rule fall back to when 'ui' was last written. */
+    mtimes[vk] = typeof meta.mtimes[vk] === 'number' ? meta.mtimes[vk]
+      : (typeof meta.mtimes[pns + ':ui'] === 'number' ? meta.mtimes[pns + ':ui'] : 0);
+  }
+  return { entries: entries, mtimes: mtimes };
+}
+
+function partialOf(ns, ui) {
+  var fields = SYNC_PARTIAL[ns] || [], part = {};
+  if (ui && typeof ui === 'object') for (var i = 0; i < fields.length; i++) if (ui[fields[i]] && typeof ui[fields[i]] === 'object') part[fields[i]] = ui[fields[i]];
+  return canonicalJson(part);
 }
 
 function buildEnvelope() {
@@ -776,6 +904,20 @@ function applyEnvelope(env) {
       if (!Object.prototype.hasOwnProperty.call(nsNames[ns], key)) continue;
       if (isExcluded(ns, key)) continue;
       var entry = nsNames[ns][key];
+      if (key === SYNC_PARTIAL_KEY && SYNC_PARTIAL[ns]) {
+        /* Written back into the device's own 'ui', the listed fields only. */
+        var uiKey = storageKey(ns, 'ui'), uiNow = null;
+        try { uiNow = JSON.parse(rawGet(uiKey) || 'null'); } catch (e) { uiNow = null; }
+        if (!uiNow || typeof uiNow !== 'object' || Array.isArray(uiNow)) uiNow = {};
+        var pf = SYNC_PARTIAL[ns], pv = entry.value && typeof entry.value === 'object' ? entry.value : {}, moved = false;
+        for (var pi = 0; pi < pf.length; pi++) {
+          if (!pv[pf[pi]] || typeof pv[pf[pi]] !== 'object') continue;
+          if (canonicalJson(uiNow[pf[pi]]) === canonicalJson(pv[pf[pi]])) continue;
+          uiNow[pf[pi]] = pv[pf[pi]]; moved = true;
+        }
+        if (moved) { rawSet(uiKey, JSON.stringify(uiNow)); touched.push({ ns: ns, key: 'ui', value: uiNow }); }
+        continue;
+      }
       var sk = storageKey(ns, key);
       var next = JSON.stringify(entry.value);
       if (rawGet(sk) !== next) {
@@ -1550,11 +1692,18 @@ var StudyStore = {
     var ns = defaultNamespace;
     if (!ns) return Promise.resolve(false);
     try {
+      var marksMoved = false;
+      if (key === 'ui' && SYNC_PARTIAL[ns]) {
+        var before = null;
+        try { before = JSON.parse(rawGet(storageKey(ns, key)) || 'null'); } catch (e0) { before = null; }
+        marksMoved = partialOf(ns, before) !== partialOf(ns, value);
+      }
       rawSet(storageKey(ns, key), JSON.stringify(value));
       var meta = readMeta();
       meta.mtimes[ns + ':' + key] = Date.now();
+      if (marksMoved) meta.mtimes[ns + ':' + SYNC_PARTIAL_KEY] = Date.now();
       writeMeta(meta);
-      if (!isExcluded(ns, key)) {
+      if (!isExcluded(ns, key) || marksMoved) {
         markDirty();
         schedulePush();
       }

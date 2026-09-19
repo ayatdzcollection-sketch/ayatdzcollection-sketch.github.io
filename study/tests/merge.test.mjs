@@ -663,7 +663,7 @@ test('asknotes: tolerates junk from a damaged device', () => {
 });
 
 test('every material with Ask merges its saved notes the same way', () => {
-  for (const ns of ['apushp12', 'fraser12', 'fraser34', 'fraserall', 'acct1', 'chemunit', 'periodic', 'alg2u1', 'fifty-states', 'la10crucible', 'psychu0', 'la10vocab1', 'frchateaux']) {
+  for (const ns of ['apushp12', 'fraser12', 'fraser34', 'fraserall', 'fraser5', 'acct1', 'chemunit', 'periodic', 'alg2u1', 'fifty-states', 'la10crucible', 'psychu0', 'la10vocab1', 'frchateaux']) {
     assert.equal(BUILTIN_MERGES[ns + ':asknotes'], BUILTIN_MERGES['apushp12:asknotes'], ns);
   }
 });
@@ -777,4 +777,67 @@ test('trapnotes: chemistry concept card notes merge per card like every other pa
   assert.deepEqual(merge(b, a).ns.chemunit.trapnotes.value, want);
   assert.deepEqual(mergeTrapNotes({ c1ygsiby: trapNone(5) }, { c1ygsiby: trapNote(9, 'the note') }), { c1ygsiby: trapNote(9, 'the note') }, 'a note beats a paid for marker');
   assert.equal(askExcluded('chemunit', 'trapnotes'), false, 'the notes travel with the sync code');
+});
+
+/* ---------- 2026-09-19: nothing a material keeps may be deleted by a merge ---------- */
+
+const { mergeMarks, mergeChemUnitFsrs, mergeCardsFsrs: cardsMerge, BUILTIN_MERGES: REG, SYNC_PARTIAL } = require('../assets/sync.js');
+
+test('fsrs: a field the rule does not know is kept, not deleted', () => {
+  const a = { cards: { x: rec(1, 5, 100, 1, 0) }, quizDate: null, exams: [], streak: 4 };
+  const b = { cards: { y: rec(1, 5, 200, 1, 0) }, quizDate: null, exams: [] };
+  assert.equal(cardsMerge(a, b, 10, 20).streak, 4, 'only one side has it');
+  assert.equal(cardsMerge(b, a, 20, 10).streak, 4);
+  assert.equal(cardsMerge({ ...a, streak: 4 }, { ...b, streak: 9 }, 10, 20).streak, 9, 'both: the later write');
+  assert.equal(cardsMerge({ ...b, streak: 9 }, { ...a, streak: 4 }, 20, 10).streak, 9);
+});
+
+test('chemunit fsrs: missed, start and lastWorked survive a sync, from both devices', () => {
+  const phone = { cards: { 'g:metric': rec(1, 5, 100, 1, 0) }, quizDate: '2026-09-22', exams: [{ ts: 1, pts: 3, of: 5 }],
+    missed: [{ ts: 300, type: 'metric', q: 'p2' }, { ts: 100, type: 'sigadd', q: 'p1' }], start: '2026-09-12', lastWorked: 300 };
+  const laptop = { cards: { c1: rec(2, 5, 250, 2, 0) }, quizDate: '2026-09-22', exams: [{ ts: 2, pts: 4, of: 5 }],
+    missed: [{ ts: 200, type: 'density', q: 'l1' }, { ts: 100, type: 'sigadd', q: 'p1' }], start: '2026-09-15', lastWorked: 250 };
+  const m = mergeChemUnitFsrs(phone, laptop, 300, 250), r = mergeChemUnitFsrs(laptop, phone, 250, 300);
+  assert.deepEqual(m, r, 'both directions agree');
+  assert.deepEqual(m.missed.map(x => x.ts), [300, 200, 100], 'union by ts, newest first as the page keeps it');
+  assert.equal(m.start, '2026-09-12');
+  assert.equal(m.lastWorked, 300);
+  assert.equal(m.exams.length, 2);
+  assert.deepEqual(Object.keys(m.cards).sort(), ['c1', 'g:metric']);
+  /* The bug itself: a device merging with its own copy on the server lost the list. */
+  assert.deepEqual(mergeChemUnitFsrs(phone, phone, 300, 300).missed, phone.missed);
+  assert.equal(REG['chemunit:fsrs'], mergeChemUnitFsrs);
+  const many = Array.from({ length: 60 }, (_, i) => ({ ts: 1000 + i }));
+  assert.equal(mergeChemUnitFsrs({ cards: {}, missed: many.slice(0, 40) }, { cards: {}, missed: many.slice(20) }, 1, 2).missed.length, 40);
+  assert.equal(mergeChemUnitFsrs({ cards: {}, exams: many.slice(0, 30) }, { cards: {}, exams: [] }, 1, 2).exams.length, 30, 'the page keeps 30 sets');
+});
+
+test('fsrs: a star taken off after a sync stays off', () => {
+  const starred = { ...rec(1, 5, 100, 1, 0), star: 1 }, cleared = { ...rec(1, 5, 100, 1, 0), star: 0 };
+  assert.equal(cardsMerge({ cards: { c: cleared } }, { cards: { c: starred } }, 900, 100).cards.c.star, 0);
+  assert.equal(cardsMerge({ cards: { c: starred } }, { cards: { c: cleared } }, 100, 900).cards.c.star, 0);
+  assert.equal(cardsMerge({ cards: { c: starred } }, { cards: { c: rec(1, 5, 500, 2, 0) } }, 900, 100).cards.c.last, 500, 'a real review still wins');
+});
+
+test('uimarks: progress kept in the device-only ui key is a union', () => {
+  const a = { mk: { s1: { 0: 1, 1: 0 } }, walked: { a1: 1758000000000 } };
+  const b = { mk: { s1: { 1: 1, 2: 1 }, s2: { 0: 1 } }, walked: { a1: 1758000900000, a2: 1758000500000 } };
+  const want = { mk: { s1: { 0: 1, 1: 1, 2: 1 }, s2: { 0: 1 } }, walked: { a1: 1758000900000, a2: 1758000500000 } };
+  assert.deepEqual(mergeMarks(a, b, 100, 900), want);
+  assert.deepEqual(mergeMarks(b, a, 900, 100), want);
+  assert.deepEqual(mergeMarks(a, undefined, 1, 2), a);
+  for (const ns of Object.keys(SYNC_PARTIAL)) assert.equal(REG[ns + ':uimarks'], mergeMarks, ns);
+});
+
+test('every material that writes trap notes or ask notes has a rule for them', () => {
+  for (const ns of ['periodic', 'fraserall', 'fraser5', 'acct1', 'chemunit', 'la10crucible', 'apushp12', 'psychu0', 'la10vocab1', 'frchateaux']) {
+    assert.equal(typeof REG[ns + ':trapnotes'], 'function', ns + ' trapnotes');
+    assert.equal(typeof REG[ns + ':asknotes'], 'function', ns + ' asknotes');
+    assert.equal(typeof REG[ns + ':fsrs'], 'function', ns + ' fsrs');
+  }
+});
+
+test('chemunit fsrs: topics taught on either device stay taught', () => {
+  const m = mergeChemUnitFsrs({ cards: {}, taught: { sci: 1758000000000 } }, { cards: {}, taught: { den: 1758000500000, sci: 1758000900000 } }, 5, 9);
+  assert.deepEqual(m.taught, { sci: 1758000900000, den: 1758000500000 });
 });

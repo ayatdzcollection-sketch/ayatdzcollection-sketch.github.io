@@ -186,6 +186,10 @@ device synced.
 |---|---|
 | FSRS records (`states`, `cards`) | Per item, keep the record with the larger `last`; tie goes to more `reps`. The whole record travels together, never field by field. |
 | `exams` | Concatenate, dedupe by `ts`, keep the newest 20. |
+| Anything else inside an `fsrs` value | Kept. A field with its own rule is merged by it (chemistry: `missed` is a union by `ts`, newest 40; `start` the earliest day; `lastWorked` the latest; `taught` a union; 30 `exams`). Any other field comes from the only side that has it, else the later write. Until 2026-09-19 the rule rebuilt the value from `cards`, `quizDate` and `exams` alone, so every other field was deleted by the first sync after it was written, on the device that wrote it too. |
+| Two records for one card with the same `last` and `reps` | The later write. Something that is not a review changed (a star), and spelling used to decide it, so a star could not be cleared. |
+| Progress inside the device only `ui` key | The listed fields alone travel, as a virtual key `uimarks` that exists in the envelope and never in `localStorage` (`SYNC_PARTIAL` in `sync.js`): Crucible stretches walked, APUSH must knows, vocabulary words met. A union all the way down; two timestamps keep the later. The tab, the deck position and the rest of `ui` stay per device. A new material that keeps progress in `ui` must list the field there. |
+| `trapnotes`, `asknotes` | Per card and per note unions, registered for every namespace that writes them. |
 | `tests` | The same rule with a deeper history: newest 40, so a week of drilling cannot evict a graded result. |
 | `quizDate` | From whichever side wrote that key more recently. |
 | `regionsDone`, `setsDone` | Set union over strings. Legacy: `setsDone` ids encoded a fixed set size. |
