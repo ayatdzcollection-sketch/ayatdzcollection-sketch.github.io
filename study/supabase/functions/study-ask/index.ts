@@ -166,6 +166,9 @@ const CORPUS: Record<string, string> = {
   "apush/fraser-ch1-2": "fraser-1-4",
   "apush/fraser-ch3-4": "fraser-1-4",
   "apush/fraser-review": "fraser-1-4",
+  /* Fraser chapter 5 from the student's photos (load_ch5_sources.mjs), one chapter, cited by
+     part and book page. */
+  "apush/fraser-ch5": "fraser-5",
   /* The chemistry teacher's review form (migration 0029): one row per question with the key. */
   "chem/unit-measurement": "chem-unit-form",
 };
