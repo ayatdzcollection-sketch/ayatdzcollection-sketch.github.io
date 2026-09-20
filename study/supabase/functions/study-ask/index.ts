@@ -101,6 +101,11 @@ type AskBody = {
   practice: boolean;
   widgets: boolean;
   math: boolean;
+  marks: boolean;
+  rules: string;
+  items: number;
+  checkwork: boolean;
+  suggestNotes: boolean;
   effort: string;
   level?: string;
   intent?: string;
@@ -116,6 +121,10 @@ type AskBody = {
 /* A request for a list, a set to copy out, or everything on a topic. Those answers are long by
    nature, and the 700 token answer was cutting them in half. */
 const LIST_MAX_TOKENS = 1500;
+
+/* A pasted set of questions, answered one by one. The ceiling is the careful level's own, so no
+   request can buy more room than the most careful single answer already gets. */
+const ITEMS_MAX_TOKENS = 2400;
 
 /* Which private textbook corpus (migration 0013) a material may draw on. */
 const CORPUS: Record<string, string> = {
@@ -299,6 +308,17 @@ function streamAnswer(body: AskBody, callId: unknown, model: string, origin: str
           output_tokens: outTok,
           cost_microcents: costMicrocents(model, inTok, outTok),
           latency_ms: Date.now() - started,
+          /* How this answer was reached and what it carried (migration 0032). The cache figures
+             go in on their own as well as folded into input_tokens, because the cold question
+             penalty cannot be measured from the blended number. */
+          route: model.includes("haiku") ? "haiku" : "sonnet",
+          chunks_sent: body.chunks.length,
+          cache_read: num(usage.cache_read_input_tokens),
+          cache_write: num(usage.cache_creation_input_tokens),
+          marks: body.marks === true,
+          has_rules: body.rules.length > 0,
+          items: body.items,
+          source_step: body.textbookLabels && body.textbookLabels.length ? "textbook" : "material",
         },
       })) as Record<string, unknown> | null;
       if (res && res.ok === true && (typeof res.id === "number" || typeof res.id === "string")) return res.id;
@@ -328,6 +348,13 @@ function streamAnswer(body: AskBody, callId: unknown, model: string, origin: str
          request cannot buy a longer answer than the words it asked for. */
       if (LIST_RE.test(body.question)) {
         request.max_tokens = Math.max(Number(request.max_tokens) || 0, LIST_MAX_TOKENS);
+      }
+      /* A pasted worksheet needs a line or two an item. The room is worked out here from what the
+         student actually typed, not from a number the page sent, so a forged request cannot buy a
+         longer answer than its own question asks for, and it never goes past the careful ceiling. */
+      if (body.items >= 2) {
+        const perItem = Math.min(body.items, Math.ceil(body.question.length / 40));
+        request.max_tokens = Math.min(ITEMS_MAX_TOKENS, Math.max(Number(request.max_tokens) || 0, 400 + perItem * 180));
       }
       const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
       const stream = client.messages.stream(

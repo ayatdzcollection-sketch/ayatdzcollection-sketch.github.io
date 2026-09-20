@@ -16,9 +16,10 @@ assert.equal(RESERVE_IN, 8300);
 assert.equal(RESERVE_OUT, 700);
 assert.equal(CHARS_PER_TOKEN, 3.5);
 assert.deepEqual(LIMITS, {
-  body: 327680, material: 120, adminToken: 128, question: 600, quote: 1200, focus: 2500, map: 9000,
-  chunks: 14, chunkLabel: 80, chunkText: 2000, chunksTotal: 16000, history: 6, historyText: 1500,
-  progress: 3000, notes: 1500, turn: 100, chunkRef: 60, chapter: 12, facts: 6, fact: 300, kinds: 1500
+  body: 655360, material: 120, adminToken: 128, question: 4000, quote: 1200, focus: 2500, map: 9000,
+  chunks: 14, chunkLabel: 80, chunkText: 2000, chunksTotal: 16000, history: 12, historyText: 4000,
+  progress: 3000, notes: 1500, turn: 100, chunkRef: 60, chapter: 12, facts: 6, fact: 300, kinds: 1500,
+  rules: 600, items: 20
 });
 assert.equal(String(THREAD_RE), String(/^[a-z0-9-]{8,64}$/));
 assert.equal(PRICES, GRADER_PRICES, 'prices must come from the grader module');
@@ -170,8 +171,8 @@ assert.equal(v.turn, 2);
 const minimal = validateAsk({ material: good.material, install: good.install, question: 'x' });
 assert.deepEqual(minimal, {
   material: good.material, install: good.install, adminToken: null, question: 'x', quote: '', focus: '', map: '', chunks: [], history: [],
-  progress: '', notes: '', thread: null, turn: 0, textbook: false, practice: true, widgets: true, math: false, effort: 'normal', chapter: null,
-  facts: [], tools: [], kinds: '', check: false
+  progress: '', notes: '', thread: null, turn: 0, textbook: false, practice: true, widgets: true, math: false, marks: false, effort: 'normal', chapter: null,
+  facts: [], tools: [], kinds: '', check: false, rules: '', items: 0, checkwork: false, suggestNotes: true
 });
 assert.equal(validateAsk({ material: good.material, install: good.install, question: 'x', chunks: [{ label: 'a', text: 'b', ref: 'q:abc_1' }] }).chunks[0].ref, 'q:abc_1');
 assert.equal(validateAsk({ material: good.material, install: good.install, question: 'x', chunks: [{ label: 'a', text: 'b', ref: 'bad ref' }] }), null);
@@ -207,9 +208,9 @@ assert.equal(validateAsk({ material: good.material, install: good.install, quest
 const s = (n) => 'a'.repeat(n);
 const at = (n, per) => Array.from({ length: n }, () => per);
 const ok = [
-  { question: s(600) }, { quote: s(1200) }, { focus: s(2500) }, { map: s(9000) }, { adminToken: s(128) },
+  { question: s(4000) }, { quote: s(1200) }, { focus: s(2500) }, { map: s(9000) }, { adminToken: s(128) },
   { chunks: at(14, { label: s(80), text: s(1142) }) }, { chunks: at(8, { text: s(2000) }) },
-  { history: at(6, { role: 'user', text: s(1500) }) }, { question: '  ' + s(600) + '  ' }, { chunks: [{ text: '' }] },
+  { history: at(12, { role: 'user', text: s(4000) }) }, { question: '  ' + s(4000) + '  ' }, { chunks: [{ text: '' }] },
   { progress: s(3000) }, { notes: s(1500) }, { progress: '' }, { notes: '  ' }, { progress: undefined }, { notes: undefined },
   { thread: s(8) }, { thread: s(64) }, { thread: '0-9-a-z-' }, { thread: undefined },
   { turn: 0 }, { turn: 100 }, { turn: undefined }
@@ -221,13 +222,13 @@ const bad = [
   { material: 'apush' }, { material: 'Apush/p1' }, { material: 'apush/p1/x' }, { material: 3 }, { material: 'a/' + s(119) },
   { install: 'abc' }, { install: '0123456789ABCDEF0123456789ABCDEF' }, { install: undefined },
   { adminToken: s(129) }, { adminToken: 5 }, { adminToken: null },
-  { question: '' }, { question: '   ' }, { question: s(601) }, { question: undefined }, { question: 7 },
+  { question: '' }, { question: '   ' }, { question: s(4001) }, { question: undefined }, { question: 7 },
   { quote: s(1201) }, { quote: null }, { focus: s(2501) }, { focus: {} }, { map: s(9001) }, { map: [] },
   { chunks: {} }, { chunks: at(15, { text: 'x' }) }, { chunks: [null] }, { chunks: [['x']] },
   { chunks: [{ label: s(81), text: 'x' }] }, { chunks: [{ label: 'l', text: s(2001) }] }, { chunks: [{ label: 'l' }] },
   { chunks: at(9, { text: s(2000) }) },
-  { history: {} }, { history: at(7, { role: 'user', text: 'x' }) }, { history: [{ role: 'system', text: 'x' }] },
-  { history: [{ role: 'user', text: s(1501) }] }, { history: [{ role: 'user' }] }, { history: [null] },
+  { history: {} }, { history: at(13, { role: 'user', text: 'x' }) }, { history: [{ role: 'system', text: 'x' }] },
+  { history: [{ role: 'user', text: s(4001) }] }, { history: [{ role: 'user' }] }, { history: [null] },
   { progress: s(3001) }, { progress: null }, { progress: 3 }, { notes: s(1501) }, { notes: null }, { notes: ['n'] },
   { thread: s(7) }, { thread: s(65) }, { thread: 'ABCDEFGH' }, { thread: 'abcd efgh' }, { thread: 'abcdefg_' }, { thread: '' },
   { thread: null }, { thread: 12345678 }, { thread: ' abcdefgh' },
@@ -241,9 +242,9 @@ for (const patch of bad) {
 /* The largest valid request still fits the body cap with every character escaped, and its
    reserve stays under the 60000 token ceiling ai_begin2 clips to. */
 const biggest = {
-  ...good, adminToken: s(128), question: s(600), quote: s(1200), focus: s(2500), map: s(9000),
+  ...good, adminToken: s(128), question: s(4000), quote: s(1200), focus: s(2500), map: s(9000),
   chunks: [...at(8, { label: s(80), text: s(2000) }), ...at(6, { label: s(80), text: '' })],
-  history: at(6, { role: 'user', text: s(1500) }),
+  history: at(12, { role: 'user', text: s(4000) }),
   progress: s(3000), notes: s(1500), thread: s(64), turn: 100,
   facts: at(6, s(300)), tools: ['practice', 'steps', 'cards', 'match', 'figs', 'convert', 'sci', 'forms', 'spell'], kinds: s(1500), check: true
 };
@@ -442,10 +443,10 @@ import { TOOL_IDS, TOOL_TEXT, toolsText, CHECKED_RULE, TOOLS_RULE, CHECK_RULE, F
 
   /* tools: known ids only, each once; they add a cached TOOLS block after the map, never to the
      instructions, so every other material keeps its cache. */
-  assert.deepEqual(TOOL_IDS, ['practice', 'steps', 'cards', 'match', 'figs', 'convert', 'sci', 'forms', 'spell']);
+  assert.deepEqual(TOOL_IDS, ['practice', 'steps', 'cards', 'match', 'figs', 'convert', 'sci', 'forms', 'spell', 'choose']);
   for (const id of TOOL_IDS) { assert.ok(TOOL_TEXT[id] && TOOL_TEXT[id].toLowerCase().startsWith(id), 'tool text for ' + id); assert.ok(!DASHES.test(TOOL_TEXT[id])); }
   assert.deepEqual(validateAsk({ ...base, tools: ['figs', 'practice'] }).tools, ['figs', 'practice']);
-  for (const bad of [['nope'], ['figs', 'figs'], [1], 'figs', {}, at(10, 'figs'), ['Figs']]) assert.equal(validateAsk({ ...base, tools: bad }), null, 'bad tools: ' + JSON.stringify(bad).slice(0, 40));
+  for (const bad of [['nope'], ['figs', 'figs'], [1], 'figs', {}, at(11, 'figs'), ['Figs']]) assert.equal(validateAsk({ ...base, tools: bad }), null, 'bad tools: ' + JSON.stringify(bad).slice(0, 40));
   assert.equal(validateAsk({ ...base, kinds: s(1501) }), null);
   assert.equal(validateAsk({ ...base, kinds: 7 }), null);
   assert.equal(validateAsk({ ...base, check: 'yes' }), null);
@@ -487,3 +488,105 @@ import { TOOL_IDS, TOOL_TEXT, toolsText, CHECKED_RULE, TOOLS_RULE, CHECK_RULE, F
   assert.ok(!DASHES.test(idx));
 }
 console.log('checked facts, tools, check my progress and the review form ok');
+
+/* ------------------------------------------- long messages, chat rules, marking, Note, Choose */
+import {
+  BEYOND_CORE, SPLIT_RULE, MARKS_CITE, MARKS_OUTSIDE, CAPABILITY_RULE,
+  CHAT_RULES_RULE, ITEMS_RULE, CHECKWORK_RULE, NOTE_RULE
+} from './ask_prompt.mjs';
+{
+  const DASHES = new RegExp('[' + String.fromCharCode(0x2013, 0x2014) + ']');
+  const base = { material: 'apush/period1-2-test', install: '0123456789abcdef0123456789abcdef', question: 'x' };
+  const s = (n) => 'a'.repeat(n);
+
+  for (const rule of [BEYOND_CORE, SPLIT_RULE, MARKS_CITE, MARKS_OUTSIDE, CAPABILITY_RULE, CHAT_RULES_RULE, ITEMS_RULE, CHECKWORK_RULE, NOTE_RULE]) {
+    assert.ok(!DASHES.test(rule), 'dash in a new rule');
+  }
+
+  /* What the assistant may say about itself is always in, whichever way beyond is set: the
+     refusal that started this round came from having no way to say "I cannot browse". */
+  for (const beyond of [false, true]) for (const marks of [false, true]) {
+    const p = systemPrompt({ beyond, marks });
+    assert.ok(p.includes(CAPABILITY_RULE), 'the capability rule must always be in');
+    assert.ok(p.includes(NOTE_RULE), 'the Note rule must always be in');
+    assert.ok(p.includes('cannot search the web'), 'it must be able to say it cannot browse');
+    assert.ok(!DASHES.test(p));
+  }
+  /* Beyond off: nothing of its own gets in, so there is nothing to wrap in braces. */
+  assert.ok(!systemPrompt({ beyond: false, marks: true }).includes(MARKS_OUTSIDE), 'braces need beyond');
+  assert.ok(systemPrompt({ beyond: false, marks: true }).includes(MARKS_CITE), 'passage numbers do not need beyond');
+  assert.ok(systemPrompt({ beyond: true, marks: true }).includes(MARKS_OUTSIDE));
+  assert.ok(!systemPrompt({ beyond: true, marks: true }).includes(SPLIT_RULE), 'marking replaces the separate paragraph');
+  assert.ok(systemPrompt({ beyond: true, marks: false }).includes(SPLIT_RULE), 'the setting can still ask for the paragraph');
+  assert.ok(systemPrompt({ beyond: true, marks: false }).includes(BEYOND_CORE));
+  assert.ok(!systemPrompt({ beyond: false }).includes(BEYOND_CORE), 'beyond off keeps the old strict rule');
+  assert.ok(!systemPrompt({ beyond: false }).includes(SPLIT_RULE));
+  /* Every variant is its own cache entry, so each must be byte stable. */
+  for (const o of [{}, { marks: true }, { beyond: true }, { beyond: true, marks: true }]) {
+    assert.equal(systemPrompt(o), systemPrompt(o), 'a prompt variant is not stable');
+  }
+
+  /* CHAT RULES ride in the message, first, so pinning one does not make the next question cold. */
+  const ruled = buildRequest({ model: 'claude-sonnet-4-6', map: 'm', question: 'q', rules: ' answer in French ', progress: 'p' });
+  const plainReq = buildRequest({ model: 'claude-sonnet-4-6', map: 'm', question: 'q', progress: 'p' });
+  assert.deepEqual(ruled.system, plainReq.system, 'a chat rule must not change the cached prefix');
+  assert.ok(ruled.messages[0].content.startsWith('CHAT RULES\nanswer in French\n\nPROGRESS\np'), 'rules come first, trimmed');
+  assert.ok(ruled.messages[0].content.endsWith('QUESTION\nq\n\n' + CHAT_RULES_RULE), 'the rule instruction follows the question');
+  assert.ok(!plainReq.messages[0].content.includes('CHAT RULES'));
+
+  /* A pasted worksheet: the count is stated and the layout rule rides with it. */
+  const many = buildRequest({ model: 'claude-sonnet-4-6', question: 'q', items: 5 });
+  assert.ok(many.messages[0].content.includes("The student's message holds 5 questions or items. " + ITEMS_RULE));
+  assert.deepEqual(many.system, buildRequest({ model: 'claude-sonnet-4-6', question: 'q' }).system, 'items must not change the prefix');
+  for (const n of [0, 1, undefined, 'five']) {
+    assert.ok(!buildRequest({ model: 'claude-sonnet-4-6', question: 'q', items: n }).messages[0].content.includes(ITEMS_RULE), 'items ' + n + ' is not a list');
+  }
+
+  /* Check my answer, and turning the Note line off. */
+  assert.ok(buildRequest({ question: 'q', checkwork: true }).messages[0].content.includes(CHECKWORK_RULE));
+  assert.ok(!buildRequest({ question: 'q' }).messages[0].content.includes(CHECKWORK_RULE));
+  assert.ok(buildRequest({ question: 'q', suggestNotes: false }).messages[0].content.endsWith('Do not add a Note line to this answer.'));
+  assert.ok(!buildRequest({ question: 'q' }).messages[0].content.includes('Do not add a Note line'));
+
+  /* Validation of the new fields. */
+  assert.equal(validateAsk({ ...base, rules: s(600) }).rules, s(600));
+  assert.equal(validateAsk({ ...base, rules: '  keep it short  ' }).rules, 'keep it short');
+  assert.equal(validateAsk({ ...base, rules: s(601) }), null);
+  assert.equal(validateAsk({ ...base, rules: 5 }), null);
+  assert.equal(validateAsk({ ...base, rules: null }), null);
+  assert.equal(validateAsk({ ...base, items: 20 }).items, 20);
+  assert.equal(validateAsk({ ...base, items: 0 }).items, 0);
+  for (const bad of [21, -1, 1.5, '3', null]) assert.equal(validateAsk({ ...base, items: bad }), null, 'bad items: ' + bad);
+  for (const k of ['marks', 'checkwork', 'suggestNotes']) {
+    assert.equal(validateAsk({ ...base, [k]: 'yes' }), null, k + ' must be a boolean');
+  }
+  assert.equal(validateAsk({ ...base, marks: true }).marks, true);
+  assert.equal(validateAsk({ ...base, suggestNotes: false }).suggestNotes, false);
+  assert.equal(validateAsk({ ...base, suggestNotes: undefined }).suggestNotes, true, 'marking notes is the default');
+
+  /* A whole worksheet still fits the body cap and the reserve. */
+  const biggest = {
+    ...base, question: s(4000), quote: s(1200), focus: s(2500), map: s(9000), adminToken: s(128),
+    chunks: Array.from({ length: 8 }, () => ({ label: s(80), text: s(2000) })),
+    history: Array.from({ length: 12 }, () => ({ role: 'user', text: s(4000) })),
+    progress: s(3000), notes: s(1500), rules: s(600), kinds: s(1500), items: 20
+  };
+  assert.ok(validateAsk(biggest), 'the biggest valid request must validate');
+  assert.ok(JSON.stringify(biggest).length * 6 <= LIMITS.body, 'the body cap would refuse a valid request');
+  assert.ok(estimateInputTokens(buildRequest({ model: DEFAULT_MODEL, ...validateAsk(biggest) })) < 60000, 'the reserve must stay under the ceiling');
+
+  /* Choose: the page draws the buttons, so the server only describes the line. */
+  assert.ok(TOOL_IDS.includes('choose'));
+  assert.ok(/vertical bars/.test(TOOL_TEXT.choose) && /never more than once in a row/.test(TOOL_TEXT.choose));
+  assert.ok(/add that line so one tap moves to another/.test(systemPrompt()), 'the clarify rule names Choose');
+
+  /* The Edge Function gives a pasted set room, from what was typed, and logs how it was reached. */
+  const idx = fs.readFileSync(new URL('./index.ts', import.meta.url), 'utf8');
+  assert.ok(/const ITEMS_MAX_TOKENS = 2400;/.test(idx), 'the items ceiling is the careful level');
+  assert.ok(/body\.question\.length \/ 40/.test(idx), 'the room comes from the question, not from the count sent');
+  for (const f of ['route:', 'chunks_sent:', 'cache_read:', 'cache_write:', 'marks:', 'has_rules:', 'items:']) {
+    assert.ok(idx.includes(f), 'the chat row is missing ' + f);
+  }
+  assert.ok(!DASHES.test(idx));
+}
+console.log('long messages, chat rules, marking, Note and Choose ok');

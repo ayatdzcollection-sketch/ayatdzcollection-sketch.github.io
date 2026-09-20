@@ -24,13 +24,13 @@ else, or no header, is refused with 403), and a JSON body:
   material:   'apush/period1-2-test',          required, ^[a-z0-9-]+/[a-z0-9-]+$, at most 120
   install:    '<32 lowercase hex>',            required
   adminToken: '<owner session token>',         optional, at most 128, needed in owner mode
-  question:   'explain',                       required, 1 to 600
+  question:   'explain',                       required, 1 to 4000 (a pasted worksheet fits)
   quote:      'the highlighted text',          optional, 0 to 1200
   focus:      'what is on the screen',         optional, 0 to 2500
   map:        'outline of the material',       optional, 0 to 9000
   chunks:     [{ label, text }],               optional, at most 14; label 0 to 80, text 0 to 2000,
                                                all text together at most 16000
-  history:    [{ role: 'user'|'assistant', text }]   optional, at most 6; text 0 to 1500
+  history:    [{ role: 'user'|'assistant', text }]   optional, at most 12; text 0 to 4000
   progress:   'forecast, weak sections, ...',  optional, 0 to 3000
   notes:      'what the student saved',        optional, 0 to 1500
   thread:     'conversation id',               optional, ^[a-z0-9-]{8,64}$
@@ -39,12 +39,26 @@ else, or no header, is refused with 403), and a JSON body:
   tools:      ['practice', 'figs'],            optional, known ids only (TOOL_IDS), each once
   kinds:      'sigmul: Sig figs when ...',     optional, 0 to 1500, the practice tokens the page can draw
   check:      true                             optional, the student tapped Check my progress
+  rules:      'answer in French',              optional, 0 to 600, what the student pinned for
+                                               this conversation (CHAT RULES)
+  items:      4,                               optional, integer 0 to 20, how many questions the
+                                               page split a pasted message into
+  checkwork:  true,                            optional, the message is their own answer to look at
+  marks:      true,                            optional, mark sources inline rather than in a
+                                               separate Outside the material paragraph
+  suggestNotes: false                          optional, default true; false forbids the Note line
 }
 ```
 
+`question` is 4,000 characters so a student can paste a set of questions. When the page splits one
+it sends `items` and retrieves passages for each item, and the answer is laid out one item at a
+time; the room for that is worked out here from the length of the question, never from `items`,
+and never past 2,400 tokens. `rules` rides in the question message and not in the cached system
+text, so pinning a rule does not make the next question a cold one.
+
 Lengths are counted after trimming, except `thread`, which must match as sent. A field that is
 present must have the right type (send an empty string or leave it out, not `null`). `thread` is
-stored as null and `turn` as 0 when they are left out. The raw body is capped at 327680
+stored as null and `turn` as 0 when they are left out. The raw body is capped at 655360
 characters. Anything outside these rules is `400 {ok:false, error:'bad_request'}` before any
 ledger row is opened.
 
