@@ -19,7 +19,7 @@ assert.deepEqual(LIMITS, {
   body: 655360, material: 120, adminToken: 128, question: 4000, quote: 1200, focus: 2500, map: 9000,
   chunks: 14, chunkLabel: 80, chunkText: 2000, chunksTotal: 16000, history: 12, historyText: 4000,
   progress: 3000, notes: 1500, turn: 100, chunkRef: 60, chapter: 12, facts: 6, fact: 300, kinds: 1500,
-  rules: 600, items: 20
+  rules: 600, items: 20, fault: 400
 });
 assert.equal(String(THREAD_RE), String(/^[a-z0-9-]{8,64}$/));
 assert.equal(PRICES, GRADER_PRICES, 'prices must come from the grader module');
@@ -174,7 +174,7 @@ const minimal = validateAsk({ material: good.material, install: good.install, qu
 assert.deepEqual(minimal, {
   material: good.material, install: good.install, adminToken: null, question: 'x', quote: '', focus: '', map: '', chunks: [], history: [],
   progress: '', notes: '', thread: null, turn: 0, textbook: false, practice: true, widgets: true, math: false, marks: false, effort: 'normal', chapter: null,
-  facts: [], tools: [], kinds: '', check: false, rules: '', items: 0, checkwork: false, suggestNotes: true
+  facts: [], tools: [], kinds: '', check: false, rules: '', items: 0, checkwork: false, suggestNotes: true, fault: ''
 });
 assert.equal(validateAsk({ material: good.material, install: good.install, question: 'x', chunks: [{ label: 'a', text: 'b', ref: 'q:abc_1' }] }).chunks[0].ref, 'q:abc_1');
 assert.equal(validateAsk({ material: good.material, install: good.install, question: 'x', chunks: [{ label: 'a', text: 'b', ref: 'bad ref' }] }), null);
@@ -603,3 +603,79 @@ import {
   assert.ok(!DASHES.test(idx));
 }
 console.log('long messages, chat rules, marking, Note and Choose ok');
+
+/* ------------------------------------- corrections, the shelf, the reranker and the one retry */
+import {
+  CORRECTION_RULE, SHELF_RULE, RETRY_RULE,
+  RERANK_FEATURE, RERANK_MODEL, RERANK_MAX_TOKENS, RERANK_LIMITS, RERANK_SYSTEM,
+  buildRerankRequest, parseRerank, validateRerank
+} from './ask_prompt.mjs';
+{
+  const DASHES = new RegExp('[' + String.fromCharCode(0x2013, 0x2014) + ']');
+  const base = { material: 'apush/fraser-ch3-4', install: '0123456789abcdef0123456789abcdef', question: 'x' };
+  const s = (n) => 'a'.repeat(n);
+  const sys = systemPrompt();
+
+  for (const rule of [CORRECTION_RULE, SHELF_RULE, RETRY_RULE]) assert.ok(!DASHES.test(rule));
+  assert.ok(sys.includes(CORRECTION_RULE), 'the correction rule must be in the prompt');
+  assert.ok(sys.includes(SHELF_RULE), 'the shelf rule must be in the prompt');
+  /* A correction is the one thing that may overrule the material, and the prompt has to say so. */
+  assert.ok(/the Correction is right/.test(CORRECTION_RULE));
+  /* The retry rule rides with the fault, not in the cached prefix. */
+  assert.ok(!sys.includes(RETRY_RULE), 'the retry rule must not be cached: most answers never retry');
+
+  /* The one retry. */
+  const retried = buildRequest({ model: 'claude-sonnet-4-6', map: 'm', question: 'q', fault: 'You wrote 40,000 bushels and nothing backs it.' });
+  assert.ok(retried.messages[0].content.includes('FAULT\nYou wrote 40,000 bushels and nothing backs it.\n\n' + RETRY_RULE));
+  assert.deepEqual(retried.system, buildRequest({ model: 'claude-sonnet-4-6', map: 'm', question: 'q' }).system, 'a retry must not be a cold question');
+  assert.equal(validateAsk({ ...base, fault: s(400) }).fault, s(400));
+  assert.equal(validateAsk({ ...base, fault: s(401) }), null);
+  assert.equal(validateAsk({ ...base, fault: 9 }), null);
+  assert.equal(validateAsk(base).fault, '', 'no fault is the normal case');
+
+  /* The reranker: labels only, a tiny answer, and anything unparseable is simply dropped. */
+  assert.equal(RERANK_FEATURE, 'rerank');
+  assert.equal(RERANK_MODEL, 'claude-haiku-4-5');
+  assert.ok(RERANK_MAX_TOKENS <= 60, 'the reranker answers in numbers, not prose');
+  assert.ok(!DASHES.test(RERANK_SYSTEM));
+  const labels = Array.from({ length: 12 }, (_, i) => 'Passage number ' + (i + 1));
+  const rr = buildRerankRequest({ question: ' which colony ', labels });
+  assert.equal(rr.max_tokens, RERANK_MAX_TOKENS);
+  assert.ok(rr.messages[0].content.startsWith('QUESTION\nwhich colony\n\nPASSAGES\n1. Passage number 1'));
+  assert.ok(!/\bPassage number 13\b/.test(rr.messages[0].content));
+  /* It never carries passage text, which is the whole reason it is cheap. */
+  assert.ok(rr.messages[0].content.length < 1200, 'the reranker request must stay small');
+
+  assert.deepEqual(parseRerank('4 1 7', 12), [3, 0, 6], 'best first, as indexes');
+  assert.deepEqual(parseRerank('none', 12), [], 'none means keep your own order');
+  assert.deepEqual(parseRerank('99 0 3', 12), [2], 'out of range numbers are dropped, and 0 is out of range');
+  assert.deepEqual(parseRerank('3 3 3', 12), [2], 'no duplicates');
+  assert.equal(parseRerank('1 2 3 4 5 6 7 8 9 10', 12).length, RERANK_LIMITS.pick, 'at most eight');
+  assert.deepEqual(parseRerank('', 12), []);
+  assert.deepEqual(parseRerank(null, 12), []);
+
+  const rv = { material: base.material, install: base.install, question: 'which colony', labels };
+  assert.ok(validateRerank(rv));
+  assert.equal(validateRerank({ ...rv, labels: ['only one'] }), null, 'one label is not worth a call');
+  assert.equal(validateRerank({ ...rv, labels: Array.from({ length: 31 }, () => 'x') }), null);
+  assert.equal(validateRerank({ ...rv, labels: [s(101), 'b'] }), null);
+  assert.equal(validateRerank({ ...rv, question: '' }), null);
+  assert.equal(validateRerank({ ...rv, install: 'short' }), null);
+  assert.equal(validateRerank({ ...rv, material: 'nope' }), null);
+
+  assert.equal(purposeOf({ purpose: 'rerank' }), 'rerank');
+  assert.equal(purposeOf({ purpose: 'nonsense' }), null);
+  assert.equal(purposeOf({}), 'ask');
+
+  /* The Edge Function: the shelf is derived from the class, behind the textbook grant, and a
+     retry is billed to its own feature so it has its own cap and the breaker can pause it. */
+  const idx = fs.readFileSync(new URL('./index.ts', import.meta.url), 'utf8');
+  assert.ok(/return \/\^\[a-z0-9-\]\{1,40\}\$\/\.test\(cls\) \? "shelf-" \+ cls : "";/.test(idx), 'the shelf corpus comes from the class');
+  assert.ok(/shelf && begun\.textbook === true/.test(idx), 'the shelf is behind the same grant as the textbook');
+  assert.ok(/p_feature: body\.fault \? "retry" : FEATURE/.test(idx), 'a retry is billed to its own feature');
+  assert.ok(idx.indexOf('ai_corrections_get') > 0 && idx.indexOf('ai_corrections_get') < idx.indexOf('return streamAnswer('), 'corrections are fetched before the answer');
+  assert.ok(/ahead\.concat\(body\.chunks\)/.test(idx), 'corrections go in front of the material');
+  assert.ok(/purpose === "rerank"/.test(idx), 'the rerank purpose is dispatched');
+  assert.ok(!DASHES.test(idx));
+}
+console.log('corrections, shelf, reranker and retry ok');

@@ -288,6 +288,48 @@ var StudyAuth = {
       chatRate:   function (id, rating) {
         return rpc('ai_chat_rate', { p_token: ls(TOKEN_KEY), p_chat_id: id,
           p_rating: rating == null ? null : rating });
+      },
+
+      /* Flags (0033): the sentences the page's own checks could not back, newest first, with the
+         question and answer they came from. all true lists the reviewed ones as well. The stats
+         that come back are counted per kind, not per flag: total is how many kinds have ever been
+         seen and open is how many of those have nothing reviewed yet, so neither is a flag count.
+         by_kind is the one to show, and it counts reviewed flags too. */
+      flags:         function (limit, all) {
+        return rpc('admin_ai_flags', { p_token: ls(TOKEN_KEY),
+          p_limit: limit == null ? null : limit, p_all: !!all });
+      },
+      /* Answers ok whether or not a row matched, so this cannot report an id that was already
+         gone. Repaint from a fresh list rather than trusting it. */
+      flagReviewed:  function (id) { return rpc('admin_flag_reviewed', { p_token: ls(TOKEN_KEY), p_id: id }); },
+      /* Material, topic and body are all required; the server refuses a blank topic or body and
+         cannot insert without a material, so pass the flag's own material. topic is matched by
+         its words longer than three letters, so a topic of only short words never matches
+         anything. flag is the flag this came from, or null; giving it marks that flag reviewed in
+         the same call. */
+      correctionAdd: function (material, topic, body, flag) {
+        return rpc('admin_correction_add', { p_token: ls(TOKEN_KEY), p_material: material,
+          p_topic: topic, p_body: body, p_flag: flag == null ? null : flag });
+      },
+      corrections:   function () { return rpc('admin_corrections', { p_token: ls(TOKEN_KEY) }); },
+      /* enabled null leaves the switch alone and an empty body leaves the body alone, so one call
+         does either. Off is as far as it goes: nothing here deletes a correction. */
+      correctionSet: function (id, enabled, body) {
+        return rpc('admin_correction_set', { p_token: ls(TOKEN_KEY), p_id: id,
+          p_enabled: enabled == null ? null : !!enabled, p_body: body == null ? null : body });
+      },
+
+      /* The guards on Ask (0033): Plain mode, the ceiling on one question, the breaker and what
+         it has paused. Reading them recomputes the breaker and writes the result, so this is not
+         a free call to poll: ask for it when the group opens or the owner says to, never on a
+         timer. mean_cents can be null, and with the breaker off the note reads as much. */
+      guards:        function () { return rpc('admin_ai_guards', { p_token: ls(TOKEN_KEY) }); },
+      /* key is plain or breaker_on, which take flag; ceiling, breaker or hard, which take num in
+         cents; or reset, which clears the pause and takes neither. The keys are not the names the
+         read returns, so they have to be mapped. */
+      guardSet:      function (key, num, flag) {
+        return rpc('admin_ai_guard_set', { p_token: ls(TOKEN_KEY), p_key: key,
+          p_num: num == null ? null : num, p_flag: flag == null ? null : !!flag });
       }
     },
     sessions: function () {

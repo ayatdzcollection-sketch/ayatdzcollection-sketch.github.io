@@ -120,7 +120,9 @@ export const LIMITS = {
      questions"), detected and kept by the page, sent with every question in that thread. */
   rules: 600,
   /* How many items the page split a pasted message into. 0 or absent is an ordinary question. */
-  items: 20
+  items: 20,
+  /* The fault the page's checks found, sent back once so the answer can be written again. */
+  fault: 400
 };
 
 /* The tools a page can draw and compute itself, called by one machine line at the end of an
@@ -236,6 +238,19 @@ export const TOOLS_RULE = 'TOOLS, when it is sent after the material map, lists 
    draws and marks, so the mix is the model\'s choice and every item is the page\'s. */
 export const CHECK_RULE = 'When the message says the student tapped Check my progress, answer from PROGRESS with a short diagnosis: at most three short sentences or bullets on what is weakest and the kind of mistake behind it (precision, unit, value, form, spelling) where PROGRESS shows it, and nothing about what is going well unless nothing is weak. Do not give a study plan or a list of places to go: the page shows the numbers and the practice itself. Then, when TOOLS lists practice, after the Sources line add one Practice line of between three and eight tokens, weakest first, taken only from PRACTICE KINDS or from the tokens in square brackets in PROGRESS, repeating a token to give it more questions. If PROGRESS shows nothing practised yet, say so in one sentence and build the Practice line from the first kinds in PRACTICE KINDS.';
 
+/* A correction the owner wrote after reading a flagged answer (migration 0033). It is the one
+   thing in the request that outranks the material itself, because it exists precisely because the
+   material was wrong or thin about this. */
+export const CORRECTION_RULE = 'A passage labelled Correction was written by the person who made this material, after reading an answer that got this wrong. Where a Correction and anything else disagree, the Correction is right and the other is not, and you follow it without mentioning that a correction exists.';
+
+/* A passage from the source shelf: the owner's own chosen documents for this class (slides, their
+   notes, an openly licensed reference), loaded into the private passages table like the textbook. */
+export const SHELF_RULE = 'Passages labelled with a source name in brackets, such as "[Class notes] ...", come from documents the owner added for this class. Treat them as the material: they are trusted, they are quotable under the same fifteen word limit, and the Sources line names them the same way.';
+
+/* One retry, after the page's own checks caught something the answer cannot support. Only ever
+   sent once per answer, and only for the two faults that make an answer actively wrong. */
+export const RETRY_RULE = 'The FAULT block names something wrong with the answer you just gave to this question. Write the answer again, fixing exactly that, and change nothing else that was right. Do not apologise, do not mention the fault or that this is a second attempt, and do not explain what changed: the student sees only the new answer.';
+
 /* The chemistry review form (corpus chem-unit-form, migration 0029), sent like textbook passages. */
 export const FORM_RULE = 'Passages labelled Review form are questions from the teacher\'s review form for this test, with the answer key. When a form row has a line starting "Correct:", always go by it, even where the row also gives the "Answer written on the student\'s copy". A written answer with no Correct line was checked and is right, except that some long calculations also carry a line giving the value to the correct significant figures, and that value is the one to teach. When the student asks about a form question by its number, answer that question.';
 
@@ -297,7 +312,11 @@ export function systemPrompt({ math = false, beyond = false, marks = false } = {
     '',
     CHECK_RULE,
     '',
-    FORM_RULE
+    FORM_RULE,
+    '',
+    CORRECTION_RULE,
+    '',
+    SHELF_RULE
   ].join('\n');
 }
 
@@ -316,7 +335,7 @@ function clean(v) {
  * HIGHLIGHT, PASSAGES, QUESTION, each left out when empty except QUESTION. Passage numbers are the
  * 1 based index in the chunks array as sent, so the client can map "Sources: [n]" back to its
  * own list; a chunk with no text is skipped without renumbering the rest. */
-export function buildRequest({ model, map, question, quote, focus, chunks, history, progress, notes, practice, widgets, math, beyond, marks, effort, facts, tools, kinds, check, rules, items, checkwork, suggestNotes } = {}) {
+export function buildRequest({ model, map, question, quote, focus, chunks, history, progress, notes, practice, widgets, math, beyond, marks, effort, facts, tools, kinds, check, rules, items, checkwork, suggestNotes, fault } = {}) {
   const mapText = clean(map);
   const level = EFFORTS[effort] ? effort : DEFAULT_EFFORT;
   const E = EFFORTS[level];
@@ -375,6 +394,8 @@ export function buildRequest({ model, map, question, quote, focus, chunks, histo
   const nItems = Number(items);
   if (Number.isInteger(nItems) && nItems >= 2) blocks.push('The student\'s message holds ' + nItems + ' questions or items. ' + ITEMS_RULE);
   if (checkwork === true) blocks.push(CHECKWORK_RULE);
+  const ft = clean(fault);
+  if (ft) blocks.push('FAULT\n' + ft + '\n\n' + RETRY_RULE);
   if (widgets === false) blocks.push('Do not add Practice, Show or Open lines to this answer.');
   else if (practice === false) blocks.push('Do not add a Practice line to this answer.');
   if (suggestNotes === false) blocks.push('Do not add a Note line to this answer.');
@@ -550,10 +571,13 @@ export function validateAsk(raw) {
      message into. Both are the page's reading of what the student typed, not the model's. */
   const rules = str(raw.rules, L.rules, { optional: true });
   if (rules === BAD) return null;
+  /* What the page's own checks found wrong with the previous attempt, for the one retry. */
+  const fault = str(raw.fault, L.fault, { optional: true });
+  if (fault === BAD) return null;
   if (raw.items !== undefined && !(Number.isInteger(raw.items) && raw.items >= 0 && raw.items <= L.items)) return null;
   const items = raw.items === undefined ? 0 : raw.items;
   const marks = raw.marks === true, checkwork = raw.checkwork === true, suggestNotes = raw.suggestNotes !== false;
-  return { material, install, adminToken: adminToken || null, question, quote, focus, map, chunks, history, progress, notes, thread, turn, textbook, practice, widgets, math, marks, effort, chapter, facts, tools, kinds, check, rules, items, checkwork, suggestNotes };
+  return { material, install, adminToken: adminToken || null, question, quote, focus, map, chunks, history, progress, notes, thread, turn, textbook, practice, widgets, math, marks, effort, chapter, facts, tools, kinds, check, rules, items, checkwork, suggestNotes, fault };
 }
 
 /* ---------------------------------------------------------------- trap notes
@@ -618,7 +642,67 @@ export function purposeOf(raw) {
   if (!isObj(raw)) return null;
   if (raw.purpose === undefined || raw.purpose === 'ask') return 'ask';
   if (raw.purpose === 'trap') return 'trap';
+  if (raw.purpose === 'rerank') return 'rerank';
   return null;
+}
+
+/* ---------------------------------------------------------------- the reranker (feature 'rerank')
+   Keyword matching put California peoples beside a question about Pennsylvania, because the words
+   scored and the subject did not. When the page's own scores come back weak it sends the labels of
+   the passages it was considering, thirty at most and labels only, and one very small model says
+   which of them actually bear on the question. The page holds the text throughout, so nothing is
+   sent twice and the whole thing is about 0.07 cents, a tenth of what a tool round would cost. */
+export const RERANK_FEATURE = 'rerank';
+export const RERANK_MODEL = 'claude-haiku-4-5';
+export const RERANK_MAX_TOKENS = 40;
+export const RERANK_LIMITS = { question: 600, labels: 30, label: 100, pick: 8 };
+export const RERANK_SYSTEM = [
+  'A student asked a question inside one study material. You are given the numbered titles of passages from that material.',
+  'Answer with the numbers of the passages that would actually help answer that question, best first, separated by spaces, and nothing else.',
+  'Give between one and eight numbers. Give fewer rather than padding the list: a title that only shares a word with the question does not belong.',
+  'If none of them bear on the question, answer with the word none.'
+].join('\n');
+
+export function buildRerankRequest({ question, labels } = {}) {
+  const list = (Array.isArray(labels) ? labels : []).slice(0, RERANK_LIMITS.labels)
+    .map((l, i) => (i + 1) + '. ' + clean(l).slice(0, RERANK_LIMITS.label)).join('\n');
+  return {
+    system: RERANK_SYSTEM,
+    messages: [{ role: 'user', content: 'QUESTION\n' + clean(question) + '\n\nPASSAGES\n' + list }],
+    max_tokens: RERANK_MAX_TOKENS
+  };
+}
+
+/* The reply, as indexes into the labels that were sent. Anything that is not a number in range is
+   dropped rather than guessed at, and an empty result means the page keeps its own order. */
+export function parseRerank(text, n) {
+  const out = [];
+  for (const m of String(text == null ? '' : text).match(/\d{1,2}/g) || []) {
+    const i = Number(m) - 1;
+    if (i >= 0 && i < n && out.indexOf(i) < 0 && out.length < RERANK_LIMITS.pick) out.push(i);
+  }
+  return out;
+}
+
+export function validateRerank(raw) {
+  if (!isObj(raw)) return null;
+  const L = RERANK_LIMITS;
+  const material = str(raw.material, LIMITS.material, { min: 1 });
+  if (material === BAD || !MATERIAL_RE.test(material)) return null;
+  const install = str(raw.install, 32, { min: 32 });
+  if (install === BAD || !INSTALL_RE.test(install)) return null;
+  const adminToken = str(raw.adminToken, LIMITS.adminToken, { optional: true });
+  if (adminToken === BAD) return null;
+  const question = str(raw.question, L.question, { min: 1 });
+  if (question === BAD) return null;
+  if (!Array.isArray(raw.labels) || raw.labels.length < 2 || raw.labels.length > L.labels) return null;
+  const labels = [];
+  for (const l of raw.labels) {
+    const t = str(l, L.label, { min: 1 });
+    if (t === BAD) return null;
+    labels.push(t);
+  }
+  return { material, install, adminToken: adminToken || null, question, labels };
 }
 
 /* The per model request fields for a trap note: max_tokens, and thinking and effort where the

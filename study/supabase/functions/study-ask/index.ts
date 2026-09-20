@@ -53,6 +53,12 @@ import {
   purposeOf,
   validateTrap,
   formNumbers,
+  RERANK_FEATURE,
+  RERANK_MODEL,
+  RERANK_MAX_TOKENS,
+  buildRerankRequest,
+  parseRerank,
+  validateRerank,
 } from "./ask_prompt.mjs";
 
 /* ---------------------------------------------------------------- configuration */
@@ -112,10 +118,12 @@ type AskBody = {
   beyond?: boolean;
   chapter: number | null;
   textbookLabels?: string[];
+  correctionCount?: number;
   facts: string[];
   tools: string[];
   kinds: string;
   check: boolean;
+  fault: string;
 };
 
 /* A request for a list, a set to copy out, or everything on a topic. Those answers are long by
@@ -141,6 +149,16 @@ const TEXTBOOK_CHARS = 1000;
 /* Corpora whose rows are numbered questions, fetched whole by number (formNumbers in
    ask_prompt.mjs) before any keyword search. */
 const NUMBERED: Record<string, boolean> = { "chem-unit-form": true };
+
+/* The source shelf (migration 0033 in the plan's section 5): the owner's own documents for a
+   class, loaded into the same private passages table as the textbook under a corpus named after
+   the class. No map and no deploy is needed to light one up: put rows under shelf-<class> and the
+   materials of that class start drawing on them, and until then the search simply finds nothing. */
+function shelfCorpus(material: string): string {
+  const cls = material.split("/")[0] || "";
+  return /^[a-z0-9-]{1,40}$/.test(cls) ? "shelf-" + cls : "";
+}
+const SHELF_PASSAGES = 3;
 /* The label a private passage travels under: the row's own heading for the review form
    ("Review form, question 22"), and the textbook's chapter and heading for the APUSH book. */
 function passageLabel(corpus: string, p: { chapter?: number; heading?: string }): string {
@@ -311,14 +329,16 @@ function streamAnswer(body: AskBody, callId: unknown, model: string, origin: str
           /* How this answer was reached and what it carried (migration 0032). The cache figures
              go in on their own as well as folded into input_tokens, because the cold question
              penalty cannot be measured from the blended number. */
-          route: model.includes("haiku") ? "haiku" : "sonnet",
+          route: body.fault ? "escalated" : model.includes("haiku") ? "haiku" : "sonnet",
+          retry: !!body.fault,
           chunks_sent: body.chunks.length,
           cache_read: num(usage.cache_read_input_tokens),
           cache_write: num(usage.cache_creation_input_tokens),
           marks: body.marks === true,
           has_rules: body.rules.length > 0,
           items: body.items,
-          source_step: body.textbookLabels && body.textbookLabels.length ? "textbook" : "material",
+          source_step: body.correctionCount ? "correction"
+            : body.textbookLabels && body.textbookLabels.length ? "textbook" : "material",
         },
       })) as Record<string, unknown> | null;
       if (res && res.ok === true && (typeof res.id === "number" || typeof res.id === "string")) return res.id;
@@ -608,6 +628,83 @@ async function trapNote(raw: unknown, req: Request, origin: string): Promise<Res
   return reply(spent ? { ok: false, error, spent: true, cost_cents: cents } : { ok: false, error }, 200, origin);
 }
 
+/* ---------------------------------------------------------------- the reranker
+   Feature 'rerank' (migration 0033): the page's keyword scores came back weak, so one very small
+   model reads the titles of the passages it was considering and says which of them bear on the
+   question. Labels only, so the passage text is never sent here and never sent twice; the page
+   holds it and builds the real question itself. About 0.07 cents, against roughly a cent for the
+   tool round this replaces. Every refusal is a plain no, and the page simply keeps its own order:
+   nothing here can make an answer fail. */
+const RERANK_TIMEOUT_MS = 8_000;
+
+async function rerankPick(raw: unknown, req: Request, origin: string): Promise<Response> {
+  const body = validateRerank(raw) as
+    { material: string; install: string; adminToken: string | null; question: string; labels: string[] } | null;
+  if (!body) return reply({ ok: false, error: "bad_request" }, 400, origin);
+  if (!ANTHROPIC_API_KEY || !SUPABASE_URL || !SERVICE_ROLE_KEY) {
+    console.error("study-ask: a required environment variable is not set");
+    return reply({ ok: false, error: "grader_error" }, 200, origin);
+  }
+
+  const request = buildRerankRequest(body) as Record<string, unknown>;
+  let begun: Record<string, unknown> | null;
+  try {
+    begun = (await rpc("ai_begin2", {
+      p_feature: RERANK_FEATURE,
+      p_material: body.material,
+      p_install: body.install,
+      p_ip: clientIp(req),
+      p_token: body.adminToken,
+      p_in: estimateInputTokens(request),
+      p_out: RERANK_MAX_TOKENS,
+    })) as Record<string, unknown> | null;
+  } catch {
+    console.error("study-ask: ai_begin2 failed (rerank)");
+    return reply({ ok: false, error: "grader_error" }, 200, origin);
+  }
+  if (!begun || begun.ok !== true) {
+    /* off, plain_mode, paused, ceiling, the caps and the pass refusals all land here, and all of
+       them mean the same thing to the page: carry on with your own order. */
+    const error = begun && typeof begun.error === "string" && begun.error ? begun.error : "grader_error";
+    return reply({ ok: false, error }, 200, origin);
+  }
+  const callId = begun.call_id;
+  if (typeof callId !== "number" && typeof callId !== "string") {
+    console.error("study-ask: ai_begin2 returned no call id (rerank)");
+    return reply({ ok: false, error: "grader_error" }, 200, origin);
+  }
+  const model = typeof begun.model === "string" && begun.model ? begun.model : RERANK_MODEL;
+
+  const started = Date.now();
+  let status: EndStatus = "error";
+  let usage: Usage = {};
+  let pick: number[] = [];
+  try {
+    const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
+    const msg = (await client.messages.create(
+      { model, ...request } as never,
+      { timeout: RERANK_TIMEOUT_MS, maxRetries: CALL_MAX_RETRIES },
+    )) as unknown as { content: Array<{ type: string; text?: string }>; usage?: Usage };
+    if (msg.usage) usage = { ...msg.usage };
+    const text = (msg.content || []).map((c) => (c.type === "text" && typeof c.text === "string" ? c.text : "")).join("");
+    pick = parseRerank(text, body.labels.length);
+    status = "ok";
+  } catch (e) {
+    status = "error";
+    console.error("study-ask: rerank call failed (" + (e instanceof APIError ? "api_" + (e.status ?? 0) : "unknown") + ")");
+  }
+
+  const inTok = effectiveIn(usage);
+  const outTok = num(usage.output_tokens);
+  try {
+    await rpc("ai_end", { p_call_id: callId, p_status: status, p_in: inTok, p_out: outTok, p_latency: Date.now() - started });
+  } catch {
+    console.error("study-ask: ai_end failed (rerank)");
+  }
+  if (status !== "ok") return reply({ ok: false, error: "grader_error" }, 200, origin);
+  return reply({ ok: true, pick, model, cost_cents: costCents(model, inTok, outTok) }, 200, origin);
+}
+
 /* ---------------------------------------------------------------- the handler */
 
 Deno.serve(async (req: Request): Promise<Response> => {
@@ -638,6 +735,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const purpose = purposeOf(raw);
   if (purpose === null) return reply({ ok: false, error: "bad_request" }, 400, origin);
   if (purpose === "trap") return await trapNote(raw, req, origin);
+  if (purpose === "rerank") return await rerankPick(raw, req, origin);
 
   const body = validateAsk(raw) as AskBody | null;
   if (!body) return reply({ ok: false, error: "bad_request" }, 400, origin);
@@ -655,7 +753,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
   let begun: Record<string, unknown> | null;
   try {
     begun = (await rpc("ai_begin2", {
-      p_feature: FEATURE,
+      /* A retry is its own feature, so it has its own daily cap, the breaker can pause it on its
+         own, and Plain mode refuses it outright. The page asks; the database decides. */
+      p_feature: body.fault ? "retry" : FEATURE,
       p_material: body.material,
       p_install: body.install,
       p_ip: clientIp(req),
@@ -761,6 +861,51 @@ Deno.serve(async (req: Request): Promise<Response> => {
       }
     } catch {
       console.error("study-ask: textbook search failed");
+    }
+  }
+
+  /* Corrections come first of everything, including the textbook: the owner wrote one precisely
+     because an answer got this wrong before. They are cheap (three short rows at most) and they
+     are the only thing here that can overrule the material. */
+  try {
+    const got = (await rpc("ai_corrections_get", {
+      p_material: body.material,
+      p_query: (body.question + " " + body.quote).slice(0, 2000),
+      p_limit: 3,
+    })) as { ok?: boolean; corrections?: Array<{ topic?: string; body?: string }> } | null;
+    const rows = (got && got.ok && Array.isArray(got.corrections)) ? got.corrections : [];
+    const ahead: Array<{ label: string; text: string }> = [];
+    for (const c of rows) {
+      if (!c || typeof c.body !== "string" || !c.body.trim()) continue;
+      ahead.push({ label: ("Correction: " + (c.topic ?? "")).slice(0, 80), text: c.body.slice(0, 1000) });
+    }
+    if (ahead.length) {
+      body.chunks = ahead.concat(body.chunks).slice(0, 14);
+      body.correctionCount = ahead.length;
+    }
+  } catch {
+    console.error("study-ask: corrections lookup failed");
+  }
+
+  /* The shelf, behind the same grant as the textbook, after the material's own passages. */
+  const shelf = shelfCorpus(body.material);
+  if (shelf && begun.textbook === true && body.chunks.length < 14) {
+    try {
+      const found = (await rpc("ai_passages_search", {
+        p_corpus: shelf,
+        p_query: (body.question + " " + body.quote).slice(0, 1000),
+        p_chapter: null,
+        p_limit: SHELF_PASSAGES,
+      })) as { ok?: boolean; passages?: Array<{ heading?: string; body?: string }> } | null;
+      for (const p of (found && found.ok && Array.isArray(found.passages)) ? found.passages : []) {
+        if (!p || typeof p.body !== "string" || !p.body) continue;
+        if (body.chunks.length >= 14) break;
+        const label = ("[" + (p.heading || "Class notes") + "]").slice(0, 80);
+        body.chunks.push({ label, text: p.body.slice(0, TEXTBOOK_CHARS) });
+        body.textbookLabels.push(label);
+      }
+    } catch {
+      console.error("study-ask: shelf search failed");
     }
   }
 

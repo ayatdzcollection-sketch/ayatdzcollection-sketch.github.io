@@ -25,7 +25,14 @@ Rules that always apply:
   draw on the course textbook (the owner's decision, 2026-09-17): the chapters live only in the
   private `study_ai_passages` table (migration 0013, loaded by `study/src/tools/load_passages.mjs`),
   are read only by the Edge Function when a question needs depth, and must never be written into
-  a material or the repo. Ask conversations are stored in `study_ai_chats` (migration 0012).
+  a material or the repo. From 2026-09-20 the same is true of the **source shelf** (the owner's
+  decision): documents the owner chooses for a class, loaded into `study_ai_passages` under the
+  corpus `shelf-<class>` by the same loader, searched by code and cited by name. Teacher slides
+  and handouts, the student's own notes, and openly licensed references are all named course
+  documents for this purpose; check and record the licence of anything not the teacher's or the
+  student's own before loading it. Shelf text lives only in that table: never in a material, never
+  in the repo. Web search is still not allowed, and there is no connector to one.
+  Ask conversations are stored in `study_ai_chats` (migration 0012).
 - Do not open the retired "Adaptive Study System" project on the Desktop or anything in it.
 - Content only from the named course documents, never general knowledge.
 - No em dashes or en dashes anywhere, including commit messages.
