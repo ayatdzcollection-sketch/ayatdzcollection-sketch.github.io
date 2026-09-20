@@ -135,14 +135,14 @@ async function push() {
   const sources = walkSources();
   if (!sources.length) die(`No sources found in ${relative(process.cwd(), SRC)}`);
 
-  /* The AI feature tags can be flipped live from the owner panel. materials.json decides a
-     tag only when it names it ("ai" for SAQ grading, "ask" for asking about the material);
-     when it is silent, the live setting stands, so a publish never quietly undoes a switch
-     the owner made in the panel. */
+  /* The AI feature tags and Retired can be flipped live from the owner panel. materials.json
+     decides a tag only when it names it ("ai" for SAQ grading, "ask" for asking about the
+     material, "retired"); when it is silent, the live setting stands, so a publish never
+     quietly undoes a switch the owner made in the panel. */
   const liveTags = new Map();
   const live = await rpc('auth_catalog', { p_token: token });
   if (live && live.ok) for (const it of live.items || []) liveTags.set(it.id, it.tags || []);
-  const PANEL_TAGS = [['ai', 'ai'], ['ask', 'ai-ask']];
+  const PANEL_TAGS = [['ai', 'ai'], ['ask', 'ai-ask'], ['retired', 'retired']];
 
   for (const s of sources) {
     const entry = byId.get(s.id);
@@ -181,8 +181,7 @@ async function push() {
            what lets a material offer AI grading at all, and it is checked again server
            side on every grade, so writing it here decides nothing on its own. */
         tags: (mat.tags || [])
-          .filter(t => t !== 'retired' && !PANEL_TAGS.some(([, tag]) => tag === t))
-          .concat(mat.retired ? ['retired'] : [])
+          .filter(t => !PANEL_TAGS.some(([, tag]) => tag === t))
           .concat(PANEL_TAGS.filter(([key, tag]) => key in mat ? !!mat[key] : (liveTags.get(s.id) || []).includes(tag)).map(([, tag]) => tag)),
         added: mat.added || null,
         sort: mat.sort ?? 100,

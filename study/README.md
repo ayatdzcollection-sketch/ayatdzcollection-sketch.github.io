@@ -27,7 +27,7 @@ One admin code, entered under **Owner** in the hub, gives you:
 |---|---|
 | **Hidden** | The item disappears from everyone else's list. |
 | **Locked** | The item stays listed and marked locked, but its key is withheld from everyone but you. This is the one that actually protects it, and the database enforces it, not the page. |
-| **Retired** | Still openable, but filed under a collapsed *Retired* heading at the bottom of the hub, for material from an older quiz or assignment. Stored as a `retired` tag on the item (no column, no migration), so it can be set live from the admin panel or with `"retired": true` in `materials.json` before publishing. |
+| **Retired** | Still openable, but filed under a collapsed *Retired* heading at the bottom of the hub, for material from an older quiz or assignment. Stored as a `retired` tag on the item (no column, no migration), so it can be set live from the admin panel or with `"retired": true` in `materials.json` before publishing. A publish keeps the panel's setting unless `materials.json` names `retired` for that entry. |
 
 Plus changing codes, seeing how many devices are signed in, and signing them all out.
 
