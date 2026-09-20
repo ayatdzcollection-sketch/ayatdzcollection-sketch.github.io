@@ -47,6 +47,7 @@ var SYNC_EXCLUDE = {
   'alg2u1': ['ui'],
   'acct1': ['ui'],
   'la10crucible': ['ui'],
+  'la10crucible34': ['ui'],
   'apushp12': ['ui'],
   'psychu0': ['ui'],
   'la10vocab1': ['ui'],
@@ -75,6 +76,9 @@ var SYNC_EXCLUDE_NS = { 'auth': true };
 var SYNC_PARTIAL_KEY = 'uimarks';
 var SYNC_PARTIAL = {
   'la10crucible': ['walked'],
+  /* the Crucible acts 3 and 4 teaches each part before it tests it: which parts have been
+   * read is progress, and it lives in ui beside which stretches have been walked. */
+  'la10crucible34': ['walked', 'read'],
   'apushp12': ['mk'],
   'la10vocab1': ['intro', 'ready'],
   'fraser5': ['mk', 'tfb']
@@ -577,6 +581,7 @@ var BUILTIN_MERGES = {
   'chemunit:fsrs': mergeChemUnitFsrs,          // chemistry unit test: cards, plus missed, start, lastWorked
   'acct1:fsrs': mergeCardsFsrs,                // accounting 1, topic 1: the same card schedule
   'la10crucible:fsrs': mergeCardsFsrs,         // The Crucible, acts 1 and 2: same record shape
+  'la10crucible34:fsrs': mergeCardsFsrs,       // The Crucible, acts 3 and 4: the same shape again
   'apushp12:fsrs': mergeCardsFsrs,             // APUSH period 1 and 2 test: same record shape
   'apushp12:asknotes': mergeAskNotes,          // notes kept beside Ask: union, deletes stick
   'fraser12:asknotes': mergeAskNotes,
@@ -589,10 +594,12 @@ var BUILTIN_MERGES = {
   'alg2u1:asknotes': mergeAskNotes,
   'fifty-states:asknotes': mergeAskNotes,
   'la10crucible:asknotes': mergeAskNotes,
+  'la10crucible34:asknotes': mergeAskNotes,
   'psychu0:asknotes': mergeAskNotes,
   'la10vocab1:asknotes': mergeAskNotes,
   'frchateaux:asknotes': mergeAskNotes,
   'la10crucible:trapnotes': mergeTrapNotes,    // trap notes (0025): one per card, a note beats a marker
+  'la10crucible34:trapnotes': mergeTrapNotes,
   'psychu0:trapnotes': mergeTrapNotes,
   'la10vocab1:trapnotes': mergeTrapNotes,
   'frchateaux:trapnotes': mergeTrapNotes,
@@ -612,6 +619,7 @@ var BUILTIN_MERGES = {
   'la10vocab1:fsrs': mergeCardsFsrs,           // vocabulary chapter 1: same record shape
   'frchateaux:fsrs': mergeCardsFsrs,           // les chateaux vocabulary: same record shape
   'la10crucible:uimarks': mergeMarks,          // progress kept inside the device-only ui key
+  'la10crucible34:uimarks': mergeMarks,        // stretches walked, and the parts read in For you
   'apushp12:uimarks': mergeMarks,
   'la10vocab1:uimarks': mergeMarks,
   'fraser5:uimarks': mergeMarks,
@@ -630,6 +638,7 @@ var BUILTIN_MERGES = {
   'acct1:askprefs': mergeSettings,
   'alg2u1:askprefs': mergeSettings,
   'la10crucible:askprefs': mergeSettings,
+  'la10crucible34:askprefs': mergeSettings,
   'apushp12:askprefs': mergeSettings,
   'psychu0:askprefs': mergeSettings,
   'la10vocab1:askprefs': mergeSettings,

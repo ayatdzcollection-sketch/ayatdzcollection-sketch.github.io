@@ -861,6 +861,7 @@ const MATERIAL_KEYS = {
   'apushp12':     ['asknotes', 'askprefs', 'fsrs', 'trapnotes', 'ui'],
   'chemunit':     ['asknotes', 'askprefs', 'fsrs', 'trapnotes', 'ui'],
   'la10crucible': ['asknotes', 'askprefs', 'fsrs', 'trapnotes', 'ui'],
+  'la10crucible34': ['asknotes', 'askprefs', 'fsrs', 'trapnotes', 'ui'],
   'la10vocab1':   ['asknotes', 'askprefs', 'fsrs', 'trapnotes', 'ui'],
   'frchateaux':   ['asknotes', 'askprefs', 'fsrs', 'trapnotes', 'ui'],
   'psychu0':      ['asknotes', 'askprefs', 'fsrs', 'trapnotes', 'ui'],
