@@ -812,6 +812,14 @@ Deno.serve(async (req: Request): Promise<Response> => {
       console.error("study-ask: the intent call did not answer in time");
     }
   }
+  /* A pasted set is answered at normal, whatever the classifier made of it. Measured on one real
+     four item worksheet: at quick the LENGTH line asked for 110 words to cover four questions and
+     the whole answer got 298 tokens; at careful it got 944 tokens and cost 4.19 cents, because
+     careful thinks and thinking rewrites the cached prefix every time. What a worksheet needs is
+     room, which ITEMS_MAX_TOKENS gives it, not deliberation. Normal keeps the cache and the
+     numbered answers both. */
+  if (body.items >= 2) body.level = DEFAULT_EFFORT;
+
   /* Whether an answer may go past the material is the owner's switch, read here from ai_begin2
      and never from the request: a forged body cannot turn it on. */
   body.beyond = begun.beyond === true;

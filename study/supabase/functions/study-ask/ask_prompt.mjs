@@ -362,6 +362,7 @@ export function buildRequest({ model, map, question, quote, focus, chunks, histo
     if (text) turns.push({ role: h.role, text });
   }
 
+  const nItems = Number(items);
   const blocks = [];
   /* First, because it governs everything after it. It rides here and not in the cached system
      text so that pinning a rule does not make the next question a cold one. */
@@ -386,12 +387,15 @@ export function buildRequest({ model, map, question, quote, focus, chunks, histo
   const checked = (Array.isArray(facts) ? facts : []).map(clean).filter(Boolean);
   if (checked.length) blocks.push('CHECKED\n' + checked.map((l) => '- ' + l).join('\n'));
   if (check === true) blocks.push('The student tapped Check my progress.');
-  blocks.push('LENGTH\nAbout ' + E.words + ' words, and at most ' + E.bullets + ' bullet points.');
+  /* A pasted set needs room per item. Without this the LENGTH line asked for 110 words while the
+     items rule asked for four numbered answers, which is not a brief the model can meet: measured
+     on a real four item worksheet, auto picked quick and the whole thing got 298 tokens. */
+  const words = Number.isInteger(nItems) && nItems >= 2 ? Math.max(E.words, nItems * 70) : E.words;
+  blocks.push('LENGTH\nAbout ' + words + ' words, and at most ' + (Number.isInteger(nItems) && nItems >= 2 ? 'two bullet points an item' : E.bullets + ' bullet points') + '.');
   blocks.push('QUESTION\n' + clean(question));
   /* Per question instructions. They live here rather than in the cached system text because they
      change from question to question, and a cached block that changes is a block paid for twice. */
   if (cr) blocks.push(CHAT_RULES_RULE);
-  const nItems = Number(items);
   if (Number.isInteger(nItems) && nItems >= 2) blocks.push('The student\'s message holds ' + nItems + ' questions or items. ' + ITEMS_RULE);
   if (checkwork === true) blocks.push(CHECKWORK_RULE);
   const ft = clean(fault);

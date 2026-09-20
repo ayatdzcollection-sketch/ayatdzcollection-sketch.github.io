@@ -553,6 +553,13 @@ import {
   /* A pasted worksheet: the count is stated and the layout rule rides with it. */
   const many = buildRequest({ model: 'claude-sonnet-4-6', question: 'q', items: 5 });
   assert.ok(many.messages[0].content.includes("The student's message holds 5 questions or items. " + ITEMS_RULE));
+  /* A set gets room per item. Measured: without this, auto read a four item worksheet as quick
+     and the LENGTH line asked for 110 words to answer four questions. */
+  assert.ok(/LENGTH\nAbout 350 words, and at most two bullet points an item\./.test(many.messages[0].content), 'five items must buy room');
+  const four = buildRequest({ model: 'claude-sonnet-4-6', question: 'q', items: 4, effort: 'quick' });
+  assert.ok(/LENGTH\nAbout 280 words, and at most two bullet points an item\./.test(four.messages[0].content));
+  assert.deepEqual(four.system, buildRequest({ model: 'claude-sonnet-4-6', question: 'q', effort: 'careful' }).system, 'items must not split the cache');
+  assert.ok(/LENGTH\nAbout 110 words, and at most three bullet points\./.test(buildRequest({ model: 'claude-sonnet-4-6', question: 'q', effort: 'quick' }).messages[0].content), 'one question is unchanged');
   assert.deepEqual(many.system, buildRequest({ model: 'claude-sonnet-4-6', question: 'q' }).system, 'items must not change the prefix');
   for (const n of [0, 1, undefined, 'five']) {
     assert.ok(!buildRequest({ model: 'claude-sonnet-4-6', question: 'q', items: n }).messages[0].content.includes(ITEMS_RULE), 'items ' + n + ' is not a list');
@@ -599,6 +606,7 @@ import {
   /* The Edge Function gives a pasted set room, from what was typed, and logs how it was reached. */
   const idx = fs.readFileSync(new URL('./index.ts', import.meta.url), 'utf8');
   assert.ok(/const ITEMS_MAX_TOKENS = 2400;/.test(idx), 'the items ceiling is the careful level');
+  assert.ok(/if \(body\.items >= 2\) body\.level = DEFAULT_EFFORT;/.test(idx), 'a pasted set is answered at normal, for the room without the thinking');
   assert.ok(/body\.question\.length \/ 40/.test(idx), 'the room comes from the question, not from the count sent');
   for (const f of ['route:', 'chunks_sent:', 'cache_read:', 'cache_write:', 'marks:', 'has_rules:', 'items:']) {
     assert.ok(idx.includes(f), 'the chat row is missing ' + f);
