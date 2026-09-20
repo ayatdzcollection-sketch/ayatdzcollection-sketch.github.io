@@ -47,8 +47,22 @@ else, or no header, is refused with 403), and a JSON body:
   marks:      true,                            optional, mark sources inline rather than in a
                                                separate Outside the material paragraph
   suggestNotes: false                          optional, default true; false forbids the Note line
+  saq:        true,                            optional, this material prepares an AP style history
+                                               test, so the answer is told what those questions are
+  hasFacts:   true                             optional, this material's page can work a number out
+                                               exactly, so the answer is told to go by CHECKED
 }
 ```
+
+`saq` and `hasFacts` say what the material IS, not what this question wants, and they pick which
+paragraphs the cached instruction block carries. Both come from the material's own adapter and must
+be the same for every question in it: the cached prefix is matched byte for byte, so a flag that
+flipped mid conversation would rewrite it at 1.25 times the input price instead of reading it at a
+tenth. `math` is now the same kind of flag, set by the adapters that draw formulas rather than by
+every page. Two more are worked out here from the material id, never from the request or the owner's
+grant, for the same reason: whether the material has a textbook corpus, and whether that corpus is a
+numbered review form. The rules that really do vary by question, including a Correction, a shelf
+passage and the shape of a Check my progress answer, ride in the message instead.
 
 `question` is 4,000 characters so a student can paste a set of questions. When the page splits one
 it sends `items` and retrieves passages for each item, and the answer is laid out one item at a

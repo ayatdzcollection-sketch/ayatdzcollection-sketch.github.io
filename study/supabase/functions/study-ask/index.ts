@@ -119,6 +119,15 @@ type AskBody = {
   chapter: number | null;
   textbookLabels?: string[];
   correctionCount?: number;
+  /* Which instructions the cached block carries. saq and hasFacts come from the material's own
+     adapter; hasTextbook and form are worked out here from the material id alone, never from the
+     owner's grant, so that turning the textbook off does not rewrite the cached prefix. */
+  saq: boolean;
+  hasFacts: boolean;
+  hasTextbook?: boolean;
+  form?: boolean;
+  correction?: boolean;
+  shelf?: boolean;
   facts: string[];
   tools: string[];
   kinds: string;
@@ -746,8 +755,19 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return reply({ ok: false, error: "grader_error" }, 200, origin);
   }
 
+  /* Which of the situational instruction paragraphs this material needs. Both are properties of the
+     material, not of the question or of the owner's switches, so the cached instruction block stays
+     byte identical for every question in this material and a follow up reads it at a tenth of the
+     price. A material whose corpus is not listed in CORPUS simply never carries the textbook
+     paragraph; it still answers correctly, it just is not told how to quote a textbook it has not
+     got. */
+  body.hasTextbook = !!CORPUS[body.material];
+  body.form = !!NUMBERED[CORPUS[body.material] || ""];
+
   /* The reserve is sized from what is about to be sent. The model only changes request fields
-     that carry no text, so the default stands in until ai_begin2 names the real one. */
+     that carry no text, so the default stands in until ai_begin2 names the real one. Corrections
+     and shelf passages are fetched further down and are not in this estimate; they are short, and
+     ai_end records what was really billed. */
   const estimate = estimateInputTokens(buildRequest({ model: DEFAULT_MODEL, ...body }));
 
   let begun: Record<string, unknown> | null;
@@ -890,6 +910,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
     if (ahead.length) {
       body.chunks = ahead.concat(body.chunks).slice(0, 14);
       body.correctionCount = ahead.length;
+      /* The rule that says a Correction outranks the material rides with the question, not in the
+         cached block, because whether one was found is a property of this question. */
+      body.correction = true;
     }
   } catch {
     console.error("study-ask: corrections lookup failed");
@@ -911,6 +934,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
         const label = ("[" + (p.heading || "Class notes") + "]").slice(0, 80);
         body.chunks.push({ label, text: p.body.slice(0, TEXTBOOK_CHARS) });
         body.textbookLabels.push(label);
+        /* As for a correction: the rule travels with the question that found a shelf passage. */
+        body.shelf = true;
       }
     } catch {
       console.error("study-ask: shelf search failed");

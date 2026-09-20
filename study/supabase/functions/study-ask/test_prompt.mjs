@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
   FEATURE, MAX_TOKENS, RESERVE_IN, RESERVE_OUT, CHARS_PER_TOKEN, DEFAULT_MODEL, LIMITS, PRICES, THREAD_RE,
-  PLAIN_MODELS, EFFORT_MODELS, LIST_RE, modelParams, systemPrompt, buildRequest, MATH_RULE, estimateInputTokens, validateAsk
+  PLAIN_MODELS, EFFORT_MODELS, LIST_RE, modelParams, systemPrompt, buildRequest, MATH_RULE, estimateInputTokens, validateAsk,
+  SAQ_RULE, TEXTBOOK_RULE, REFS_RULE, REFS_SHORT, TOOLS_RULE, CHECKED_RULE, FORM_RULE, CHECK_RULE,
+  CORRECTION_RULE, SHELF_RULE, TEST_RULE, ONLY_MATERIAL, PROGRESS_RULE, NOTES_RULE, REMEMBER_RULE, NOTE_RULE
 } from './ask_prompt.mjs';
 import { PRICES as GRADER_PRICES } from '../saq-grade/grader_prompt.mjs';
 
@@ -29,17 +31,87 @@ for (const m of [...PLAIN_MODELS, ...EFFORT_MODELS, DEFAULT_MODEL]) assert.ok(PR
 const sys = systemPrompt();
 assert.equal(sys, systemPrompt(), 'the prompt must be byte stable or the cache never hits');
 assert.ok(!DASH.test(sys), 'dash in system prompt');
-for (const s of ['MATERIAL MAP', 'FOCUS', 'HIGHLIGHT', 'PASSAGES', 'QUESTION', 'On the test:', 'Sources: [1], [3]', '1491 to 1754', 'TEA', 'nothing outside it', '**double asterisks**', 'yes or no', 'PROGRESS', 'NOTES', 'Remember:', 'LENGTH line']) {
+for (const s of ['MATERIAL MAP', 'FOCUS', 'HIGHLIGHT', 'PASSAGES', 'QUESTION', 'On the test:', 'Sources: [1], [3]', '1491 to 1754', 'nothing outside it', '**double asterisks**', 'yes or no', 'PROGRESS', 'NOTES', 'Remember:', 'LENGTH']) {
   assert.ok(sys.includes(s), 'system prompt is missing ' + s);
 }
-/* The PROGRESS, NOTES and Remember instructions close the prompt, word for word. */
-const APPENDED = [
-  "PROGRESS, when it is sent, is the student's own record in this material: the forecast, mock tests, weakest sections, questions they keep missing with the option they keep picking and the right answer, and short answer parts not earned. Use it only when the student asks about themselves (what to review, what they are weak at, a plan for tonight, why they keep missing something) or when the question is directly about something PROGRESS shows they keep getting wrong, and then say so in one short sentence. Recommend concretely from it: name the section and where in the material to do it, using the places PROGRESS names. Do not say how long it will take: you do not know. Rank weakness by how much of a section is held, lowest share first. Never invent progress that is not in PROGRESS, and never mention PROGRESS when the question has nothing to do with it.",
-  'NOTES are things the student saved earlier. Follow a note that states a preference, such as how long answers should be, and keep a note about a difficulty in mind when it is relevant.',
-  "Only when the QUESTION itself asks you to remember or note something (remember, note that, don't forget, keep in mind), confirm it in one short sentence, add one line that helps with it from the material, and end with one extra line after everything else, exactly: Remember: followed by one short sentence to save. Never write a Remember line in any other case."
-].join('\n');
+/* The PROGRESS, NOTES, Remember and Note instructions close the always on part, word for word. */
+const APPENDED = [PROGRESS_RULE, NOTES_RULE, REMEMBER_RULE, NOTE_RULE].join('\n');
 assert.ok(sys.includes('go back to helping with the material.\n\n' + APPENDED), 'the appended instructions are missing or reworded');
-assert.ok(/Passages labelled Textbook/.test(sys) && /"Practice:"/.test(sys) && /never add Practice to two answers in a row/.test(sys), 'textbook and in chat material rules missing');
+assert.ok(sys.endsWith(NOTE_RULE), 'with no material flags the prompt ends at the Note rule');
+/* No dash in any paragraph, whichever switches are on. */
+for (const [name, text] of Object.entries({ MATH_RULE, SAQ_RULE, TEXTBOOK_RULE, REFS_RULE, REFS_SHORT, TOOLS_RULE, CHECKED_RULE, FORM_RULE, CHECK_RULE, CORRECTION_RULE, SHELF_RULE, TEST_RULE, ONLY_MATERIAL })) {
+  assert.ok(!DASH.test(text), 'dash in ' + name);
+}
+
+/* ---- the cached block carries only what this material needs ----
+   Every gated paragraph must be absent by default and present under its own flag, and nothing else
+   may move when one flag is turned on: a flag that changed two paragraphs would be a flag that is
+   hard to reason about when the cache misses. */
+const GATED = [
+  ['saq', SAQ_RULE], ['math', MATH_RULE], ['textbook', TEXTBOOK_RULE], ['tools', TOOLS_RULE],
+  ['checked', CHECKED_RULE], ['form', FORM_RULE]
+];
+for (const [flag, text] of GATED) {
+  assert.ok(!sys.includes(text), flag + ': its paragraph is in the prompt with the flag off');
+  const on = systemPrompt({ [flag]: true });
+  assert.ok(on.includes(text), flag + ': its paragraph is missing with the flag on');
+  assert.equal(on.replace('\n\n' + text, ''), sys, flag + ': turning it on changed something else as well');
+}
+/* refs has two forms, and the short one is only for a material that also has a tools block. */
+assert.ok(systemPrompt({ refs: true }).includes(REFS_RULE));
+assert.ok(!systemPrompt({ refs: true }).includes(REFS_SHORT));
+assert.ok(systemPrompt({ refs: true, tools: true }).includes(REFS_SHORT));
+assert.ok(!systemPrompt({ refs: true, tools: true }).includes(REFS_RULE));
+assert.ok(REFS_SHORT.length < REFS_RULE.length, 'the short ref rule is not shorter');
+/* Three rules left the cached block for the message. They must not be in it under any flag. */
+for (const [name, text] of Object.entries({ CHECK_RULE, CORRECTION_RULE, SHELF_RULE })) {
+  const every = systemPrompt({ math: true, beyond: true, marks: true, saq: true, checked: true, tools: true, textbook: true, refs: true, form: true });
+  assert.ok(!every.includes(text), name + ' is still in the cached instructions');
+}
+/* The test promise rule is in both halves of the beyond switch. It used to be in neither reliably. */
+for (const beyond of [false, true]) assert.ok(systemPrompt({ beyond }).includes(TEST_RULE), 'beyond=' + beyond + ': no test promise rule');
+
+/* ---- the size of the cached block ----
+   The prefix shrink of 2026-09-20. These are character budgets, not token counts, and they are
+   here to catch a rule quietly moving back into the always on part: the cold first question of a
+   sitting pays 1.25 times for every character of this. Raise a budget deliberately, with a reason,
+   never to make the test pass. */
+const ALWAYS = systemPrompt({ beyond: true, marks: true });
+assert.ok(ALWAYS.length < 11200, 'the always on instructions grew to ' + ALWAYS.length + ' characters');
+/* The APUSH period test, the heaviest material: history, tools, a textbook and inline marks. */
+const HEAVIEST = systemPrompt({ beyond: true, marks: true, saq: true, tools: true, textbook: true, refs: true });
+assert.ok(HEAVIEST.length < 13600, 'the heaviest material grew to ' + HEAVIEST.length + ' characters');
+/* A material with none of it: vocabulary, the Crucible, the French chateaux. */
+assert.ok(systemPrompt({ beyond: true, marks: true, refs: true }).length < 12100, 'the lightest material grew');
+
+/* ---- the cached block must not move between two questions in one material ----
+   This is the whole bet of the shrink. Everything a question can carry is varied here at once, and
+   the instruction block, the map block and the tools block must come back identical: if any of them
+   moved, the second question would rewrite the prefix at 1.25 times the price instead of reading it
+   at a tenth, and the shrink would cost more than it saved. */
+{
+  const material = {
+    map: 'Unit outline', tools: ['practice', 'choose'], kinds: 'k: a kind', math: true, beyond: true,
+    marks: true, saq: true, hasFacts: true, hasTextbook: true, form: true, widgets: true, practice: true
+  };
+  const first = buildRequest({ model: 'claude-sonnet-4-6', ...material, question: 'who was Metacom' });
+  const later = [
+    { question: 'a pasted worksheet', items: 4, effort: 'quick' },
+    { question: 'Check my progress', check: true, progress: 'p', effort: 'careful' },
+    { question: 'is this right', checkwork: true, quote: 'my answer', focus: 'Card 3' },
+    { question: 'again', fault: 'You wrote a number nothing backs.', history: [{ role: 'user', text: 'q' }, { role: 'assistant', text: 'a' }] },
+    { question: 'why', correction: true, shelf: true, chunks: [{ label: 'Correction: x', text: 'y' }] },
+    { question: 'sig figs in 0.00450', facts: ['0.00450 has 3 significant figures'], rules: 'answer in French' },
+    { question: 'more', notes: 'n', suggestNotes: false, turn: 9 }
+  ];
+  for (const q of later) {
+    const r2 = buildRequest({ model: 'claude-sonnet-4-6', ...material, ...q });
+    assert.deepEqual(r2.system, first.system, 'the cached blocks moved on: ' + q.question);
+  }
+  /* And the rules that left the cached block really do arrive in the message. */
+  const withAll = buildRequest({ model: 'claude-sonnet-4-6', ...material, question: 'q', check: true, correction: true, shelf: true });
+  for (const rule of [CHECK_RULE, CORRECTION_RULE, SHELF_RULE]) assert.ok(withAll.messages[0].content.includes(rule));
+}
 
 /* Model params: no thinking anywhere; effort low only on the effort models. */
 for (const m of PLAIN_MODELS) assert.deepEqual(modelParams(m), {}, m);
@@ -62,7 +134,9 @@ assert.deepEqual(Object.keys(r).sort(), ['max_tokens', 'messages', 'system']);
 assert.equal(r.max_tokens, 1000);
 assert.ok(!('thinking' in r) && !('output_config' in r));
 assert.equal(r.system.length, 2);
-assert.equal(r.system[0].text, sys);
+/* buildRequest is given no widgets field here, and an absent field means the page can act on a
+   ref line, so this request's instructions carry the ref paragraph and the bare prompt does not. */
+assert.equal(r.system[0].text, systemPrompt({ refs: true }));
 /* Two breakpoints: the instructions, then the map. */
 assert.deepEqual(r.system[0].cache_control, { type: 'ephemeral' });
 assert.equal(r.system[1].text, 'MATERIAL MAP\nUnit outline');
@@ -174,13 +248,20 @@ const minimal = validateAsk({ material: good.material, install: good.install, qu
 assert.deepEqual(minimal, {
   material: good.material, install: good.install, adminToken: null, question: 'x', quote: '', focus: '', map: '', chunks: [], history: [],
   progress: '', notes: '', thread: null, turn: 0, textbook: false, practice: true, widgets: true, math: false, marks: false, effort: 'normal', chapter: null,
-  facts: [], tools: [], kinds: '', check: false, rules: '', items: 0, checkwork: false, suggestNotes: true, fault: ''
+  facts: [], tools: [], kinds: '', check: false, rules: '', items: 0, checkwork: false, suggestNotes: true, fault: '',
+  saq: false, hasFacts: false
 });
 assert.equal(validateAsk({ material: good.material, install: good.install, question: 'x', chunks: [{ label: 'a', text: 'b', ref: 'q:abc_1' }] }).chunks[0].ref, 'q:abc_1');
 assert.equal(validateAsk({ material: good.material, install: good.install, question: 'x', chunks: [{ label: 'a', text: 'b', ref: 'bad ref' }] }), null);
 assert.equal(validateAsk({ material: good.material, install: good.install, question: 'x', textbook: 'yes' }), null);
 assert.equal(validateAsk({ material: good.material, install: good.install, question: 'x', math: 'yes' }), null);
 assert.equal(validateAsk({ material: good.material, install: good.install, question: 'x', math: true }).math, true);
+/* What the material is, as its own adapter reports it. Both pick which instructions the cached
+   block carries, so a wrong type is refused rather than read as false. */
+assert.equal(validateAsk({ material: good.material, install: good.install, question: 'x', saq: 'yes' }), null);
+assert.equal(validateAsk({ material: good.material, install: good.install, question: 'x', hasFacts: 1 }), null);
+assert.equal(validateAsk({ material: good.material, install: good.install, question: 'x', saq: true }).saq, true);
+assert.equal(validateAsk({ material: good.material, install: good.install, question: 'x', hasFacts: true }).hasFacts, true);
 
 /* Math: the paragraph goes only to pages that can draw it, and it rides in the cached system text. */
 {
@@ -435,15 +516,20 @@ import {
 console.log('trap notes ok');
 
 /* ---------------------------------------------------------------- CHECKED, TOOLS, Check my progress, the review form */
-import { TOOL_IDS, TOOL_TEXT, toolsText, CHECKED_RULE, TOOLS_RULE, CHECK_RULE, FORM_RULE, formNumbers } from './ask_prompt.mjs';
+import { TOOL_IDS, TOOL_TEXT, toolsText, formNumbers } from './ask_prompt.mjs';
 {
   const DASHES = new RegExp('[' + String.fromCharCode(0x2013, 0x2014) + ']');
   const base = { material: 'chem/unit-measurement', install: '0123456789abcdef0123456789abcdef', question: 'x' };
-  const sys = systemPrompt();
-  for (const rule of [CHECKED_RULE, TOOLS_RULE, CHECK_RULE, FORM_RULE]) {
+  /* Each of these is only sent to a material that needs it: CHECKED to a page that works numbers
+     out, TOOLS to one with tools, the review form to the one material that has one, and the shape
+     of Check my progress only to the answer the student tapped for. */
+  const sys = systemPrompt({ checked: true, tools: true, form: true });
+  for (const rule of [CHECKED_RULE, TOOLS_RULE, FORM_RULE]) {
     assert.ok(sys.includes(rule), 'a new rule is missing from the system prompt: ' + rule.slice(0, 40));
     assert.ok(!DASHES.test(rule), 'dash in a new rule');
   }
+  assert.ok(!sys.includes(CHECK_RULE), 'Check my progress rides with the question, not in the cache');
+  assert.ok(buildRequest({ question: 'Check my progress', check: true }).messages[0].content.includes(CHECK_RULE), 'the Check rule is missing from the message');
   assert.ok(/CHECKED or the student's own message/.test(sys), 'the numbers rule allows CHECKED');
   assert.ok(FORM_RULE.includes('Correct:') && FORM_RULE.includes("Answer written on the student's copy") && FORM_RULE.includes('correct significant figures'), 'the review form rule says to go by Correct');
   assert.ok(CHECK_RULE.includes('PRACTICE KINDS') && CHECK_RULE.includes('square brackets'), 'check my progress builds the set from the kinds');
@@ -471,14 +557,20 @@ import { TOOL_IDS, TOOL_TEXT, toolsText, CHECKED_RULE, TOOLS_RULE, CHECK_RULE, F
   const tooled = buildRequest({ model: 'claude-sonnet-4-6', map: 'm', question: 'q', tools: ['practice', 'figs'], kinds: 'sigmul: Sig figs when multiplying' });
   assert.equal(plain.system.length, 2, 'no tools, no third block');
   assert.equal(tooled.system.length, 3);
-  assert.deepEqual(tooled.system.slice(0, 2), plain.system, 'the instructions and the map are unchanged by tools');
+  assert.deepEqual(tooled.system[1], plain.system[1], 'the map block is unchanged by tools');
+  /* The instructions DO change with tools, on purpose: a material with a tools block is told how to
+     use it and gets the short form of the ref rule, because TOOLS already covers the Practice line.
+     Both forms are stable for the material, which is what the cache needs. */
+  assert.ok(tooled.system[0].text.includes(TOOLS_RULE) && !plain.system[0].text.includes(TOOLS_RULE));
+  assert.ok(tooled.system[0].text.includes(REFS_SHORT) && plain.system[0].text.includes(REFS_RULE));
+  assert.ok(tooled.system[0].text.length < plain.system[0].text.length + REFS_SHORT.length, 'tools cost more than the ref rule saved');
   assert.equal(tooled.system[2].text, 'TOOLS\n' + TOOL_TEXT.practice + '\n' + TOOL_TEXT.figs + '\n\nPRACTICE KINDS\nsigmul: Sig figs when multiplying');
   assert.deepEqual(tooled.system[2].cache_control, { type: 'ephemeral' });
   assert.equal(toolsText(['figs'], 'kinds'), 'TOOLS\n' + TOOL_TEXT.figs, 'kinds only ride with practice or steps');
   assert.equal(toolsText([], 'k'), '');
   assert.equal(buildRequest({ model: 'claude-sonnet-4-6', map: 'm', question: 'q', tools: ['figs'], widgets: false }).system.length, 2, 'widgets off drops the tools');
   const checkReq = buildRequest({ model: 'claude-sonnet-4-6', question: 'Check my progress', progress: 'p', check: true });
-  assert.equal(checkReq.messages[0].content, 'PROGRESS\np\n\nThe student tapped Check my progress.\n\nLENGTH\nAbout 200 words, and at most four bullet points.\n\nQUESTION\nCheck my progress');
+  assert.equal(checkReq.messages[0].content, 'PROGRESS\np\n\nThe student tapped Check my progress.\n\nLENGTH\nAbout 200 words, and at most four bullet points.\n\nQUESTION\nCheck my progress\n\n' + CHECK_RULE);
   assert.ok(!DASHES.test(JSON.stringify(tooled)));
 
   /* A form question by its number. */
@@ -508,7 +600,7 @@ console.log('checked facts, tools, check my progress and the review form ok');
 /* ------------------------------------------- long messages, chat rules, marking, Note, Choose */
 import {
   BEYOND_CORE, SPLIT_RULE, MARKS_CITE, MARKS_OUTSIDE, CAPABILITY_RULE,
-  CHAT_RULES_RULE, ITEMS_RULE, CHECKWORK_RULE, NOTE_RULE
+  CHAT_RULES_RULE, ITEMS_RULE, CHECKWORK_RULE
 } from './ask_prompt.mjs';
 {
   const DASHES = new RegExp('[' + String.fromCharCode(0x2013, 0x2014) + ']');
@@ -617,7 +709,7 @@ console.log('long messages, chat rules, marking, Note and Choose ok');
 
 /* ------------------------------------- corrections, the shelf, the reranker and the one retry */
 import {
-  CORRECTION_RULE, SHELF_RULE, RETRY_RULE,
+  RETRY_RULE,
   RERANK_FEATURE, RERANK_MODEL, RERANK_MAX_TOKENS, RERANK_LIMITS, RERANK_SYSTEM,
   buildRerankRequest, parseRerank, validateRerank
 } from './ask_prompt.mjs';
@@ -628,8 +720,18 @@ import {
   const sys = systemPrompt();
 
   for (const rule of [CORRECTION_RULE, SHELF_RULE, RETRY_RULE]) assert.ok(!DASHES.test(rule));
-  assert.ok(sys.includes(CORRECTION_RULE), 'the correction rule must be in the prompt');
-  assert.ok(sys.includes(SHELF_RULE), 'the shelf rule must be in the prompt');
+  /* Both rules ride with the question that found one, not in the cached prefix: a correction
+     reaches about one question in twenty and a shelf passage fewer, and the pair cost every other
+     question about 160 tokens of instructions it had no use for. */
+  assert.ok(!sys.includes(CORRECTION_RULE), 'the correction rule must not be cached');
+  assert.ok(!sys.includes(SHELF_RULE), 'the shelf rule must not be cached');
+  const withCorr = buildRequest({ model: 'claude-sonnet-4-6', map: 'm', question: 'q', chunks: [{ label: 'Correction: wheat', text: 'It was Pennsylvania.' }], correction: true });
+  assert.ok(withCorr.messages[0].content.includes('PASSAGES\n[1] Correction: wheat: It was Pennsylvania.\n\n' + CORRECTION_RULE), 'the correction rule goes with its passage');
+  assert.ok(buildRequest({ question: 'q', shelf: true }).messages[0].content.includes(SHELF_RULE));
+  assert.ok(!buildRequest({ question: 'q' }).messages[0].content.includes(CORRECTION_RULE), 'no correction, no rule');
+  assert.ok(!buildRequest({ question: 'q' }).messages[0].content.includes(SHELF_RULE), 'no shelf passage, no rule');
+  /* Neither may move the cached block: a question that finds a correction must still read it. */
+  assert.deepEqual(withCorr.system, buildRequest({ model: 'claude-sonnet-4-6', map: 'm', question: 'q' }).system, 'a correction must not make the question a cold one');
   /* A correction is the one thing that may overrule the material, and the prompt has to say so. */
   assert.ok(/the Correction is right/.test(CORRECTION_RULE));
   /* The retry rule rides with the fault, not in the cached prefix. */
