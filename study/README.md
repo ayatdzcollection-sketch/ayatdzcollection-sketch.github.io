@@ -123,6 +123,11 @@ not open. If losing data in that window matters (it does for anything spaced-rep
 put the rule in `BUILTIN_MERGES` at the top of `assets/sync.js` instead. Every material
 that schedules anything does exactly that.
 
+**Nothing a material stores may be left without a rule.** `study/tests/merge.test.mjs` holds a
+table of every key every material writes and fails if one is neither merged, excluded, nor named
+as deliberately last-write-with-a-reason. A new material adds its row there, or the guard cannot
+see it.
+
 Anything that keeps FSRS records should store them under one `fsrs` key shaped
 `{ cards, quizDate, exams }` and register `makeFsrsMerge('cards')` for it, as the periodic
 table and the Fraser reading quiz both do. That buys the per-record merge, the exam-log
@@ -190,6 +195,10 @@ device synced.
 | Two records for one card with the same `last` and `reps` | The later write. Something that is not a review changed (a star), and spelling used to decide it, so a star could not be cleared. |
 | Progress inside the device only `ui` key | The listed fields alone travel, as a virtual key `uimarks` that exists in the envelope and never in `localStorage` (`SYNC_PARTIAL` in `sync.js`): Crucible stretches walked, APUSH must knows, vocabulary words met. A union all the way down; two timestamps keep the later. The tab, the deck position and the rest of `ui` stay per device. A new material that keeps progress in `ui` must list the field there. |
 | `trapnotes`, `asknotes` | Per card and per note unions, registered for every namespace that writes them. |
+| `askprefs` | Field by field, like `settings`. Every material writes it, and none had a rule, so a device that flipped one Ask switch carried its stale copy of the others back over. |
+| `mcAttempt`, `mcDraft`, and Algebra 2's `attempt` and `mock` | One sitting of a quiz: the sitting with the later `at` wins, not the later write, so a stale device cannot overwrite a submitted quiz. A draft of the same sitting answered on two devices keeps every answer. Clearing it to start fresh is the one case decided by the write time. |
+| Algebra 2's `skills` | Per skill, the larger right count and the larger wrong count. They only go up on the device holding them, so this loses nothing; two devices that both practised since the last sync undercount by the smaller run rather than discarding one device outright. |
+| Algebra 2's `history`, `mockHistory` | Concatenate and dedupe like `exams`, but stamped `at` rather than `ts`. Newest 40. |
 | `tests` | The same rule with a deeper history: newest 40, so a week of drilling cannot evict a graded result. |
 | `quizDate` | From whichever side wrote that key more recently. |
 | `regionsDone`, `setsDone` | Set union over strings. Legacy: `setsDone` ids encoded a fixed set size. |

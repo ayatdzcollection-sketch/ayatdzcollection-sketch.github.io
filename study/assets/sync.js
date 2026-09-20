@@ -44,6 +44,7 @@ var SYNC_EXCLUDE = {
   'fraserall': ['ui'],
   'fraser5': ['ui'],
   'chemunit': ['ui'],
+  'alg2u1': ['ui'],
   'acct1': ['ui'],
   'la10crucible': ['ui'],
   'apushp12': ['ui'],
@@ -169,14 +170,15 @@ function pickStateRecord(a, b, aM, bM) {
  * The cap is a parameter because the two histories want different depths. Practice runs
  * share one 20-slot log, but graded tests are rarer and worth more, so they keep 40: a
  * week of drilling should not be able to evict a test result. */
-function makeEventMerge(cap) {
+function makeEventMerge(cap, stamp) {
+  var F = stamp || 'ts';
   return function (aEx, bEx) {
   var all = [].concat(Array.isArray(aEx) ? aEx : [], Array.isArray(bEx) ? bEx : []);
   var byTs = {};
   for (var i = 0; i < all.length; i++) {
     var e = all[i];
-    if (!e || typeof e.ts === 'undefined') continue;
-    var k = String(e.ts);
+    if (!e || typeof e[F] === 'undefined') continue;
+    var k = String(e[F]);
     var prev = byTs[k];
     if (!prev) { byTs[k] = e; continue; }
     // Same timestamp from both sides: prefer a pass, then break ties deterministically.
@@ -185,7 +187,7 @@ function makeEventMerge(cap) {
   }
   var out = [];
   for (var key in byTs) if (Object.prototype.hasOwnProperty.call(byTs, key)) out.push(byTs[key]);
-  out.sort(function (x, y) { return x.ts - y.ts; });
+  out.sort(function (x, y) { return x[F] - y[F]; });
   return out.slice(-cap);
   };
 }
@@ -468,6 +470,75 @@ function mergeTrapNotes(aVal, bVal) {
   return out;
 }
 
+/* One sitting of a quiz or test: { at, v, ... } where at is when it was started or submitted,
+ * or null once it has been cleared. Newest write wins loses a submitted quiz to a stale device's
+ * copy of the same key, so the sitting with the later 'at' wins instead. A side that is null has
+ * cleared it on purpose ("start a fresh quiz"), which only its own envelope time can date, so
+ * that case alone falls back to the newest write. */
+function makeSittingMerge(stampField) {
+  return function (aVal, bVal, aM, bM) {
+    var isObj = function (v) { return !!v && typeof v === 'object' && !Array.isArray(v); };
+    var aAt = isObj(aVal) && typeof aVal[stampField] === 'number' ? aVal[stampField] : null;
+    var bAt = isObj(bVal) && typeof bVal[stampField] === 'number' ? bVal[stampField] : null;
+    if (aAt === null && bAt === null) return defaultMerge(aVal, bVal, aM, bM);
+    if (aAt === null) return (aM || 0) > (bM || 0) ? aVal : bVal;
+    if (bAt === null) return (bM || 0) > (aM || 0) ? bVal : aVal;
+    if (aAt !== bAt) return aAt > bAt ? aVal : bVal;
+    return defaultMerge(aVal, bVal, aM, bM);
+  };
+}
+
+/* The quiz in progress: { items, v, ord, at }. A different 'at' is a different sitting, so the
+ * later one wins whole. The same 'at' is one sitting answered on two devices: every question
+ * either device answered is kept, and a question both answered takes the later write's answer.
+ * Answers are never carried across sittings, where they would belong to different questions. */
+function mergeQuizDraft(aVal, bVal, aM, bM) {
+  var isObj = function (v) { return !!v && typeof v === 'object' && !Array.isArray(v); };
+  if (!isObj(aVal) || !isObj(bVal)) return defaultMerge(aVal, bVal, aM, bM);
+  var aAt = typeof aVal.at === 'number' ? aVal.at : 0, bAt = typeof bVal.at === 'number' ? bVal.at : 0;
+  if (aAt !== bAt) return aAt > bAt ? aVal : bVal;
+  var newer = (bM || 0) > (aM || 0) ? bVal : aVal;
+  var out = {}, k;
+  for (k in aVal) if (Object.prototype.hasOwnProperty.call(aVal, k) && k !== '__proto__') out[k] = aVal[k];
+  for (k in bVal) if (Object.prototype.hasOwnProperty.call(bVal, k) && k !== '__proto__' && !Object.prototype.hasOwnProperty.call(out, k)) out[k] = bVal[k];
+  var av = isObj(aVal.v) ? aVal.v : {}, bv = isObj(bVal.v) ? bVal.v : {}, v = {};
+  for (k in av) if (Object.prototype.hasOwnProperty.call(av, k) && k !== '__proto__') v[k] = av[k];
+  for (k in bv) {
+    if (!Object.prototype.hasOwnProperty.call(bv, k) || k === '__proto__') continue;
+    v[k] = Object.prototype.hasOwnProperty.call(av, k) ? (newer === bVal ? bv[k] : av[k]) : bv[k];
+  }
+  out.v = v;
+  return out;
+}
+
+/* Algebra 2 counts practice per skill rather than scheduling cards: { skill: { r, w, last } }.
+ * Newest write wins threw away a whole device's practice. Each count only ever goes up on the
+ * device holding it, so the larger of the two is kept. Two devices that both practised since
+ * their last sync undercount by the smaller run, which is the honest floor: no practice is
+ * invented and none is thrown away. */
+function mergeSkillCounts(aVal, bVal) {
+  var isObj = function (v) { return !!v && typeof v === 'object' && !Array.isArray(v); };
+  if (!isObj(aVal)) return isObj(bVal) ? bVal : (aVal === null || typeof aVal === 'undefined' ? (isObj(bVal) ? bVal : {}) : aVal);
+  if (!isObj(bVal)) return aVal;
+  var out = {}, k;
+  var num = function (v) { return typeof v === 'number' && isFinite(v) ? v : 0; };
+  for (k in aVal) if (Object.prototype.hasOwnProperty.call(aVal, k) && k !== '__proto__') out[k] = aVal[k];
+  for (k in bVal) {
+    if (!Object.prototype.hasOwnProperty.call(bVal, k) || k === '__proto__') continue;
+    var a = out[k], b = bVal[k];
+    if (!isObj(a)) { out[k] = b; continue; }
+    if (!isObj(b)) continue;
+    var m = {}, f;
+    for (f in a) if (Object.prototype.hasOwnProperty.call(a, f) && f !== '__proto__') m[f] = a[f];
+    for (f in b) if (Object.prototype.hasOwnProperty.call(b, f) && f !== '__proto__' && !Object.prototype.hasOwnProperty.call(m, f)) m[f] = b[f];
+    m.r = Math.max(num(a.r), num(b.r));
+    m.w = Math.max(num(a.w), num(b.w));
+    if (typeof a.last === 'number' || typeof b.last === 'number') m.last = Math.max(num(a.last), num(b.last));
+    out[k] = m;
+  }
+  return out;
+}
+
 /* Marks are maps, sometimes nested ({ section: { index: 1 } }, { word: timestamp }). Union all
  * the way down. Where both sides hold a leaf: two timestamps keep the later, anything else is
  * taken from the side written later, a tie by spelling so both merge directions agree. */
@@ -544,6 +615,48 @@ var BUILTIN_MERGES = {
   'apushp12:uimarks': mergeMarks,
   'la10vocab1:uimarks': mergeMarks,
   'fraser5:uimarks': mergeMarks,
+  /* Ask panel preferences are a bag of independent switches, exactly like the periodic table's
+   * settings: without a rule, a device that flips one switch pushes its stale copy of the others
+   * back over. Every material writes this key. No per field stamps are written yet, so a field
+   * both sides know falls back to the envelope time; a field only one side knows always survives,
+   * which is what stops an older build stripping a newer one's switch. */
+  'fifty-states:askprefs': mergeSettings,
+  'periodic:askprefs': mergeSettings,
+  'fraser12:askprefs': mergeSettings,
+  'fraser34:askprefs': mergeSettings,
+  'fraserall:askprefs': mergeSettings,
+  'fraser5:askprefs': mergeSettings,
+  'chemunit:askprefs': mergeSettings,
+  'acct1:askprefs': mergeSettings,
+  'alg2u1:askprefs': mergeSettings,
+  'la10crucible:askprefs': mergeSettings,
+  'apushp12:askprefs': mergeSettings,
+  'psychu0:askprefs': mergeSettings,
+  'la10vocab1:askprefs': mergeSettings,
+  'frchateaux:askprefs': mergeSettings,
+  /* The written quiz in the Fraser engine and its port to accounting: the submitted attempt and
+   * the quiz in progress. The score also lands in exams, so a lost attempt kept the number and
+   * lost the marked paper. */
+  'fraser12:mcAttempt': makeSittingMerge('at'),
+  'fraser34:mcAttempt': makeSittingMerge('at'),
+  'fraserall:mcAttempt': makeSittingMerge('at'),
+  'fraser5:mcAttempt': makeSittingMerge('at'),
+  'acct1:mcAttempt': makeSittingMerge('at'),
+  'fraser12:mcDraft': mergeQuizDraft,
+  'fraser34:mcDraft': mergeQuizDraft,
+  'fraserall:mcDraft': mergeQuizDraft,
+  'fraser5:mcDraft': mergeQuizDraft,
+  'acct1:mcDraft': mergeQuizDraft,
+  /* Algebra 2 (retired, still openable and still keeping its data) schedules nothing: its whole
+   * record is these five keys, and not one of them had a rule. */
+  'alg2u1:skills': mergeSkillCounts,
+  'alg2u1:history': makeEventMerge(40, 'at'),
+  'alg2u1:mockHistory': makeEventMerge(40, 'at'),
+  'alg2u1:attempt': makeSittingMerge('at'),
+  'alg2u1:mock': makeSittingMerge('at'),
+  'alg2u1:lastDrill': mergeMax,
+  /* 'alg2u1:draft' is deliberately left at newest write wins: it is { v } with nothing to date it
+   * by and it is emptied on submit, so a union would resurrect answers that were just cleared. */
   'periodic:best': mergeMax,                   // sprint best: the higher score, from either device
   'periodic:setsDone': mergeRegionsDone,     // legacy ids; kept so an old device loses nothing
   'periodic:started': mergeNumberSet,        // set-size-independent successor to setsDone
@@ -720,6 +833,9 @@ if (typeof module !== 'undefined' && module.exports) {
     mergeAskNotes: mergeAskNotes,
     mergeTrapNotes: mergeTrapNotes,
     mergeMarks: mergeMarks,
+    makeSittingMerge: makeSittingMerge,
+    mergeQuizDraft: mergeQuizDraft,
+    mergeSkillCounts: mergeSkillCounts,
     SYNC_PARTIAL: SYNC_PARTIAL,
     mergeExams: mergeExams,
     makeEventMerge: makeEventMerge,

@@ -841,3 +841,112 @@ test('chemunit fsrs: topics taught on either device stay taught', () => {
   const m = mergeChemUnitFsrs({ cards: {}, taught: { sci: 1758000000000 } }, { cards: {}, taught: { den: 1758000500000, sci: 1758000900000 } }, 5, 9);
   assert.deepEqual(m.taught, { sci: 1758000900000, den: 1758000500000 });
 });
+
+/* ---------- 2026-09-19: every key every material writes needs a rule ---------- */
+
+const { makeSittingMerge, mergeQuizDraft, mergeSkillCounts } = require('../assets/sync.js');
+
+/* What each live material actually writes, read off its source with
+ *   grep -oE "store\.(set|get)\('[A-Za-z0-9_]+'" study/src/m/<class>/<id>.html
+ * Add a row when a material is added, or the guard below cannot see it. The sources are
+ * gitignored, so this table is the only committed record of them. */
+const MATERIAL_KEYS = {
+  'fifty-states': ['asknotes', 'askprefs', 'deck', 'followFocus', 'fsrs', 'mapPrefs', 'regionsDone', 'trapnotes'],
+  'periodic':     ['asknotes', 'askprefs', 'best', 'fsrs', 'setsDone', 'settings', 'started', 'tests', 'trapnotes', 'ui'],
+  'fraser12':     ['asknotes', 'askprefs', 'fsrs', 'mcAttempt', 'mcDraft', 'trapnotes', 'ui'],
+  'fraser34':     ['asknotes', 'askprefs', 'fsrs', 'mcAttempt', 'mcDraft', 'trapnotes', 'ui'],
+  'fraserall':    ['asknotes', 'askprefs', 'fsrs', 'mcAttempt', 'mcDraft', 'trapnotes', 'ui'],
+  'fraser5':      ['asknotes', 'askprefs', 'fsrs', 'mcAttempt', 'mcDraft', 'trapnotes', 'ui'],
+  'acct1':        ['asknotes', 'askprefs', 'fsrs', 'mcAttempt', 'mcDraft', 'trapnotes', 'ui'],
+  'apushp12':     ['asknotes', 'askprefs', 'fsrs', 'trapnotes', 'ui'],
+  'chemunit':     ['asknotes', 'askprefs', 'fsrs', 'trapnotes', 'ui'],
+  'la10crucible': ['asknotes', 'askprefs', 'fsrs', 'trapnotes', 'ui'],
+  'la10vocab1':   ['asknotes', 'askprefs', 'fsrs', 'trapnotes', 'ui'],
+  'frchateaux':   ['asknotes', 'askprefs', 'fsrs', 'trapnotes', 'ui'],
+  'psychu0':      ['asknotes', 'askprefs', 'fsrs', 'trapnotes', 'ui'],
+  'alg2u1':       ['asknotes', 'askprefs', 'attempt', 'draft', 'history', 'lastDrill', 'mock', 'mockHistory', 'skills', 'trapnotes', 'ui']
+};
+
+/* Newest write wins on purpose, with the reason. Anything else without a rule is a bug: two
+ * devices then overwrite each other's copy of it wholesale. */
+const DELIBERATE_LAST_WRITE = {
+  'alg2u1:draft': 'the answers being typed into the test, { v } with nothing to date it by, emptied on submit: a union would resurrect answers that were just cleared'
+};
+
+test('every key every material writes is merged, excluded, or deliberately last-write', () => {
+  const unruled = [];
+  for (const [ns, keys] of Object.entries(MATERIAL_KEYS)) {
+    for (const key of keys) {
+      const full = ns + ':' + key;
+      if (askExcluded(ns, key)) continue;                 // stays on the device
+      if (typeof REG[full] === 'function') continue;      // has a rule
+      if (full in DELIBERATE_LAST_WRITE) continue;        // named, with a reason
+      unruled.push(full);
+    }
+  }
+  assert.deepEqual(unruled, [], 'these would silently overwrite between devices');
+});
+
+test('progress never lives only in a key that stays on the device', () => {
+  /* ui is device-local, so a material that keeps marks there must list the fields in
+     SYNC_PARTIAL and register the uimarks rule. */
+  for (const [ns, fields] of Object.entries(SYNC_PARTIAL)) {
+    assert.ok(MATERIAL_KEYS[ns], ns + ' is in SYNC_PARTIAL but not in MATERIAL_KEYS');
+    assert.ok(askExcluded(ns, 'ui'), ns + ' partial-syncs ui without excluding it');
+    assert.equal(typeof REG[ns + ':uimarks'], 'function', ns + ' has no uimarks rule');
+    assert.ok(fields.length, ns + ' lists no fields');
+  }
+});
+
+test('askprefs: one switch flipped on a phone does not carry its stale copy of the others', () => {
+  const a = env({ 'chemunit:askprefs': [{ practice: true, textbook: 'off', effort: 'low' }, 500] });
+  const b = env({ 'chemunit:askprefs': [{ practice: false, textbook: 'on', notes: true }, 900] });
+  const m = merge(a, b).ns.chemunit.askprefs.value;
+  assert.equal(m.notes, true, 'a switch only the newer side knows survives');
+  assert.equal(m.effort, 'low', 'a switch only the older side knows is not stripped');
+  assert.deepEqual(merge(b, a).ns.chemunit.askprefs.value, m, 'both directions agree');
+});
+
+test('mcAttempt: a submitted quiz is not lost to a stale device', () => {
+  const rule = makeSittingMerge('at');
+  const older = { at: 100, items: ['q1'], v: { q1: 0 } };
+  const newer = { at: 900, items: ['q1', 'q2'], v: { q1: 1, q2: 2 } };
+  assert.deepEqual(rule(older, newer, 9000, 10), newer, 'the later sitting wins even when the stale device wrote last');
+  assert.deepEqual(rule(newer, older, 10, 9000), newer);
+  /* Cleared on purpose ("start a fresh quiz") is the one case only the write time can date. */
+  assert.equal(rule(null, newer, 9000, 10), null, 'a newer clear wins');
+  assert.deepEqual(rule(null, newer, 10, 9000), newer, 'a stale clear does not');
+});
+
+test('mcDraft: one sitting answered on two devices keeps every answer', () => {
+  const a = { items: ['q1', 'q2', 'q3'], ord: { q1: [0, 1] }, at: 500, v: { q1: 2 } };
+  const b = { items: ['q1', 'q2', 'q3'], ord: { q1: [0, 1] }, at: 500, v: { q2: 3 } };
+  assert.deepEqual(mergeQuizDraft(a, b, 10, 20).v, { q1: 2, q2: 3 });
+  assert.deepEqual(mergeQuizDraft(b, a, 20, 10).v, { q1: 2, q2: 3 });
+  /* One question answered on both: the later write's answer. */
+  assert.equal(mergeQuizDraft({ ...a, v: { q1: 2 } }, { ...b, v: { q1: 3 } }, 10, 20).v.q1, 3);
+  assert.equal(mergeQuizDraft({ ...a, v: { q1: 2 } }, { ...b, v: { q1: 3 } }, 20, 10).v.q1, 2);
+  /* A different sitting is a different set of questions: never mix the answers. */
+  assert.deepEqual(mergeQuizDraft({ ...a, at: 100 }, { ...b, at: 900 }, 9000, 10).v, { q2: 3 });
+});
+
+test('alg2u1 skills: neither device loses its practice', () => {
+  const phone = { factor: { r: 5, w: 2, last: 900 }, seq: { r: 1, w: 0, last: 100 } };
+  const laptop = { factor: { r: 3, w: 4, last: 500 }, recur: { r: 2, w: 1, last: 700 } };
+  const m = mergeSkillCounts(phone, laptop), r = mergeSkillCounts(laptop, phone);
+  assert.deepEqual(m, r, 'both directions agree');
+  assert.deepEqual(m.factor, { r: 5, w: 4, last: 900 });
+  assert.deepEqual(m.seq, { r: 1, w: 0, last: 100 }, 'a skill only one device practised survives');
+  assert.deepEqual(m.recur, { r: 2, w: 1, last: 700 });
+  assert.equal(REG['alg2u1:skills'], mergeSkillCounts);
+  /* The whole map used to be replaced by whichever device wrote last. */
+  assert.notDeepEqual(mergeSkillCounts(phone, laptop), laptop);
+});
+
+test('alg2u1 history: test results merge by their own stamp, which is at, not ts', () => {
+  const rule = makeEventMerge(40, 'at');
+  const merged = rule([{ at: 100, pts: 3, max: 10 }], [{ at: 200, pts: 8, max: 10 }]);
+  assert.deepEqual(merged.map(x => x.at), [100, 200], 'both sittings kept');
+  assert.equal(rule([{ at: 100, pts: 3 }], [{ at: 100, pts: 3 }]).length, 1, 'the same sitting is not doubled');
+  assert.equal(REG['alg2u1:history'](  [{ at: 1 }], [{ at: 2 }]).length, 2);
+});
