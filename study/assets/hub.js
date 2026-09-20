@@ -1086,6 +1086,23 @@ function aiGroupsWrite(name, open) {
   } catch (e) {}
 }
 
+/* Eleven groups in one flat list is a list nobody reads. They go under four headings instead,
+   by the question the owner came in with: what is this costing, what is it allowed to do, who
+   may use it, what has it done. Nothing moves out of the panel and no group is merged away, so
+   anything the owner already knows where to find is still exactly where it was, one heading
+   further in. */
+function aiSection(parent, title, sub) {
+  var wrap = el('div', 'aisection');
+  var h = el('div', 'aisectionhead');
+  h.appendChild(el('span', 'aisectionname', title));
+  if (sub) h.appendChild(el('span', 'aisectionsub', sub));
+  wrap.appendChild(h);
+  var body = el('div', 'aigroups');
+  wrap.appendChild(body);
+  parent.appendChild(wrap);
+  return body;
+}
+
 /* A closed group is one line: its name, the numbers worth seeing without opening it, and a
    chevron. */
 function aiGroup(parent, name, title) {
@@ -1197,11 +1214,19 @@ function buildAi(sec) {
   e.msg.hidden = true;
   sec.appendChild(e.msg);
 
-  e.body = el('div', 'aigroups');
+  e.body = el('div', 'aisections');
   sec.appendChild(e.body);
 
+  /* The four headings, made before any group so each one lands under the right question. The
+     order is the order the questions come up: what is it costing, what may it do, who may use
+     it, what has it done. */
+  e.secMoney = aiSection(e.body, 'Money', 'Caps, and what each feature has spent against them.');
+  e.secDoes = aiSection(e.body, 'What it may do', 'Which features are on, and the limits that hold whatever they say.');
+  e.secWho = aiSection(e.body, 'Who may use it', 'Codes you hand out, and what people send back.');
+  e.secDone = aiSection(e.body, 'What it has done', 'Every call, every chat, and what went wrong.');
+
   /* ---- Spend ---- */
-  e.spend = aiGroup(e.body, 'spend', 'Spend');
+  e.spend = aiGroup(e.secMoney, 'spend', 'Spend');
   var master = el('div', 'aimaster');
   var mt = el('div', 'aimastertext');
   mt.appendChild(el('span', 'aimastername', 'All AI features'));
@@ -1256,7 +1281,7 @@ function buildAi(sec) {
   e.spend.body.appendChild(saveRow);
 
   /* ---- Features ---- */
-  e.feat = aiGroup(e.body, 'features', 'Features');
+  e.feat = aiGroup(e.secDoes, 'features', 'Features');
   e.held = el('p', 'aiheld', 'All AI features is off in Spend, so nothing here can run.');
   e.held.hidden = true;
   e.feat.body.appendChild(e.held);
@@ -1295,7 +1320,7 @@ function buildAi(sec) {
 
      Reading these values recomputes the breaker on the server and writes a row, so they are
      read when the panel loads and when the owner asks, and never on a timer. */
-  e.guardGroup = aiGroup(e.body, 'guards', 'Guards');
+  e.guardGroup = aiGroup(e.secDoes, 'guards', 'Guards');
   e.guardGroup.body.appendChild(el('p', 'note',
     'An answer can cost more than one call: picking passages again, one retry after a failed ' +
     'check, a search during the answer, a Wikipedia lead. Each of those is a feature above ' +
@@ -1393,7 +1418,7 @@ function buildAi(sec) {
 
   /* ---- Models ---- */
   /* ---- Codes ---- */
-  e.passGroup = aiGroup(e.body, 'passes', 'Codes');
+  e.passGroup = aiGroup(e.secWho, 'passes', 'Codes');
   e.passGroup.body.appendChild(el('p', 'note',
     'A code is one person: it saves their progress under that code and lets them use the AI ' +
     'features you tick, out of money you load onto it. It carries none of your own rights. ' +
@@ -1451,7 +1476,7 @@ function buildAi(sec) {
   e.passMake.addEventListener('click', aiPassCreate);
 
   /* ---- Reports ---- */
-  e.ticketGroup = aiGroup(e.body, 'tickets', 'Reports');
+  e.ticketGroup = aiGroup(e.secWho, 'tickets', 'Reports');
   e.ticketGroup.body.appendChild(el('p', 'note',
     'Problems people reported from inside a material, with the tab and the card they were on. ' +
     'Anyone can file one: Alt and B in a material, or a thumbs down on an answer.'));
@@ -1481,7 +1506,7 @@ function buildAi(sec) {
   /* What the page's own checks caught in an answer (0033): the sentence itself, so it can be
      read and turned into a correction rather than only counted. There is no cursor, only a
      limit, so the list asks for the newest however many rather than paging. */
-  e.flagGroup = aiGroup(e.body, 'flags', 'Flags');
+  e.flagGroup = aiGroup(e.secDone, 'flags', 'Flags');
   e.flagGroup.body.appendChild(el('p', 'note',
     'A sentence the checks on the page could not back against the material, newest first, with ' +
     'the question that produced it. Correcting one writes what is true in your words, and the ' +
@@ -1527,7 +1552,7 @@ function buildAi(sec) {
   e.flagRefresh.addEventListener('click', function () { aiLoadFlags(); });
 
   /* ---- Corrections ---- */
-  e.corrGroup = aiGroup(e.body, 'corrections', 'Corrections');
+  e.corrGroup = aiGroup(e.secDoes, 'corrections', 'Corrections');
   e.corrGroup.body.appendChild(el('p', 'note',
     'What you wrote after reading a flagged answer. A correction is sent ahead of the ' +
     'material\'s own passages whenever a question carries the words of its topic. Nothing here ' +
@@ -1544,14 +1569,14 @@ function buildAi(sec) {
   e.corrGroup.body.appendChild(e.corrNote);
   e.corrRefresh.addEventListener('click', function () { aiLoadCorrections(); });
 
-  e.modelsGroup = aiGroup(e.body, 'models', 'Models');
+  e.modelsGroup = aiGroup(e.secMoney, 'models', 'Models');
   /* The selects alone would make each choice blind. This list is the reason for the choice:
      what the eval measured, and what one grade costs at that model's prices. */
   e.models = el('div', 'aimodels');
   e.modelsGroup.body.appendChild(e.models);
 
   /* ---- Recent calls ---- */
-  e.callsGroup = aiGroup(e.body, 'calls', 'Recent calls');
+  e.callsGroup = aiGroup(e.secDone, 'calls', 'Recent calls');
   e.calls = el('div', 'aicalls');
   e.callsGroup.body.appendChild(e.calls);
 
@@ -1559,7 +1584,7 @@ function buildAi(sec) {
   /* Saved Ask conversations (0012), so the beta can be judged on what it actually said: the
      newest twenty, one line each until opened, a rating that saves as it is tapped, and an
      export of the lot. Every string in a row came from the server and goes in as text. */
-  e.chatsGroup = aiGroup(e.body, 'chats', 'Chats');
+  e.chatsGroup = aiGroup(e.secDone, 'chats', 'Chats');
   e.chatBar = el('div', 'aichatbar');
   e.chatBar.hidden = true;
   e.chatExport = el('button', 'btn ghost sm aichatbtn', 'Export');
@@ -1639,6 +1664,12 @@ function aiFeatRow(id) {
     r.cap = aiTextInput();
     f = aiField('aicapf', 'Daily cap ($)', r.cap);
     r.capErr = f.err;
+    /* What this feature has spent against that cap today. The server has sent it since 0011 and
+       the panel never showed it, so a feature could refuse an answer at its own ceiling while
+       the only number on screen was the global one, with most of a dollar still free. That is
+       what "you hit your limit" looked like with 62 cents left. */
+    r.spent = el('p', 'aispent');
+    f.field.insertBefore(r.spent, f.err);
   }
   ctl.appendChild(f.field);
 
@@ -1800,9 +1831,12 @@ function aiPaintFeatRow(r, f, s) {
   r.sw.setAttribute('aria-checked', String(!!f.enabled));
   r.sw.setAttribute('aria-label', name);
   var bonus = Number(f.bonus_cents) || 0;
-  r.meta.textContent = 'Today ' + spendDollars(f.today_cents) + ' of ' +
-    dollars((Number(f.daily_cents) || 0) + bonus) + (bonus ? ' (' + dollars(bonus) + ' extra today)' : '') +
-    ', ' + aiCount(f.today_calls, 'call') +
+  /* The spend used to live here, as "Today $0.3747 of $0.40" in a line that also carried the
+     call count and the tag. Four decimal places of a dollar is not a number anyone reads, and
+     sitting in the metadata it gave no warning at the point it starts to matter. It has moved
+     next to the cap it is measured against, in cents, and this line keeps the rest. */
+  r.meta.textContent = aiCount(f.today_calls, 'call') + ' today' +
+    (bonus ? ' · ' + dollars(bonus) + ' extra today' : '') +
     (Number(f.codes_today_cents) > 0 ? ' · codes ' + spendDollars(f.codes_today_cents) + ' from their own money' : '') +
     ' · tag ' + String(f.tag || '');
   r.li.classList.toggle('off', !s.enabled || !f.enabled);
@@ -1823,6 +1857,33 @@ function aiPaintFeatRow(r, f, s) {
   if (r.bonus && r.bonus.getAttribute('data-editing') !== '1') {
     r.bonus.value = bonus ? (bonus / 100).toFixed(2) : '';
   }
+  if (r.spent) aiPaintSpent(r.spent, f.today_cents, f.daily_cents, bonus);
+}
+
+/* One feature's spend against its own ceiling, in cents, because that is the unit these caps are
+   set in and a fraction of a cent written in dollars is four zeroes and a guess. It says how it
+   is going, not just the number, since the point is to see the wall before hitting it. */
+function aiPaintSpent(node, todayCents, capCents, bonusCents) {
+  var spent = Number(todayCents);
+  var cap = Number(capCents) + (Number(bonusCents) || 0);
+  node.classList.remove('near', 'full');
+  if (!isFinite(spent) || !isFinite(cap) || cap <= 0) { node.textContent = ''; return; }
+  var left = cap - spent;
+  var share = spent / cap;
+  node.textContent = aiCapCents(spent) + ' of ' + aiCapCents(cap) + ' today'
+    + (share >= 1 ? ', full until tomorrow'
+      : share >= 0.85 ? ', ' + aiCapCents(left) + ' left'
+      : '');
+  if (share >= 1) node.classList.add('full');
+  else if (share >= 0.85) node.classList.add('near');
+}
+
+/* A cap figure in cents, to as few places as say something true. Deliberately not aiCents, which
+   is further down this file and takes microcents: two function declarations of one name in this
+   scope would leave whichever is written last answering for both. */
+function aiCapCents(n) {
+  var v = Number(n) || 0;
+  return (v >= 10 ? v.toFixed(0) : v >= 1 ? v.toFixed(1) : v.toFixed(2).replace(/0$/, '')) + 'c';
 }
 
 function aiPaintFeatures() {
@@ -1892,6 +1953,26 @@ function aiPaintReadout() {
       aiCount(u.codes_today_calls, 'call') + ' · month ' + spendDollars(u.codes_month_cents) + ', ' +
       aiCount(u.codes_month_calls, 'call') + '. Not counted in your caps.'));
   }
+  /* The caps above are not the only ones. A feature at its own ceiling refuses an answer while
+     these numbers still look healthy, and reading only this line that looks like a bug in the
+     hub rather than a limit working. So the nearest feature ceiling is named right here, next
+     to the numbers it contradicts, and it links to the switch that raises it. */
+  var tight = null, worst = -1, tightCap = 0;
+  (aiState.features || []).forEach(function (f) {
+    if (!f || !f.enabled || f.id === 'saq') return;
+    var cap = (Number(f.daily_cents) || 0) + (Number(f.bonus_cents) || 0);
+    if (!isFinite(cap) || cap <= 0) return;
+    var share = (Number(f.today_cents) || 0) / cap;
+    if (share > worst) { worst = share; tight = f; tightCap = cap; }
+  });
+  if (tight && worst >= 0.5) {
+    var line = el('span', 'aireadline aireadtight' + (worst >= 1 ? ' full' : worst >= 0.85 ? ' near' : ''),
+      'Each feature also has its own daily cap inside these. The nearest is ' + tight.id + ', at '
+      + aiCapCents(tight.today_cents) + ' of ' + aiCapCents(tightCap)
+      + (worst >= 1 ? ', which is full: it will refuse until tomorrow whatever is left above.'
+        : ', with ' + aiCapCents(tightCap - Number(tight.today_cents)) + ' left. Raise it in Features.'));
+    aiEl.readout.appendChild(line);
+  }
 }
 
 function aiPaintCalls() {
@@ -1940,7 +2021,22 @@ function aiPaintSummaries() {
     var feats = (aiState.features || []).filter(function (f) { return f && f.id !== 'saq'; });
     var n = 1 + feats.length;
     var on = 1 + feats.filter(function (f) { return f.enabled; }).length;
-    aiEl.feat.state.textContent = aiCount(n, 'feature') + ' · ' + (s.enabled ? on + ' on' : 'held off');
+    /* Whichever switched on feature is nearest its own ceiling, named. That one number is the
+       one that refuses an answer while the caps above still look healthy, so it belongs on the
+       closed line rather than three clicks in. */
+    var tight = null, worst = -1, tightCap = 0;
+    feats.forEach(function (f) {
+      if (!f.enabled) return;
+      var cap = (Number(f.daily_cents) || 0) + (Number(f.bonus_cents) || 0);
+      if (!isFinite(cap) || cap <= 0) return;
+      var share = (Number(f.today_cents) || 0) / cap;
+      if (share > worst) { worst = share; tight = f; tightCap = cap; }
+    });
+    /* Only once it is a warning, and short, because this line is one line: on a phone it is
+       clipped with an ellipsis, and the clipped end is the number worth reading. */
+    aiEl.feat.state.textContent = (tight && worst >= 0.85
+      ? tight.id + ' ' + aiCapCents(tight.today_cents) + '/' + aiCapCents(tightCap) + ' · ' : '')
+      + aiCount(n, 'feature') + ' · ' + (s.enabled ? on + ' on' : 'held off');
   }
   var ms = aiState.models;
   aiEl.modelsGroup.state.textContent = ms.length
@@ -3300,6 +3396,12 @@ function aiChatRow(c) {
   /* How the answer was reached (0032): page, reuse, haiku, sonnet, escalated. The one that
      costs nothing is the one worth seeing without opening the row. */
   if (c.route) meta.appendChild(el('span', 'aichip aichiproute', String(c.route)));
+  /* Which body of sources answered it (0034, readable since 0035). Only when it was not the
+     material, since that is almost every row and a chip on all of them says nothing. */
+  if (c.mode && c.mode !== 'material') {
+    meta.appendChild(el('span', 'aichip aichipmode',
+      c.mode === 'links' ? 'links' : c.mode === 'shelf' ? 'shelf' : String(c.mode)));
+  }
   if (c.status && c.status !== 'ok') meta.appendChild(el('span', 'aichip aibad', String(c.status)));
   var headFlags = Number(c.flags) || 0;
   if (headFlags > 0) meta.appendChild(el('span', 'aichip aichipflags', headFlags + ' flagged'));
@@ -3338,6 +3440,7 @@ function aiPaintChats() {
   aiEl.chatsGroup.state.textContent = s
     ? (total
       ? total + ' saved · ' + Number(s.helpful || 0) + ' helpful · ' + Number(s.unhelpful || 0) + ' not'
+        + (Number(s.research || 0) > 0 ? ' · ' + Number(s.research) + ' research' : '')
       : 'none yet')
     : (aiChats.err ? 'unavailable' : '');
   aiEl.chatNote.textContent = aiChats.err;

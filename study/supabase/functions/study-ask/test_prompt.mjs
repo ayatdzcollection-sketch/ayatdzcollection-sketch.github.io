@@ -787,8 +787,13 @@ import {
   /* The class shelf is the owner's to grant, as the textbook is. A student's own saved links are
      their own, which is why the external mode does not wait on that grant (migration 0034). */
   assert.ok(/const mayRead = body\.mode === "links" \|\| begun\.textbook === true;/.test(idx), 'the class shelf is behind the textbook grant');
-  assert.ok(/p_feature: body\.deep \? DEEP_FEATURE/.test(idx), 'deep is billed to its own feature');
+  assert.ok(/const feature = body\.deep \? DEEP_FEATURE/.test(idx), 'deep is billed to its own feature');
   assert.ok(/: body\.fault \? "retry"/.test(idx), 'a retry is billed to its own feature');
+  assert.ok(/p_feature: feature,/.test(idx), 'the ledger is opened against that feature');
+  /* The chat log used to record the constant "ask" whatever the call was, so the ledger and the
+     chat list disagreed and every research, deep and retry answer was filed as an ordinary one. */
+  assert.ok(/feature: body\.feature \|\| FEATURE,/.test(idx), 'the chat log records the feature that was billed');
+  assert.ok(/body\.feature = feature;/.test(idx), 'the billed feature is carried to the log');
   assert.ok(idx.indexOf('ai_corrections_get') > 0 && idx.indexOf('ai_corrections_get') < idx.indexOf('return streamAnswer('), 'corrections are fetched before the answer');
   assert.ok(/ahead\.concat\(body\.chunks\)/.test(idx), 'corrections go in front of the material');
   assert.ok(/purpose === "rerank"/.test(idx), 'the rerank purpose is dispatched');
@@ -885,7 +890,8 @@ import {
   const src = fs.readFileSync(new URL('./index.ts', import.meta.url), 'utf8');
   assert.ok(/research && !body\.withMaterial/.test(src), 'index.ts must drop the material itself, not trust the page to');
   assert.ok(/no_sources/.test(src), 'a research question with no sources must be refused');
-  assert.ok(/p_feature: body\.deep \? DEEP_FEATURE/.test(src), 'deep must be its own feature or the guards never see it');
+  assert.ok(/const feature = body\.deep \? DEEP_FEATURE/.test(src)
+    && /p_feature: feature,/.test(src), 'deep must be its own feature or the guards never see it');
   assert.ok(!DASHES.test(src), 'dash in index.ts');
 }
 console.log('research modes, deep research and links ok');

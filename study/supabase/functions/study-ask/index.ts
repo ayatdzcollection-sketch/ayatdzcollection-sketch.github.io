@@ -125,6 +125,9 @@ type AskBody = {
   level?: string;
   intent?: string;
   beyond?: boolean;
+  /* Which feature row this call is actually billed to, so the chat log can say the same thing
+     the ledger says instead of the constant "ask". */
+  feature?: string;
   chapter: number | null;
   textbookLabels?: string[];
   correctionCount?: number;
@@ -327,7 +330,7 @@ function streamAnswer(body: AskBody, callId: unknown, model: string, origin: str
         p_row: {
           call_id: callId,
           material: body.material,
-          feature: FEATURE,
+          feature: body.feature || FEATURE,
           install: body.install,
           thread: body.thread,
           turn: body.turn,
@@ -923,16 +926,23 @@ Deno.serve(async (req: Request): Promise<Response> => {
      ai_end records what was really billed. */
   const estimate = estimateInputTokens(buildRequest({ model: DEFAULT_MODEL, ...body }));
 
+  /* Every kind of answer that costs more than the ordinary one is its own feature, so it has its
+     own daily cap, the breaker can pause it on its own, and Plain mode refuses it outright. Deep
+     research outranks the mode, because deep is what makes it dear. The page asks; the database
+     decides.
+
+     Named here rather than inline, because the chat log needs the same answer. It used to log the
+     constant "ask" whatever the call really was, so the ledger and the chat list disagreed and
+     every research, deep and retry answer was filed as an ordinary question. */
+  const feature = body.deep ? DEEP_FEATURE
+    : body.fault ? "retry"
+    : (MODE_FEATURE as Record<string, string>)[body.mode] || FEATURE;
+  body.feature = feature;
+
   let begun: Record<string, unknown> | null;
   try {
     begun = (await rpc("ai_begin2", {
-      /* Every kind of answer that costs more than the ordinary one is its own feature, so it has
-         its own daily cap, the breaker can pause it on its own, and Plain mode refuses it
-         outright. Deep research outranks the mode, because deep is what makes it dear. The page
-         asks; the database decides. */
-      p_feature: body.deep ? DEEP_FEATURE
-        : body.fault ? "retry"
-        : (MODE_FEATURE as Record<string, string>)[body.mode] || FEATURE,
+      p_feature: feature,
       p_material: body.material,
       p_install: body.install,
       p_ip: clientIp(req),

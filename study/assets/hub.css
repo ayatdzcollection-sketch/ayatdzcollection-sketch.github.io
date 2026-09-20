@@ -350,6 +350,30 @@ textarea.askinput{min-height:80px;padding:10px 12px}
 @media (max-width:560px){ .aicaps{grid-template-columns:1fr} }
 
 /* ---------- admin: AI groups ---------- */
+/* The AI panel is eleven closed groups under four headings. Flat, they were a list nobody read;
+   the headings sort them by the question the owner arrived with. A group is one line until it is
+   opened: a name, the numbers worth seeing without opening it, and a chevron. Hairlines between
+   them, nothing heavier. */
+.aisections{margin:12px 0 0}
+.aisection + .aisection{margin-top:26px}
+.aisectionhead{display:flex;flex-direction:column;gap:2px;padding:0 2px 6px}
+.aisectionname{font-family:var(--cond);font-size:12px;font-weight:700;letter-spacing:.10em;
+  text-transform:uppercase;color:var(--ink2)}
+.aisectionsub{font-size:12.5px;line-height:1.35;color:var(--ink3)}
+.aisection .aigroups{margin:0}
+
+/* A feature's spend against its own ceiling, beside the field that sets it. Quiet until it is
+   worth looking at, because this is the cap that refuses an answer while the caps at the top of
+   the panel still have most of a dollar free. */
+.aispent{margin:4px 0 0;font-family:var(--mono);font-size:11px;letter-spacing:.03em;color:var(--ink3)}
+.aispent.near{color:var(--warn)}
+.aispent.full{color:var(--bad);font-weight:600}
+/* Scoped to .aireadout so these beat ".aireadline + .aireadline", which sets ink3 at the same
+   specificity and is written further down the file. Without it the warning renders grey. */
+.aireadout .aireadtight{color:var(--ink3)}
+.aireadout .aireadtight.near{color:var(--warn)}
+.aireadout .aireadtight.full{color:var(--bad);font-weight:600}
+
 /* The AI section is four closed groups, each one line until it is opened: a name, the numbers
    worth seeing without opening it, and a chevron. Hairlines between them, nothing heavier. */
 .aihead{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
@@ -493,6 +517,8 @@ textarea.askinput{min-height:80px;padding:10px 12px}
 .aichip.aichipflag{border-style:dashed;color:var(--ink3)}
 /* How the answer was reached, and what the checks on the page caught in it (0032). */
 .aichip.aichiproute{font-size:9px;letter-spacing:.12em;text-transform:uppercase}
+/* Which sources answered it, on the rows where it was not the material (0034). */
+.aichip.aichipmode{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
 .aichip.aichipflags{border-color:currentColor;color:var(--warn)}
 .aichips{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:6px}
 
