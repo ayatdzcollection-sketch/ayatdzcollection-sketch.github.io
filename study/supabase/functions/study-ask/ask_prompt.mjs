@@ -239,8 +239,12 @@ export const CHECK_RULE = 'When the message says the student tapped Check my pro
 /* The chemistry review form (corpus chem-unit-form, migration 0029), sent like textbook passages. */
 export const FORM_RULE = 'Passages labelled Review form are questions from the teacher\'s review form for this test, with the answer key. When a form row has a line starting "Correct:", always go by it, even where the row also gives the "Answer written on the student\'s copy". A written answer with no Correct line was checked and is right, except that some long calculations also carry a line giving the value to the correct significant figures, and that value is the one to teach. When the student asks about a form question by its number, answer that question.';
 
-export function systemPrompt({ math = false, beyond = false, marks = false, effort = DEFAULT_EFFORT } = {}) {
-  const E = EFFORTS[effort] || EFFORTS[DEFAULT_EFFORT];
+/* The care level is deliberately NOT in here. It used to be, as the word count and the bullet
+   count, which made each level its own cached prefix: measured on a real run, one question at
+   careful between two at normal wrote the whole 5,583 token prefix again for about 1.5 cents,
+   and auto changes level from question to question. The numbers now ride in the message as the
+   LENGTH line, so every level shares one cache entry. max_tokens still follows the level. */
+export function systemPrompt({ math = false, beyond = false, marks = false } = {}) {
   /* Beyond off means nothing of the model's own gets in, so there is nothing to mark as outside;
      the passage numbers are still worth having inline. */
   const outside = beyond ? (marks ? MARKS_OUTSIDE : SPLIT_RULE) : '';
@@ -267,11 +271,11 @@ export function systemPrompt({ math = false, beyond = false, marks = false, effo
     '',
     'Never describe your own workings to the student. Do not mention passages, chunks, the map, the outline, your context, what you were or were not given, or how you chose. They see the material, not your side of it. In particular never write the words passage, material map, outline or context, and never say where in your inputs something came from; the Sources line is the only place that points at them.',
     '',
-    'Lead with the direct answer in one or two sentences. Then add at most ' + E.bullets + ' short bullet points of specifics from the passages, such as names, dates, causes and effects, each on its own line starting with a hyphen and a space. Leave the bullets out when the answer does not need them. A question that asks for a list is the exception: one line per item, as many lines as there are items, and everything else kept to a sentence. When the material itself says how this is tested, and only then, add one line starting with "On the test:" that says so. Never invent a question format, a question type, a section name or a problem number that the material does not name, and never say what the teacher will ask. The same goes for anything else the record does not give you: not how long something will take, not how hard it is, not what the teacher wants.',
+    'Lead with the direct answer in one or two sentences. Then add at most the number of short bullet points the LENGTH line allows, of specifics from the passages, such as names, dates, causes and effects, each on its own line starting with a hyphen and a space. Leave the bullets out when the answer does not need them. A question that asks for a list is the exception: one line per item, as many lines as there are items, and everything else kept to a sentence. When the material itself says how this is tested, and only then, add one line starting with "On the test:" that says so. Never invent a question format, a question type, a section name or a problem number that the material does not name, and never say what the teacher will ask. The same goes for anything else the record does not give you: not how long something will take, not how hard it is, not what the teacher wants.',
     '',
     'When the student asks for a list, for every term, for a set to copy out, or for everything on something, give it in full: one short line per item, every item the PASSAGES hold, no commentary between them, and the length rule below does not apply to that list. Say in one line at the end how many you listed and where they came from, and never claim it is everything the material holds unless the blocks you were given say so.',
     '',
-    'Keep the answer to about ' + E.words + ' words unless the student asks for more. Use plain words a 10th grader reads fast, short sentences, and second person. No headings, no tables, no emojis, no links, and no em dashes or en dashes: use commas, colons or full stops, and write a range of years as 1491 to 1754. Bold at most two key terms with **double asterisks**.',
+    'Keep the answer to about the number of words the LENGTH line gives, unless the student asks for more. Use plain words a 10th grader reads fast, short sentences, and second person. No headings, no tables, no emojis, no links, and no em dashes or en dashes: use commas, colons or full stops, and write a range of years as 1491 to 1754. Bold at most two key terms with **double asterisks**.',
     '',
     ...(math ? [MATH_RULE, ''] : []),
     "End with a last line exactly in this form: Sources: [1], [3]. List the PASSAGE numbers you took wording or a fact from, lowest number first, and nothing else. When several passages say the same thing, name the one whose wording you used rather than all of them, and name at most three unless the question asked for a list. If you used no passage at all, the line is still there and reads exactly: Sources: none. Passage numbers refer only to the PASSAGES in the student's latest message; a number in an earlier answer may point to different text. The order is always: the direct answer, the bullets, the On the test line, then the Sources line.",
@@ -316,7 +320,7 @@ export function buildRequest({ model, map, question, quote, focus, chunks, histo
   const mapText = clean(map);
   const level = EFFORTS[effort] ? effort : DEFAULT_EFFORT;
   const E = EFFORTS[level];
-  const system = [{ type: 'text', text: systemPrompt({ math: math === true, beyond: beyond === true, marks: marks === true, effort: level }) }];
+  const system = [{ type: 'text', text: systemPrompt({ math: math === true, beyond: beyond === true, marks: marks === true }) }];
   /* Two cache breakpoints. The instructions are the same for every material with the same
      switches, so a breakpoint on them means moving to another material rereads them at a tenth
      of the price instead of writing them again at a quarter over it; measured on the numbers,
@@ -363,6 +367,7 @@ export function buildRequest({ model, map, question, quote, focus, chunks, histo
   const checked = (Array.isArray(facts) ? facts : []).map(clean).filter(Boolean);
   if (checked.length) blocks.push('CHECKED\n' + checked.map((l) => '- ' + l).join('\n'));
   if (check === true) blocks.push('The student tapped Check my progress.');
+  blocks.push('LENGTH\nAbout ' + E.words + ' words, and at most ' + E.bullets + ' bullet points.');
   blocks.push('QUESTION\n' + clean(question));
   /* Per question instructions. They live here rather than in the cached system text because they
      change from question to question, and a cached block that changes is a block paid for twice. */

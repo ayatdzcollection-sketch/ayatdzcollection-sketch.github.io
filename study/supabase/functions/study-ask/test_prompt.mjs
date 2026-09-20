@@ -29,7 +29,7 @@ for (const m of [...PLAIN_MODELS, ...EFFORT_MODELS, DEFAULT_MODEL]) assert.ok(PR
 const sys = systemPrompt();
 assert.equal(sys, systemPrompt(), 'the prompt must be byte stable or the cache never hits');
 assert.ok(!DASH.test(sys), 'dash in system prompt');
-for (const s of ['MATERIAL MAP', 'FOCUS', 'HIGHLIGHT', 'PASSAGES', 'QUESTION', 'On the test:', 'Sources: [1], [3]', '1491 to 1754', 'TEA', 'nothing outside it', 'about 200 words', '**double asterisks**', 'yes or no', 'PROGRESS', 'NOTES', 'Remember:']) {
+for (const s of ['MATERIAL MAP', 'FOCUS', 'HIGHLIGHT', 'PASSAGES', 'QUESTION', 'On the test:', 'Sources: [1], [3]', '1491 to 1754', 'TEA', 'nothing outside it', '**double asterisks**', 'yes or no', 'PROGRESS', 'NOTES', 'Remember:', 'LENGTH line']) {
   assert.ok(sys.includes(s), 'system prompt is missing ' + s);
 }
 /* The PROGRESS, NOTES and Remember instructions close the prompt, word for word. */
@@ -92,6 +92,7 @@ assert.equal(text, [
   'FOCUS\nCard 3 of 12',
   'HIGHLIGHT\nColumbian Exchange',
   'PASSAGES\n[1] Ch 1: One.\n\n[3] Three.',
+  'LENGTH\nAbout 200 words, and at most four bullet points.',
   'QUESTION\nexplain'
 ].join('\n\n'));
 
@@ -103,18 +104,19 @@ assert.equal(withProgress.messages[0].content, [
   'FOCUS\nCard 3 of 12',
   'HIGHLIGHT\nColumbian Exchange',
   'PASSAGES\n[1] Ch 1: One.\n\n[3] Three.',
+  'LENGTH\nAbout 200 words, and at most four bullet points.',
   'QUESTION\nexplain'
 ].join('\n\n'));
-assert.equal(buildRequest({ question: 'q', notes: 'n' }).messages[0].content, 'NOTES\nn\n\nQUESTION\nq');
-assert.equal(buildRequest({ question: 'q', progress: 'p', notes: '   ' }).messages[0].content, 'PROGRESS\np\n\nQUESTION\nq');
+assert.equal(buildRequest({ question: 'q', notes: 'n' }).messages[0].content, 'NOTES\nn\n\nLENGTH\nAbout 200 words, and at most four bullet points.\n\nQUESTION\nq');
+assert.equal(buildRequest({ question: 'q', progress: 'p', notes: '   ' }).messages[0].content, 'PROGRESS\np\n\nLENGTH\nAbout 200 words, and at most four bullet points.\n\nQUESTION\nq');
 /* The system prefix still does not depend on them, so the cache holds. */
 assert.deepEqual(withProgress.system, r.system);
 
 /* Empty blocks are left out; QUESTION is always there. */
 const bare = buildRequest({ model: 'claude-sonnet-4-6', question: 'huh' });
-assert.equal(bare.messages[0].content, 'QUESTION\nhuh');
+assert.equal(bare.messages[0].content, 'LENGTH\nAbout 200 words, and at most four bullet points.\n\nQUESTION\nhuh');
 const onlyQuote = buildRequest({ question: 'what', quote: 'x', chunks: [{ label: 'a', text: ' ' }] }).messages[0].content;
-assert.equal(onlyQuote, 'HIGHLIGHT\nx\n\nQUESTION\nwhat');
+assert.equal(onlyQuote, 'HIGHLIGHT\nx\n\nLENGTH\nAbout 200 words, and at most four bullet points.\n\nQUESTION\nwhat');
 
 /* History: leading assistant turns dropped, empty turns dropped, runs merged, alternation kept,
    and a trailing user turn merged into the final question. */
@@ -134,7 +136,7 @@ const h = buildRequest({
 assert.deepEqual(h.map((m) => m.role), ['user', 'assistant', 'user']);
 assert.equal(h[0].content, 'q1\n\nq1 again');
 assert.equal(h[1].content, 'a1');
-assert.equal(h[2].content, 'q2 unanswered\n\nQUESTION\nsimpler');
+assert.equal(h[2].content, 'q2 unanswered\n\nLENGTH\nAbout 200 words, and at most four bullet points.\n\nQUESTION\nsimpler');
 for (let i = 1; i < h.length; i++) assert.notEqual(h[i].role, h[i - 1].role);
 assert.deepEqual(buildRequest({ question: 'x', history: [{ role: 'assistant', text: 'only' }] }).messages.map((m) => m.role), ['user']);
 
@@ -192,10 +194,21 @@ assert.equal(validateAsk({ material: good.material, install: good.install, quest
 
 /* Effort: the same prompt with more or less room, and the level is what decides. */
 {
-  const q = systemPrompt({ effort: 'quick' }), c = systemPrompt({ effort: 'careful' });
-  assert.ok(q.includes('about 110 words') && q.includes('at most three short bullet'), 'quick did not shorten the prompt');
-  assert.ok(c.includes('about 350 words') && c.includes('at most six short bullet'), 'careful did not lengthen the prompt');
-  assert.equal(systemPrompt({ effort: 'nonsense' }), sys, 'an unknown effort must fall back to the default');
+  /* The care level must NOT reach the cached prompt. It used to, as the word and bullet counts,
+     and one careful question between two normal ones rewrote the whole prefix for about 1.5
+     cents; auto changes level from question to question, so that was happening constantly. */
+  for (const e of ['quick', 'normal', 'careful', 'nonsense', undefined]) {
+    assert.equal(systemPrompt({ effort: e }), sys, 'the level must not change the cached prompt: ' + e);
+  }
+  const lens = {};
+  for (const e of ['quick', 'normal', 'careful']) {
+    const r2 = buildRequest({ model: 'claude-sonnet-4-6', map: 'm', question: 'q', effort: e });
+    assert.deepEqual(r2.system, buildRequest({ model: 'claude-sonnet-4-6', map: 'm', question: 'q' }).system, 'same prefix at ' + e);
+    const m2 = r2.messages[0].content.match(/LENGTH\nAbout (\d+) words, and at most (\w+) bullet points\./);
+    assert.ok(m2, 'the LENGTH line must ride in the message at ' + e);
+    lens[e] = m2[1];
+  }
+  assert.deepEqual(lens, { quick: '110', normal: '200', careful: '350' });
   const r = buildRequest({ model: 'claude-sonnet-4-6', map: 'm', question: 'q', effort: 'careful' });
   assert.equal(r.max_tokens, 2400, 'careful must have room to finish');
   assert.deepEqual(r.thinking, { type: 'adaptive' }, 'careful must think');
@@ -439,7 +452,7 @@ import { TOOL_IDS, TOOL_TEXT, toolsText, CHECKED_RULE, TOOLS_RULE, CHECK_RULE, F
   assert.ok(validateAsk({ ...base, facts: at(6, s(300)) }));
   for (const bad of [at(7, 'x'), [s(301)], [''], ['  '], [3], [null]]) assert.equal(validateAsk({ ...base, facts: bad }), null, 'bad facts: ' + JSON.stringify(bad).slice(0, 40));
   const withFacts = buildRequest({ model: 'claude-sonnet-4-6', question: 'how many sig figs in 0.00450', facts: [' Checked by the page: 0.00450 has 3 significant figures. ', ' '] });
-  assert.equal(withFacts.messages[0].content, 'CHECKED\n- Checked by the page: 0.00450 has 3 significant figures.\n\nQUESTION\nhow many sig figs in 0.00450');
+  assert.equal(withFacts.messages[0].content, 'CHECKED\n- Checked by the page: 0.00450 has 3 significant figures.\n\nLENGTH\nAbout 200 words, and at most four bullet points.\n\nQUESTION\nhow many sig figs in 0.00450');
 
   /* tools: known ids only, each once; they add a cached TOOLS block after the map, never to the
      instructions, so every other material keeps its cache. */
@@ -462,7 +475,7 @@ import { TOOL_IDS, TOOL_TEXT, toolsText, CHECKED_RULE, TOOLS_RULE, CHECK_RULE, F
   assert.equal(toolsText([], 'k'), '');
   assert.equal(buildRequest({ model: 'claude-sonnet-4-6', map: 'm', question: 'q', tools: ['figs'], widgets: false }).system.length, 2, 'widgets off drops the tools');
   const checkReq = buildRequest({ model: 'claude-sonnet-4-6', question: 'Check my progress', progress: 'p', check: true });
-  assert.equal(checkReq.messages[0].content, 'PROGRESS\np\n\nThe student tapped Check my progress.\n\nQUESTION\nCheck my progress');
+  assert.equal(checkReq.messages[0].content, 'PROGRESS\np\n\nThe student tapped Check my progress.\n\nLENGTH\nAbout 200 words, and at most four bullet points.\n\nQUESTION\nCheck my progress');
   assert.ok(!DASHES.test(JSON.stringify(tooled)));
 
   /* A form question by its number. */
