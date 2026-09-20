@@ -279,7 +279,10 @@ console.log('study-ask prompt module ok');
   const kit = fs.readFileSync(new URL('../../../src/tools/ask_kit.js', import.meta.url), 'utf8');
   const p12 = fs.readFileSync(new URL('../../../src/tools/apushp12_template.html', import.meta.url), 'utf8');
   assert.ok(kit.includes('const LISTQ = ' + src + ';'), 'ask_kit.js has a different list rule');
-  assert.ok(p12.includes('const ASK_LISTQ = ' + src + ';'), 'the APUSH template has a different list rule');
+  /* APUSH used to carry its own copy of Ask and so its own copy of this rule. It moved onto the
+     shared kit on 2026-09-20, so there is one copy now and the template must not grow another. */
+  assert.ok(!/ASK_LISTQ|function askSend|function askRetrieve/.test(p12), 'the APUSH template has its own Ask again');
+  assert.ok(p12.includes('<!-- ask-kit v1 -->'), 'the APUSH template must carry the shared kit');
   for (const q of ['give me all the cards', 'every term', 'make me a quizlet set', 'list every rule card', 'copy paste them'])
     assert.ok(LIST_RE.test(q), 'the list rule misses: ' + q);
   for (const q of ['who was metacom', 'what does adamant mean', 'why is it K'])

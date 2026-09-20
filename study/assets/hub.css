@@ -491,6 +491,9 @@ textarea.askinput{min-height:80px;padding:10px 12px}
 .aichip.aibad{border-color:currentColor;color:var(--bad);font-size:9px;letter-spacing:.12em;
   text-transform:uppercase}
 .aichip.aichipflag{border-style:dashed;color:var(--ink3)}
+/* How the answer was reached, and what the checks on the page caught in it (0032). */
+.aichip.aichiproute{font-size:9px;letter-spacing:.12em;text-transform:uppercase}
+.aichip.aichipflags{border-color:currentColor;color:var(--warn)}
 .aichips{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:6px}
 
 /* The thumbs: the .tog look at a full 44px square, ink when pressed. */
@@ -557,6 +560,22 @@ textarea.askinput{min-height:80px;padding:10px 12px}
 .aiticketwho{flex:1;min-width:0}
 .aiticketbody{margin:6px 0 0;font-size:14px;white-space:pre-wrap}
 .aiticketctx{margin:6px 0 0;font:500 11.5px/1.5 var(--mono);color:var(--meta);word-break:break-word}
+
+/* Flags, corrections and guards (migration 0033). The rows borrow the Reports card so the
+   panel does not grow a third kind of list, and the boxes for words are the .aiinput field
+   with room to type a sentence in. */
+.aifeatabout{margin:2px 0 0;font-size:13.5px;color:var(--ink2)}
+.aiarea{min-height:76px;padding:8px 10px;font-family:var(--cond);font-size:14.5px;line-height:1.45;
+  resize:vertical}
+.aifix{margin-top:10px;padding:10px 12px;border:1px solid var(--rule);border-radius:2px;
+  background:var(--paper)}
+.aifix .aimeta{margin:4px 0 10px}
+.aifixf .lbl{margin-top:0}
+.aiticket .aifixf{margin-top:8px}
+.aiticket .lbl{margin:10px 0 4px}
+.aiflaglimit{width:auto;max-width:180px;min-height:38px}
+/* What the breaker has paused, as chips under their own label. */
+.aigroupbody>.aichips{margin:2px 0 6px}
 
 /* One switch per feature on a code (migration 0021). */
 .aipassfeats{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:8px;padding-top:8px;border-top:1px solid var(--rule)}

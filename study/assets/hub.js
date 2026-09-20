@@ -729,7 +729,8 @@ function aiPopWire() {
 
 function aiTagControl(m, i) {
   aiPopWire();
-  var total = AI_FEATURES.length;
+  var offered = aiTagFeatures();
+  var total = offered.length;
   var wrap = el('div', 'aipop');
   var btn = el('button', 'tog aipopbtn');
   btn.type = 'button';
@@ -746,7 +747,7 @@ function aiTagControl(m, i) {
   var boxes = [];
 
   function paintBtn() {
-    var n = AI_FEATURES.filter(function (f) { return hasTag(m, f.tag); }).length;
+    var n = offered.filter(function (f) { return hasTag(m, f.tag); }).length;
     btn.textContent = 'AI ' + n + '/' + total;
     btn.setAttribute('aria-label', 'AI features, ' + n + ' of ' + total + ' on');
     btn.classList.toggle('some', n > 0);
@@ -760,7 +761,7 @@ function aiTagControl(m, i) {
     err.hidden = false;
   }
 
-  AI_FEATURES.forEach(function (f) {
+  offered.forEach(function (f) {
     var lab = el('label', 'aipopitem');
     var box = document.createElement('input');
     box.type = 'checkbox';
@@ -820,18 +821,36 @@ function aiTagControl(m, i) {
    which answer with a few facts and nothing else. No API key is ever in reach of this file;
    the key lives as an Edge Function secret.
 
-   The section is five groups that stay closed until opened, so it does not grow a screen
+   The section is groups that stay closed until opened, so it does not grow a screen
    longer each time a feature is added: Spend (the master switch and the ceilings every
-   feature spends against), Features (one row each), Models (what the eval measured),
-   Recent calls (the ledger) and Chats (saved Ask conversations, rated and exported). */
+   feature spends against), Features (one row each), Guards (what one Ask answer may cost,
+   0033), Codes, Reports, Flags and Corrections (the loop that fixes a wrong answer, 0033),
+   Models (what the eval measured), Recent calls (the ledger) and Chats (saved Ask
+   conversations, rated and exported). */
 
 /* Every AI feature, one line each. id is the feature's id on the server, tag is what a
    material carries to offer it, label is what the per material control reads. 'saq' has no
    row in study_ai_features: its mode and model live in study_ai_settings (0010). A third
-   feature is one line here and one row in study_ai_features. */
+   feature is one line here and one row in study_ai_features.
+
+   The five escalations (0033) are rows in study_ai_features like any other feature, so
+   without a line here the Features group, the ledger and the chats would each print a bare
+   id. They are marked esc because none of them has a tag of its own: they run inside Ask, on
+   Ask's tag, so no material carries one and the per material control leaves them out. All
+   five are off on the server until they are turned on. */
 var AI_FEATURES = [
   { id: 'saq', tag: 'ai',     label: 'SAQ grading', short: 'SAQ' },
-  { id: 'ask', tag: 'ai-ask', label: 'Ask (beta)',  short: 'Ask' }
+  { id: 'ask', tag: 'ai-ask', label: 'Ask (beta)',  short: 'Ask' },
+  { id: 'rerank', tag: 'ai-ask', label: 'Reranker', short: 'Rerank', esc: true,
+    about: 'Picks better passages when the keyword search is weak.' },
+  { id: 'retry', tag: 'ai-ask', label: 'Retry', short: 'Retry', esc: true,
+    about: 'One more attempt when a check on the page catches a fault.' },
+  { id: 'tools', tag: 'ai-ask', label: 'Tools', short: 'Tools', esc: true,
+    about: 'Lets an answer search the material again mid answer.' },
+  { id: 'wiki', tag: 'ai-ask', label: 'Wikipedia', short: 'Wiki', esc: true,
+    about: 'One Wikipedia lead section, on request.' },
+  { id: 'search', tag: 'ai-ask', label: 'Web search', short: 'Search', esc: true,
+    about: 'Web search, off and unbuilt.' }
 ];
 
 function aiFeatureInfo(id) {
@@ -840,8 +859,14 @@ function aiFeatureInfo(id) {
   return hit;
 }
 
+/* The features a material can be tagged for. The escalations share Ask's tag and are never
+   offered on their own, so they are not in the per material list nor in its count. */
+function aiTagFeatures() {
+  return AI_FEATURES.filter(function (f) { return !f.esc; });
+}
+
 function aiHasAnyTag(m) {
-  return AI_FEATURES.some(function (f) { return hasTag(m, f.tag); });
+  return aiTagFeatures().some(function (f) { return hasTag(m, f.tag); });
 }
 
 /* Stored units are cents and counts; the two money fields are typed in dollars because
@@ -871,10 +896,21 @@ var AI_CHATS_PAGE = 20;
 var AI_CHATS_EXPORT_PAGE = 500;
 var AI_CHATS_EXPORT_PAGES = 20;
 
+/* Flags (0033) have no cursor, only a limit the server holds to 200, so there is no Show more
+   to offer: the list says how many of the newest to ask for and asks again. */
+var AI_FLAG_LIMITS = [20, 50, 100, 200];
+
+/* Every guard is stored in cents, not dollars like the caps in Spend, and the server holds
+   each one to this range. */
+var AI_GUARD_MAX_CENTS = 100;
+
 var aiEl = null;
 var aiState = { settings: null, models: [], usage: null, features: [], saq: null, featErr: '',
   passes: [], passFeatures: [], passNow: null, passErr: '', passSkew: 0, passNew: null,
-  tickets: [], ticketStats: null, ticketErr: '', ticketOpenOnly: true };
+  tickets: [], ticketStats: null, ticketErr: '', ticketOpenOnly: true,
+  flags: [], flagStats: null, flagErr: '', flagAll: false, flagLimit: 50,
+  corrections: [], corrErr: '',
+  guards: null, guardErr: '' };
 var aiUid = 0;
 /* gen moves on with every fresh load and every teardown, so an answer that lands after either
    is dropped instead of painting over newer rows or a signed out page. */
@@ -1087,7 +1123,7 @@ function aiField(cls, text, control) {
   var f = el('div', 'aifield' + (cls ? ' ' + cls : ''));
   var id = 'aif-' + (++aiUid);
   var lab;
-  if (control.tagName === 'INPUT' || control.tagName === 'SELECT') {
+  if (control.tagName === 'INPUT' || control.tagName === 'SELECT' || control.tagName === 'TEXTAREA') {
     lab = el('label', 'lbl', text);
     control.id = id;
     lab.setAttribute('for', id);
@@ -1111,6 +1147,23 @@ function aiTextInput() {
   inp.className = 'aiinput';
   inp.autocomplete = 'off';
   return inp;
+}
+
+/* For words rather than money: the fields above ask a phone for a number pad, which is wrong
+   for a topic or a sentence. rows above one gives a box that can be dragged taller. */
+function aiWordsInput(rows) {
+  var n;
+  if (rows > 1) {
+    n = document.createElement('textarea');
+    n.rows = rows;
+    n.className = 'aiinput aiarea';
+  } else {
+    n = document.createElement('input');
+    n.type = 'text';
+    n.className = 'aiinput';
+  }
+  n.autocomplete = 'off';
+  return n;
 }
 
 function buildAi(sec) {
@@ -1222,6 +1275,102 @@ function buildAi(sec) {
     'Owner only takes your admin session on every call and skips the device and address ' +
     'limits. Open with caps lets anyone studying use it, held by every cap in Spend.'));
 
+  /* ---- Guards ---- */
+  /* What one Ask answer may cost, whatever the switches above say (0033). Every amount in
+     this group is in cents, not the dollars Spend is typed in: one answer costs a fraction of
+     a cent, so a ceiling written in dollars would be four zeroes and a guess. Every label
+     here says cents so the two groups cannot be read as contradicting each other.
+
+     Reading these values recomputes the breaker on the server and writes a row, so they are
+     read when the panel loads and when the owner asks, and never on a timer. */
+  e.guardGroup = aiGroup(e.body, 'guards', 'Guards');
+  e.guardGroup.body.appendChild(el('p', 'note',
+    'An answer can cost more than one call: picking passages again, one retry after a failed ' +
+    'check, a search during the answer, a Wikipedia lead. Each of those is a feature above ' +
+    'with its own switch and its own daily cap. These are the limits that hold whatever those ' +
+    'switches say, and every amount here is in cents.'));
+
+  var gplain = el('div', 'aimaster');
+  var gpt = el('div', 'aimastertext');
+  gpt.appendChild(el('span', 'aimastername', 'Plain mode'));
+  gpt.appendChild(el('span', 'aimeta',
+    'On means Ask is one call with no extras, exactly as it was before any of this.'));
+  gplain.appendChild(gpt);
+  e.guardPlain = aiSwitch('Plain mode');
+  gplain.appendChild(e.guardPlain);
+  e.guardGroup.body.appendChild(gplain);
+  /* Plain mode is the one setting here that changes what Ask does rather than what it may
+     spend, so when it is on the group says so in full rather than leaving a switch to be read. */
+  e.guardPlainOn = el('p', 'aiheld',
+    'Plain mode is on. Ask is back to a single call with no extras: no reranking, no retry, ' +
+    'no tools, no Wikipedia, no search, whatever each of those says above.');
+  e.guardPlainOn.hidden = true;
+  e.guardGroup.body.appendChild(e.guardPlainOn);
+
+  var gnums = el('div', 'aicaps');
+  e.guardCeiling = aiTextInput();
+  var gc = aiField('aicap', 'Ceiling on one question (cents)', e.guardCeiling);
+  e.guardCeilingErr = gc.err;
+  gnums.appendChild(gc.field);
+  e.guardBreaker = aiTextInput();
+  var gb = aiField('aicap', 'Breaker line, running mean (cents)', e.guardBreaker);
+  e.guardBreakerErr = gb.err;
+  gnums.appendChild(gb.field);
+  e.guardHard = aiTextInput();
+  var gh = aiField('aicap', 'Hard line, running mean (cents)', e.guardHard);
+  e.guardHardErr = gh.err;
+  gnums.appendChild(gh.field);
+  e.guardGroup.body.appendChild(gnums);
+
+  e.guardOn = aiSwitch('Breaker');
+  var gon = aiField('aibeyondf', 'Breaker', e.guardOn);
+  e.guardOnErr = gon.err;
+  e.guardGroup.body.appendChild(gon.field);
+
+  e.guardRead = el('p', 'aireadout');
+  e.guardGroup.body.appendChild(e.guardRead);
+  e.guardGroup.body.appendChild(el('p', 'lbl', 'Paused'));
+  e.guardPaused = el('ul', 'aichips');
+  e.guardGroup.body.appendChild(e.guardPaused);
+  e.guardWhy = el('p', 'aiheld');
+  e.guardWhy.hidden = true;
+  e.guardGroup.body.appendChild(e.guardWhy);
+
+  var grow = el('div', 'row wrap aipassctl');
+  e.guardClear = el('button', 'btn sm out', 'Clear the pause');
+  e.guardClear.type = 'button';
+  grow.appendChild(e.guardClear);
+  e.guardRefresh = el('button', 'btn sm out', 'Read them again');
+  e.guardRefresh.type = 'button';
+  grow.appendChild(e.guardRefresh);
+  e.guardGroup.body.appendChild(grow);
+  e.guardNote = el('p', 'err-inline');
+  e.guardNote.hidden = true;
+  e.guardGroup.body.appendChild(e.guardNote);
+  e.guardGroup.body.appendChild(el('p', 'note',
+    'The breaker reads the last twenty answers. Past the breaker line it pauses the dearest ' +
+    'escalations first, past the hard line it pauses them all, and it pauses one on its own if ' +
+    'it fires too often. With the breaker off nothing is measured and nothing is paused.'));
+
+  e.guardPlain.addEventListener('click', function () {
+    aiGuardSet('plain', null, !aiSwitchOn(e.guardPlain), e.guardNote, [e.guardPlain]);
+  });
+  e.guardOn.addEventListener('click', function () {
+    aiGuardSet('breaker_on', null, !aiSwitchOn(e.guardOn), e.guardOnErr, [e.guardOn]);
+  });
+  [[e.guardCeiling, 'ceiling', e.guardCeilingErr],
+   [e.guardBreaker, 'breaker', e.guardBreakerErr],
+   [e.guardHard, 'hard', e.guardHardErr]].forEach(function (pair) {
+    var inp = pair[0], key = pair[1], errAt = pair[2];
+    inp.addEventListener('input', function () { inp.setAttribute('data-editing', '1'); });
+    inp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') inp.blur(); });
+    inp.addEventListener('change', function () { aiGuardNumChange(inp, key, errAt); });
+  });
+  e.guardClear.addEventListener('click', function () {
+    aiGuardSet('reset', null, null, e.guardNote, [e.guardClear]);
+  });
+  e.guardRefresh.addEventListener('click', function () { aiLoadGuards(); });
+
   /* ---- Models ---- */
   /* ---- Codes ---- */
   e.passGroup = aiGroup(e.body, 'passes', 'Codes');
@@ -1308,6 +1457,73 @@ function buildAi(sec) {
   });
   e.ticketRefresh.addEventListener('click', function () { aiLoadTickets(); });
 
+  /* ---- Flags ---- */
+  /* What the page's own checks caught in an answer (0033): the sentence itself, so it can be
+     read and turned into a correction rather than only counted. There is no cursor, only a
+     limit, so the list asks for the newest however many rather than paging. */
+  e.flagGroup = aiGroup(e.body, 'flags', 'Flags');
+  e.flagGroup.body.appendChild(el('p', 'note',
+    'A sentence the checks on the page could not back against the material, newest first, with ' +
+    'the question that produced it. Correcting one writes what is true in your words, and the ' +
+    'next question whose words match the topic gets it ahead of the material\'s own passages.'));
+  var flrow = el('div', 'row wrap');
+  e.flagAll = el('button', 'btn sm out', 'Open only');
+  e.flagAll.type = 'button';
+  e.flagAll.setAttribute('aria-pressed', 'true');
+  flrow.appendChild(e.flagAll);
+  e.flagLimit = document.createElement('select');
+  e.flagLimit.className = 'aisel aiflaglimit';
+  e.flagLimit.setAttribute('aria-label', 'How many flags to show');
+  AI_FLAG_LIMITS.forEach(function (n) {
+    var o = document.createElement('option');
+    o.value = String(n);
+    o.textContent = 'Newest ' + n;
+    e.flagLimit.appendChild(o);
+  });
+  e.flagLimit.value = String(aiState.flagLimit);
+  flrow.appendChild(e.flagLimit);
+  e.flagRefresh = el('button', 'btn sm out', 'Refresh');
+  e.flagRefresh.type = 'button';
+  flrow.appendChild(e.flagRefresh);
+  e.flagGroup.body.appendChild(flrow);
+  e.flagStats = el('p', 'aireadout');
+  e.flagGroup.body.appendChild(e.flagStats);
+  e.flagList = el('ul', 'aitickets');
+  e.flagGroup.body.appendChild(e.flagList);
+  e.flagNote = el('p', 'err-inline');
+  e.flagNote.hidden = true;
+  e.flagGroup.body.appendChild(e.flagNote);
+  e.flagAll.addEventListener('click', function () {
+    aiState.flagAll = !aiState.flagAll;
+    e.flagAll.setAttribute('aria-pressed', String(!aiState.flagAll));
+    e.flagAll.textContent = aiState.flagAll ? 'Reviewed as well' : 'Open only';
+    aiLoadFlags();
+  });
+  e.flagLimit.addEventListener('change', function () {
+    var n = Number(e.flagLimit.value);
+    aiState.flagLimit = isFinite(n) && n > 0 ? n : 50;
+    aiLoadFlags();
+  });
+  e.flagRefresh.addEventListener('click', function () { aiLoadFlags(); });
+
+  /* ---- Corrections ---- */
+  e.corrGroup = aiGroup(e.body, 'corrections', 'Corrections');
+  e.corrGroup.body.appendChild(el('p', 'note',
+    'What you wrote after reading a flagged answer. A correction is sent ahead of the ' +
+    'material\'s own passages whenever a question carries the words of its topic. Nothing here ' +
+    'is deleted: switch one off and it stops being sent.'));
+  var crow = el('div', 'row wrap');
+  e.corrRefresh = el('button', 'btn sm out', 'Refresh');
+  e.corrRefresh.type = 'button';
+  crow.appendChild(e.corrRefresh);
+  e.corrGroup.body.appendChild(crow);
+  e.corrList = el('ul', 'aitickets');
+  e.corrGroup.body.appendChild(e.corrList);
+  e.corrNote = el('p', 'err-inline');
+  e.corrNote.hidden = true;
+  e.corrGroup.body.appendChild(e.corrNote);
+  e.corrRefresh.addEventListener('click', function () { aiLoadCorrections(); });
+
   e.modelsGroup = aiGroup(e.body, 'models', 'Models');
   /* The selects alone would make each choice blind. This list is the reason for the choice:
      what the eval measured, and what one grade costs at that model's prices. */
@@ -1367,6 +1583,11 @@ function aiFeatRow(id) {
   who.appendChild(title);
   r.meta = el('p', 'aifeatmeta');
   who.appendChild(r.meta);
+  /* One line on what the feature is, for the escalations (0033) whose names on the server say
+     nothing about when they cost anything. */
+  r.about = el('p', 'aifeatabout');
+  r.about.hidden = true;
+  who.appendChild(r.about);
   head.appendChild(who);
   if (saq) {
     /* SAQ grading predates the features table. Its only switch is the master one. */
@@ -1549,7 +1770,12 @@ function aiPaintSaqRow(r, s) {
 
 function aiPaintFeatRow(r, f, s) {
   var name = String(f.name || f.id);
+  var info = aiFeatureInfo(f.id);
   r.name.textContent = name;
+  if (r.about) {
+    r.about.textContent = info && info.about ? info.about : '';
+    r.about.hidden = !(info && info.about);
+  }
   r.beta.hidden = !f.beta;
   r.sw.setAttribute('aria-checked', String(!!f.enabled));
   r.sw.setAttribute('aria-label', name);
@@ -1933,6 +2159,436 @@ function aiLoadTickets() {
     aiState.tickets = [];
     aiState.ticketErr = 'Run 0018_tickets.sql in Supabase to collect reports.';
     aiPaintTickets();
+  });
+}
+
+/* ---- flags, corrections and guards (0033) ---- */
+
+/* None of these RPCs is on the database until 0033 is applied, so each group says so inside
+   itself and the rest of the panel carries on working. A refusal is named for what it is; a
+   404, a throw, or anything else reads as the migration not being there yet. */
+function ai33Err(r, err) {
+  if (r && r.error === 'forbidden') return 'That admin session was refused. Sign in again.';
+  if (err && err.message === 'rate_limited') return 'Too many tries from this network. Wait a few minutes.';
+  return 'Run 0033_flags_corrections_guards.sql in Supabase to turn this on.';
+}
+
+/* One flag: what the check was, the sentence it caught, where it came from, and the question
+   that produced it. The form that turns it into a correction is built closed. */
+function aiFlagRow(f) {
+  var li = el('li', 'aiticket' + (f.reviewed ? ' done' : ''));
+  var head = el('div', 'aitickethead');
+  var who = el('div', 'aiticketwho');
+  var title = el('div', 'aipasstitle');
+  title.appendChild(el('span', 'aipassname', String(f.kind || 'a check')));
+  title.appendChild(el('span', 'aipassstate' + (f.reviewed ? '' : ' on'), f.reviewed ? 'reviewed' : 'open'));
+  who.appendChild(title);
+  var bits = [f.material ? String(f.material) : 'no material'];
+  if (f.route) bits.push(String(f.route));
+  if (f.chat_id != null) bits.push('chat ' + Number(f.chat_id));
+  if (aiWhen(f.created_at)) bits.push(aiWhen(f.created_at));
+  who.appendChild(el('p', 'aifeatmeta', bits.join(' · ')));
+  head.appendChild(who);
+  li.appendChild(head);
+
+  li.appendChild(el('p', 'lbl', 'The sentence'));
+  li.appendChild(el('p', 'aiticketbody', f.sentence ? String(f.sentence) : 'Nothing was kept.'));
+  if (f.question) {
+    li.appendChild(el('p', 'lbl', 'The question'));
+    li.appendChild(el('p', 'aiticketctx', String(f.question)));
+  }
+
+  var err = el('p', 'err-inline');
+  err.hidden = true;
+
+  var form = el('div', 'aifix');
+  form.hidden = true;
+  var topic = aiWordsInput(1);
+  form.appendChild(aiField('aifixf', 'Topic', topic).field);
+  form.appendChild(el('p', 'aimeta',
+    'The words a question has to contain for this correction to be sent. Words of three ' +
+    'letters or fewer are ignored, so a topic of only short words is never matched.'));
+  var body = aiWordsInput(3);
+  form.appendChild(aiField('aifixf', 'What is true', body).field);
+  var frow = el('div', 'row wrap');
+  var save = el('button', 'btn sm', 'Save the correction');
+  save.type = 'button';
+  var shut = el('button', 'btn sm out', 'Cancel');
+  shut.type = 'button';
+  frow.appendChild(save);
+  frow.appendChild(shut);
+  form.appendChild(frow);
+
+  var ctl = el('div', 'row wrap aipassctl');
+  var open = el('button', 'btn sm out', 'Correct this');
+  open.type = 'button';
+  open.setAttribute('aria-expanded', 'false');
+  open.addEventListener('click', function () {
+    var on = form.hidden;
+    form.hidden = !on;
+    open.setAttribute('aria-expanded', String(on));
+    err.hidden = true;
+    if (on) { try { topic.focus(); } catch (e) {} }
+  });
+  ctl.appendChild(open);
+  if (!f.reviewed) {
+    var done = el('button', 'btn sm out', 'Not a problem');
+    done.type = 'button';
+    done.addEventListener('click', function () {
+      err.hidden = true;
+      aiDisable([done], true);
+      StudyAuth.admin.ai.flagReviewed(f.id).then(function (r) {
+        aiDisable([done], false);
+        /* The server answers ok whether or not a row matched, so the list is read again rather
+           than this row being struck out on trust. */
+        if (r && r.ok) return aiLoadFlags();
+        aiShowAt(err, ai33Err(r, null));
+      }, function (e2) { aiDisable([done], false); aiShowAt(err, aiErrText(e2)); });
+    });
+    ctl.appendChild(done);
+  }
+  li.appendChild(ctl);
+  li.appendChild(form);
+  li.appendChild(err);
+
+  save.addEventListener('click', function () {
+    err.hidden = true;
+    /* The material comes from the flag itself. Without one the insert cannot happen and the
+       server answers with a generic refusal, so it is said here instead. */
+    if (!f.material) {
+      aiShowAt(err, 'This flag kept no material, so a correction cannot be filed from it.');
+      return;
+    }
+    var t = topic.value.trim(), b = body.value.trim();
+    if (!t) { aiShowAt(err, 'Give it a topic.'); return; }
+    if (!b) { aiShowAt(err, 'Write what is true.'); return; }
+    aiDisable([save, shut], true);
+    StudyAuth.admin.ai.correctionAdd(f.material, t, b, f.id).then(function (r) {
+      aiDisable([save, shut], false);
+      if (r && r.ok) {
+        /* Filing it marks the flag reviewed in the same call, so both lists are read again. */
+        aiLoadCorrections();
+        return aiLoadFlags();
+      }
+      aiShowAt(err, r && r.error === 'bad_row'
+        ? 'The server wants both a topic and something true to say.'
+        : ai33Err(r, null));
+    }, function (e2) { aiDisable([save, shut], false); aiShowAt(err, aiErrText(e2)); });
+  });
+  shut.addEventListener('click', function () {
+    form.hidden = true;
+    open.setAttribute('aria-expanded', 'false');
+    err.hidden = true;
+  });
+  return li;
+}
+
+/* total and open are counted over the flags themselves; by_kind counts only the open ones, so
+   it is labelled as such rather than left to be added up against total. */
+function aiFlagStatsText(st) {
+  if (!st) return '';
+  var out = Number(st.open || 0) + ' open of ' + Number(st.total || 0) + ' ever seen';
+  var by = st.by_kind && typeof st.by_kind === 'object' ? st.by_kind : null;
+  var kinds = by ? Object.keys(by) : [];
+  if (kinds.length) {
+    kinds.sort(function (a, b) { return Number(by[b]) - Number(by[a]); });
+    out += ' · open by kind: ' + kinds.map(function (k) {
+      return k + ' ' + Number(by[k]);
+    }).join(', ');
+  }
+  return out;
+}
+
+function aiPaintFlags() {
+  if (!aiEl || !aiEl.flagList) return;
+  aiEl.flagList.innerHTML = '';
+  (aiState.flags || []).forEach(function (f) { aiEl.flagList.appendChild(aiFlagRow(f)); });
+  if (!(aiState.flags || []).length && !aiState.flagErr) {
+    aiEl.flagList.appendChild(el('li', 'note',
+      aiState.flagAll ? 'No flags yet.' : 'Nothing open.'));
+  }
+  aiEl.flagStats.textContent = aiFlagStatsText(aiState.flagStats);
+  aiEl.flagNote.textContent = aiState.flagErr || '';
+  aiEl.flagNote.hidden = !aiState.flagErr;
+  var st = aiState.flagStats;
+  aiEl.flagGroup.state.textContent = aiState.flagErr ? 'unavailable'
+    : st ? Number(st.open || 0) + ' open · ' + Number(st.total || 0) + ' all told'
+    : 'none yet';
+}
+
+function aiLoadFlags() {
+  if (!aiEl) return Promise.resolve();
+  return StudyAuth.admin.ai.flags(aiState.flagLimit, aiState.flagAll).then(function (r) {
+    if (!aiEl) return;
+    if (!r || !r.ok) {
+      aiState.flags = [];
+      aiState.flagStats = null;
+      aiState.flagErr = ai33Err(r, null);
+      aiPaintFlags();
+      return;
+    }
+    aiState.flags = (Array.isArray(r.flags) ? r.flags : []).filter(function (f) {
+      return f && typeof f === 'object' && f.id != null;
+    });
+    aiState.flagStats = r.stats && typeof r.stats === 'object' ? r.stats : null;
+    aiState.flagErr = '';
+    aiPaintFlags();
+  }, function (err) {
+    if (!aiEl) return;
+    aiState.flags = [];
+    aiState.flagStats = null;
+    aiState.flagErr = ai33Err(null, err);
+    aiPaintFlags();
+  });
+}
+
+/* One correction: its topic, what it says, and a switch. Off is as far as it goes, so there is
+   no delete here and none on the server either. */
+function aiCorrRow(c) {
+  var li = el('li', 'aiticket' + (c.enabled ? '' : ' done'));
+  var head = el('div', 'aitickethead');
+  var who = el('div', 'aiticketwho');
+  var title = el('div', 'aipasstitle');
+  title.appendChild(el('span', 'aipassname', String(c.topic || 'no topic')));
+  title.appendChild(el('span', 'aipassstate' + (c.enabled ? ' on' : ''), c.enabled ? 'sent' : 'off'));
+  who.appendChild(title);
+  var bits = [c.material ? String(c.material) : 'no material'];
+  if (c.from_flag != null) bits.push('from flag ' + Number(c.from_flag));
+  if (aiWhen(c.created_at)) bits.push(aiWhen(c.created_at));
+  who.appendChild(el('p', 'aifeatmeta', bits.join(' · ')));
+  head.appendChild(who);
+  var sw = aiSwitch('Send this correction');
+  sw.setAttribute('aria-checked', String(!!c.enabled));
+  head.appendChild(sw);
+  li.appendChild(head);
+
+  var err = el('p', 'err-inline');
+  err.hidden = true;
+
+  var body = aiWordsInput(3);
+  body.value = c.body == null ? '' : String(c.body);
+  li.appendChild(aiField('aifixf', 'What is true', body).field);
+  var ctl = el('div', 'row wrap aipassctl');
+  var save = el('button', 'btn sm out', 'Save the wording');
+  save.type = 'button';
+  ctl.appendChild(save);
+  li.appendChild(ctl);
+  li.appendChild(err);
+
+  function write(enabled, text, els) {
+    err.hidden = true;
+    aiDisable(els, true);
+    StudyAuth.admin.ai.correctionSet(c.id, enabled, text).then(function (r) {
+      aiDisable(els, false);
+      if (r && r.ok) return aiLoadCorrections();
+      aiShowAt(err, ai33Err(r, null));
+    }, function (e2) { aiDisable(els, false); aiShowAt(err, aiErrText(e2)); });
+  }
+  sw.addEventListener('click', function () { write(!aiSwitchOn(sw), null, [sw, save]); });
+  save.addEventListener('click', function () {
+    var text = body.value.trim();
+    /* An empty body leaves the stored one alone on the server, which would look like a save
+       that did nothing, so it is refused here. */
+    if (!text) { aiShowAt(err, 'Write what is true, or leave the wording as it is.'); return; }
+    write(null, text, [sw, save]);
+  });
+  return li;
+}
+
+function aiPaintCorrections() {
+  if (!aiEl || !aiEl.corrList) return;
+  aiEl.corrList.innerHTML = '';
+  var list = aiState.corrections || [];
+  list.forEach(function (c) { aiEl.corrList.appendChild(aiCorrRow(c)); });
+  if (!list.length && !aiState.corrErr) {
+    aiEl.corrList.appendChild(el('li', 'note', 'No corrections yet.'));
+  }
+  aiEl.corrNote.textContent = aiState.corrErr || '';
+  aiEl.corrNote.hidden = !aiState.corrErr;
+  var on = list.filter(function (c) { return c && c.enabled; }).length;
+  aiEl.corrGroup.state.textContent = aiState.corrErr ? 'unavailable'
+    : list.length ? aiCount(list.length, 'correction') + ' · ' + on + ' sent'
+    : 'none yet';
+}
+
+function aiLoadCorrections() {
+  if (!aiEl) return Promise.resolve();
+  return StudyAuth.admin.ai.corrections().then(function (r) {
+    if (!aiEl) return;
+    if (!r || !r.ok) {
+      aiState.corrections = [];
+      aiState.corrErr = ai33Err(r, null);
+      aiPaintCorrections();
+      return;
+    }
+    aiState.corrections = (Array.isArray(r.corrections) ? r.corrections : []).filter(function (c) {
+      return c && typeof c === 'object' && c.id != null;
+    });
+    aiState.corrErr = '';
+    aiPaintCorrections();
+  }, function (err) {
+    if (!aiEl) return;
+    aiState.corrections = [];
+    aiState.corrErr = ai33Err(null, err);
+    aiPaintCorrections();
+  });
+}
+
+/* A stored guard, in cents, printed as typed rather than rounded to whole cents: the breaker
+   line is 2.6 by default and would read as 3. */
+function aiGuardNum(v) {
+  var n = Number(v);
+  if (v == null || !isFinite(n)) return null;
+  return Math.round(n * 1000) / 1000;
+}
+
+function aiGuardText(v, fallback) {
+  var n = aiGuardNum(v);
+  return n == null ? fallback : n + ' cents';
+}
+
+function aiPausedNames(g) {
+  var list = g && Array.isArray(g.paused) ? g.paused : [];
+  return list.filter(function (x) { return typeof x === 'string' && x; });
+}
+
+function aiPaintGuards() {
+  if (!aiEl || !aiEl.guardGroup) return;
+  var g = aiState.guards;
+  var e = aiEl;
+  e.guardNote.textContent = aiState.guardErr || '';
+  e.guardNote.hidden = !aiState.guardErr;
+  if (!g) {
+    e.guardPlainOn.hidden = true;
+    e.guardWhy.hidden = true;
+    e.guardPaused.innerHTML = '';
+    e.guardRead.textContent = aiState.guardErr ? '' : 'Reading the guards.';
+    e.guardGroup.state.textContent = aiState.guardErr ? 'unavailable' : '';
+    /* Nothing was read, so there is nothing to change: the controls stay out of reach rather
+       than offering to write a value nobody has seen. */
+    aiDisable([e.guardPlain, e.guardOn, e.guardCeiling, e.guardBreaker, e.guardHard, e.guardClear], true);
+    return;
+  }
+  aiDisable([e.guardPlain, e.guardOn, e.guardCeiling, e.guardBreaker, e.guardHard], false);
+
+  e.guardPlain.setAttribute('aria-checked', String(!!g.plain));
+  e.guardPlainOn.hidden = !g.plain;
+  e.guardOn.setAttribute('aria-checked', String(!!g.breaker_on));
+  [[e.guardCeiling, g.ceiling_cents], [e.guardBreaker, g.breaker_cents], [e.guardHard, g.breaker_hard]]
+    .forEach(function (pair) {
+      if (pair[0].getAttribute('data-editing') === '1') return;
+      var n = aiGuardNum(pair[1]);
+      pair[0].value = n == null ? '' : String(n);
+    });
+
+  e.guardRead.innerHTML = '';
+  e.guardRead.appendChild(el('span', 'aireadline',
+    'A question may cost ' + aiGuardText(g.ceiling_cents, 'no more than the server says') +
+    ' at most. The breaker is ' + (g.breaker_on ? 'on' : 'off') + ', at ' +
+    aiGuardText(g.breaker_cents, 'its own line') + ' and ' +
+    aiGuardText(g.breaker_hard, 'its own hard line') + '.'));
+  /* mean_cents is null with the breaker off, and null again until there are ten answers to
+     average, so neither case is printed as a number. */
+  e.guardRead.appendChild(el('span', 'aireadline',
+    (g.breaker_on
+      ? 'Running mean: ' + aiGuardText(g.mean_cents, 'nothing measured yet') +
+        ', over the last twenty answers.'
+      : 'Nothing is measured while the breaker is off.') +
+    (aiWhen(g.at) ? ' Read ' + aiWhen(g.at) + '.' : '')));
+
+  var paused = aiPausedNames(g);
+  e.guardPaused.innerHTML = '';
+  if (paused.length) {
+    paused.forEach(function (id) {
+      var info = aiFeatureInfo(id);
+      e.guardPaused.appendChild(el('li', 'aichip aichipflags', info ? info.label : id));
+    });
+  } else {
+    e.guardPaused.appendChild(el('li', 'note', g.breaker_on
+      ? 'Nothing is paused.' : 'Nothing is paused, and nothing can be while the breaker is off.'));
+  }
+
+  /* note is null with the breaker off and null whenever nothing tripped, so a null is never
+     printed as a reason for a pause. */
+  var why = typeof g.note === 'string' ? g.note.trim() : '';
+  if (paused.length) {
+    e.guardWhy.textContent = why
+      ? 'Paused: ' + why + '.'
+      : 'Paused, with no reason kept.';
+    e.guardWhy.hidden = false;
+  } else if (why) {
+    e.guardWhy.textContent = 'The breaker\'s last word: ' + why + '.';
+    e.guardWhy.hidden = false;
+  } else {
+    e.guardWhy.textContent = '';
+    e.guardWhy.hidden = true;
+  }
+  e.guardClear.disabled = !paused.length && !why;
+
+  var ceil = aiGuardNum(g.ceiling_cents);
+  e.guardGroup.state.textContent = (g.plain ? 'plain mode' : g.breaker_on ? 'breaker on' : 'breaker off') +
+    (ceil == null ? '' : ' · ceiling ' + ceil + '¢') +
+    (paused.length ? ' · ' + paused.length + ' paused' : '');
+}
+
+/* Writes one guard. The read keys and the write keys are not the same words: ceiling_cents is
+   written as 'ceiling', breaker_cents as 'breaker', breaker_hard as 'hard'; plain and
+   breaker_on keep their own names, and 'reset' clears the pause and carries no value. */
+function aiGuardSet(key, num, flag, errAt, els) {
+  if (!aiEl) return Promise.resolve(null);
+  var at = errAt || aiEl.guardNote;
+  if (at) { at.hidden = true; at.textContent = ''; }
+  aiDisable(els || [], true);
+  return StudyAuth.admin.ai.guardSet(key, num, flag).then(function (r) {
+    aiDisable(els || [], false);
+    if (r && r.ok) return aiLoadGuards();
+    aiShowAt(at, r && r.error === 'bad_key'
+      ? 'The server does not know that guard.' : ai33Err(r, null));
+    /* A refused write must leave the controls showing what is stored, not what was asked. */
+    aiPaintGuards();
+    return r;
+  }, function (err) {
+    aiDisable(els || [], false);
+    aiShowAt(at, aiErrText(err));
+    aiPaintGuards();
+    return null;
+  });
+}
+
+function aiGuardNumChange(inp, key, errAt) {
+  inp.removeAttribute('data-editing');
+  if (errAt) { errAt.hidden = true; errAt.textContent = ''; }
+  var raw = inp.value.trim().replace(/[¢$]/g, '');
+  if (raw === '') { aiPaintGuards(); return; }
+  var n = Number(raw);
+  if (!isFinite(n) || n < 0) { aiShowAt(errAt, 'Numbers only, in cents.'); return; }
+  if (n > AI_GUARD_MAX_CENTS) {
+    aiShowAt(errAt, 'The server holds this to ' + AI_GUARD_MAX_CENTS + ' cents.');
+    return;
+  }
+  aiGuardSet(key, n, null, errAt, [inp]);
+}
+
+/* Reading the guards recomputes the breaker on the server and writes a row, so this is called
+   when the panel loads and when the owner asks for it, and never from a timer. */
+function aiLoadGuards() {
+  if (!aiEl) return Promise.resolve();
+  return StudyAuth.admin.ai.guards().then(function (r) {
+    if (!aiEl) return;
+    if (!r || !r.ok) {
+      aiState.guards = null;
+      aiState.guardErr = ai33Err(r, null);
+      aiPaintGuards();
+      return;
+    }
+    aiState.guards = r;
+    aiState.guardErr = '';
+    aiPaintGuards();
+  }, function (err) {
+    if (!aiEl) return;
+    aiState.guards = null;
+    aiState.guardErr = ai33Err(null, err);
+    aiPaintGuards();
   });
 }
 
@@ -2399,9 +3055,11 @@ function aiLoad() {
     aiEl.body.hidden = false;
     paintAi();
     /* Each group loads on its own: one that throws must not stop the others (a misnamed
-       call in the reports loader once kept the spending from ever loading). */
+       call in the reports loader once kept the spending from ever loading). The guards are
+       read here and on their own button only: reading them recomputes the breaker and writes
+       a row, so they must never be on a timer or in a polling path. */
     var usage = aiLoadUsage();
-    [aiLoadPasses, aiLoadTickets].forEach(function (load) {
+    [aiLoadPasses, aiLoadTickets, aiLoadFlags, aiLoadCorrections, aiLoadGuards].forEach(function (load) {
       try { load(); } catch (e) { if (window.console) console.error(e); }
     });
     return usage;
@@ -2572,6 +3230,16 @@ function aiChatFill(body, c) {
   });
   if (c.progress === true) chips.appendChild(el('li', 'aichip aichipflag', 'used progress'));
   if (c.notes === true) chips.appendChild(el('li', 'aichip aichipflag', 'used notes'));
+  /* What the checks on the page caught in this answer (0032), and what they were. The
+     sentences themselves are in Flags. */
+  var nflags = Number(c.flags) || 0;
+  if (nflags > 0) {
+    var kinds = (Array.isArray(c.flag_kinds) ? c.flag_kinds : []).filter(function (k) {
+      return typeof k === 'string' && k;
+    });
+    chips.appendChild(el('li', 'aichip aichipflags',
+      kinds.length ? 'flagged: ' + kinds.join(', ') : aiCount(nflags, 'flag')));
+  }
   if (chips.firstChild) {
     body.appendChild(el('p', 'lbl', 'Context'));
     body.appendChild(chips);
@@ -2583,6 +3251,10 @@ function aiChatFill(body, c) {
     info.push(Number(c.input_tokens || 0) + ' in, ' + Number(c.output_tokens || 0) + ' out');
   }
   if (c.latency_ms) info.push((Number(c.latency_ms) / 1000).toFixed(1) + ' s');
+  /* A prefix read costs a tenth and a prefix written costs a quarter more, so the two are
+     worth telling apart rather than adding up (0032). */
+  var cr = Number(c.cache_read) || 0, cw = Number(c.cache_write) || 0;
+  if (cr || cw) info.push('cache ' + cr + ' read, ' + cw + ' written');
   if (c.turn != null) info.push('turn ' + Number(c.turn));
   if (info.length) body.appendChild(el('p', 'aimeta aichatinfo', info.join(' · ')));
 }
@@ -2604,7 +3276,12 @@ function aiChatRow(c) {
   meta.appendChild(el('span', 'aichatwhen', aiWhen(c.created_at)));
   var info = aiFeatureInfo(c.feature);
   meta.appendChild(el('span', 'aichip aichipfeat', info ? info.short : String(c.feature || 'ask')));
+  /* How the answer was reached (0032): page, reuse, haiku, sonnet, escalated. The one that
+     costs nothing is the one worth seeing without opening the row. */
+  if (c.route) meta.appendChild(el('span', 'aichip aichiproute', String(c.route)));
   if (c.status && c.status !== 'ok') meta.appendChild(el('span', 'aichip aibad', String(c.status)));
+  var headFlags = Number(c.flags) || 0;
+  if (headFlags > 0) meta.appendChild(el('span', 'aichip aichipflags', headFlags + ' flagged'));
   meta.appendChild(el('span', 'aichatcost', aiCents(c.cost_microcents)));
   text.appendChild(meta);
   text.appendChild(el('span', 'aichatq', String(c.question || '')));
@@ -2849,6 +3526,15 @@ function aiTeardown() {
   if (sec && sec.parentNode) sec.parentNode.removeChild(sec);
   aiEl = null;
   aiChats = aiChatsFresh(aiChats.gen + 1);
+  /* Nothing from the signed out session is kept: the flagged sentences, the corrections and
+     the guards are all read again from scratch the next time a session opens the panel. */
+  aiState.flags = [];
+  aiState.flagStats = null;
+  aiState.flagErr = '';
+  aiState.corrections = [];
+  aiState.corrErr = '';
+  aiState.guards = null;
+  aiState.guardErr = '';
   var box = $('adminitems');
   if (box) box.innerHTML = '';
 }
