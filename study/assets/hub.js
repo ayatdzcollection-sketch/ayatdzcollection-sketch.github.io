@@ -850,7 +850,19 @@ var AI_FEATURES = [
   { id: 'wiki', tag: 'ai-ask', label: 'Wikipedia', short: 'Wiki', esc: true,
     about: 'One Wikipedia lead section, on request.' },
   { id: 'search', tag: 'ai-ask', label: 'Web search', short: 'Search', esc: true,
-    about: 'Web search, off and unbuilt.' }
+    about: 'Web search, off and unbuilt.' },
+  /* Research mode (migration 0034). Two modes and an intensifier, each its own row so each has its
+     own daily cap and the breaker can pause one without the others. fetch is not an escalation:
+     pulling a link spends no tokens at all, and the row exists so link pulling can be switched off
+     on its own. */
+  { id: 'research', tag: 'ai-ask', label: 'Research: class sources', short: 'Research', esc: true,
+    about: 'Answers from the documents loaded for that class, cited by name. About 2.5 cents.' },
+  { id: 'extern', tag: 'ai-ask', label: 'Research: own links', short: 'Links', esc: true,
+    about: 'Answers from pages the owner pasted in, cited by site. About 2.5 cents.' },
+  { id: 'deep', tag: 'ai-ask', label: 'Deep research', short: 'Deep', esc: true,
+    about: 'A long answer that thinks first, from three times as much of the sources. About 12 cents, and its own ceiling.' },
+  { id: 'fetch', tag: 'ai-ask', label: 'Pull a link', short: 'Fetch', esc: false,
+    about: 'Reading a page into the shelf. No model and no tokens: the text is extracted in code.' }
 ];
 
 function aiFeatureInfo(id) {
@@ -1312,6 +1324,13 @@ function buildAi(sec) {
   var gc = aiField('aicap', 'Ceiling on one question (cents)', e.guardCeiling);
   e.guardCeilingErr = gc.err;
   gnums.appendChild(gc.field);
+  /* Deep research has its own ceiling because a deep question is meant to cost about 12 cents and
+     the shared one defaults to 6: on the shared ceiling every deep question would be refused, and
+     the only cure would be raising the ceiling for ordinary questions too (migration 0034). */
+  e.guardDeep = aiTextInput();
+  var gd = aiField('aicap', 'Ceiling on one deep question (cents)', e.guardDeep);
+  e.guardDeepErr = gd.err;
+  gnums.appendChild(gd.field);
   e.guardBreaker = aiTextInput();
   var gb = aiField('aicap', 'Breaker line, running mean (cents)', e.guardBreaker);
   e.guardBreakerErr = gb.err;
@@ -1359,6 +1378,7 @@ function buildAi(sec) {
     aiGuardSet('breaker_on', null, !aiSwitchOn(e.guardOn), e.guardOnErr, [e.guardOn]);
   });
   [[e.guardCeiling, 'ceiling', e.guardCeilingErr],
+   [e.guardDeep, 'deep_ceiling', e.guardDeepErr],
    [e.guardBreaker, 'breaker', e.guardBreakerErr],
    [e.guardHard, 'hard', e.guardHardErr]].forEach(function (pair) {
     var inp = pair[0], key = pair[1], errAt = pair[2];
@@ -2466,15 +2486,15 @@ function aiPaintGuards() {
     e.guardGroup.state.textContent = aiState.guardErr ? 'unavailable' : '';
     /* Nothing was read, so there is nothing to change: the controls stay out of reach rather
        than offering to write a value nobody has seen. */
-    aiDisable([e.guardPlain, e.guardOn, e.guardCeiling, e.guardBreaker, e.guardHard, e.guardClear], true);
+    aiDisable([e.guardPlain, e.guardOn, e.guardCeiling, e.guardDeep, e.guardBreaker, e.guardHard, e.guardClear], true);
     return;
   }
-  aiDisable([e.guardPlain, e.guardOn, e.guardCeiling, e.guardBreaker, e.guardHard], false);
+  aiDisable([e.guardPlain, e.guardOn, e.guardCeiling, e.guardDeep, e.guardBreaker, e.guardHard], false);
 
   e.guardPlain.setAttribute('aria-checked', String(!!g.plain));
   e.guardPlainOn.hidden = !g.plain;
   e.guardOn.setAttribute('aria-checked', String(!!g.breaker_on));
-  [[e.guardCeiling, g.ceiling_cents], [e.guardBreaker, g.breaker_cents], [e.guardHard, g.breaker_hard]]
+  [[e.guardCeiling, g.ceiling_cents], [e.guardDeep, g.deep_ceiling_cents], [e.guardBreaker, g.breaker_cents], [e.guardHard, g.breaker_hard]]
     .forEach(function (pair) {
       if (pair[0].getAttribute('data-editing') === '1') return;
       var n = aiGuardNum(pair[1]);

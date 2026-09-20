@@ -59,7 +59,16 @@ import {
   buildRerankRequest,
   parseRerank,
   validateRerank,
+  MODE_FEATURE,
+  DEEP_FEATURE,
+  DEEP_MAX_TOKENS,
+  DEEP_LIMITS,
+  RESEARCH_PASSAGES,
+  RESEARCH_PER_SOURCE,
+  LINK_FEATURE,
+  validateLink,
 } from "./ask_prompt.mjs";
+import { LINK_LIMITS, checkUrl, checkType, extract, passages as linkPassages, linkLabel } from "./link_fetch.mjs";
 
 /* ---------------------------------------------------------------- configuration */
 
@@ -128,6 +137,11 @@ type AskBody = {
   form?: boolean;
   correction?: boolean;
   shelf?: boolean;
+  /* Research mode: which body of sources this question is answered from, whether the material
+     comes with it, and whether the student asked for the deep and dear version. */
+  mode: string;
+  deep: boolean;
+  withMaterial: boolean;
   facts: string[];
   tools: string[];
   kinds: string;
@@ -348,6 +362,9 @@ function streamAnswer(body: AskBody, callId: unknown, model: string, origin: str
           items: body.items,
           source_step: body.correctionCount ? "correction"
             : body.textbookLabels && body.textbookLabels.length ? "textbook" : "material",
+          /* Which body of sources answered this one, so the owner can read research questions
+             apart from ordinary ones without guessing from the labels (migration 0034). */
+          mode: body.deep ? body.mode + "+deep" : body.mode,
         },
       })) as Record<string, unknown> | null;
       if (res && res.ok === true && (typeof res.id === "number" || typeof res.id === "string")) return res.id;
@@ -385,6 +402,9 @@ function streamAnswer(body: AskBody, callId: unknown, model: string, origin: str
         const perItem = Math.min(body.items, Math.ceil(body.question.length / 40));
         request.max_tokens = Math.min(ITEMS_MAX_TOKENS, Math.max(Number(request.max_tokens) || 0, 400 + perItem * 180));
       }
+      /* Deep research last, because it outranks both: it is the one thing the student is told the
+         price of before they ask for it. */
+      if (body.deep) request.max_tokens = Math.max(Number(request.max_tokens) || 0, DEEP_MAX_TOKENS);
       const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
       const stream = client.messages.stream(
         { model, ...request } as never,
@@ -637,6 +657,127 @@ async function trapNote(raw: unknown, req: Request, origin: string): Promise<Res
   return reply(spent ? { ok: false, error, spent: true, cost_cents: cents } : { ok: false, error }, 200, origin);
 }
 
+/* ---------------------------------------------------------------- pulling a link
+   Research mode, external (migration 0034): the owner pastes the addresses they want an answer to
+   come from, and this fetches one and stores it as passages under the corpus links-<install>.
+   There is no model in this path at all, so a link costs nothing to add; what it costs is the
+   tokens of whatever passages a later question uses. It is still behind its own feature row, so
+   the owner can switch link pulling off without switching research mode off.
+
+   This is not a search and not a crawler. It fetches the one address given, follows at most three
+   redirects, and checks every hop against the same rules as the first, because an address that is
+   safe and redirects to one that is not is the whole trick. */
+async function pullLink(raw: unknown, req: Request, origin: string): Promise<Response> {
+  const body = validateLink(raw) as { material: string; install: string; adminToken: string | null; url: string } | null;
+  if (!body) return reply({ ok: false, error: "bad_request" }, 400, origin);
+  if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
+    console.error("study-ask: a required environment variable is not set");
+    return reply({ ok: false, error: "grader_error" }, 200, origin);
+  }
+  const first = checkUrl(body.url) as { ok: boolean; url?: string; host?: string; error?: string };
+  if (!first.ok) return reply({ ok: false, error: first.error }, 200, origin);
+
+  /* The feature row is the switch and the owner check; it spends nothing, so it reserves nothing. */
+  let begun: Record<string, unknown> | null;
+  try {
+    begun = (await rpc("ai_begin2", {
+      p_feature: LINK_FEATURE,
+      p_material: body.material,
+      p_install: body.install,
+      p_ip: clientIp(req),
+      p_token: body.adminToken,
+      p_in: 0,
+      p_out: 0,
+    })) as Record<string, unknown> | null;
+  } catch {
+    console.error("study-ask: ai_begin2 failed (link)");
+    return reply({ ok: false, error: "grader_error" }, 200, origin);
+  }
+  if (!begun || begun.ok !== true) {
+    const error = begun && typeof begun.error === "string" && begun.error ? begun.error : "grader_error";
+    return reply({ ok: false, error }, 200, origin);
+  }
+  const callId = begun.call_id;
+  const closeRow = async (status: EndStatus) => {
+    if (typeof callId !== "number" && typeof callId !== "string") return;
+    try {
+      await rpc("ai_end", { p_call_id: callId, p_status: status, p_in: 0, p_out: 0, p_latency: 0 });
+    } catch {
+      console.error("study-ask: ai_end failed (link)");
+    }
+  };
+
+  let url = first.url as string;
+  let host = first.host as string;
+  let html = "";
+  try {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), LINK_LIMITS.timeoutMs);
+    try {
+      for (let hop = 0; ; hop++) {
+        const res = await fetch(url, {
+          redirect: "manual",
+          signal: ctl.signal,
+          /* A plain, honest agent string. No cookies, no credentials, nothing of the student's. */
+          headers: { "User-Agent": "StudyHubAsk/1.0 (+https://ayatdzcollection-sketch.github.io)", Accept: "text/html,text/plain;q=0.9" },
+        });
+        if (res.status >= 300 && res.status < 400) {
+          const next = res.headers.get("location");
+          if (!next || hop >= LINK_LIMITS.redirects) { await closeRow("error"); return reply({ ok: false, error: "unreachable" }, 200, origin); }
+          const hopUrl = checkUrl(new URL(next, url).toString()) as { ok: boolean; url?: string; host?: string; error?: string };
+          if (!hopUrl.ok) { await closeRow("refused"); return reply({ ok: false, error: hopUrl.error }, 200, origin); }
+          url = hopUrl.url as string;
+          host = hopUrl.host as string;
+          continue;
+        }
+        if (!res.ok) { await closeRow("error"); return reply({ ok: false, error: "unreachable" }, 200, origin); }
+        const type = checkType(res.headers.get("content-type")) as { ok: boolean; error?: string };
+        if (!type.ok) { await closeRow("refused"); return reply({ ok: false, error: type.error }, 200, origin); }
+        const len = Number(res.headers.get("content-length") || 0);
+        if (Number.isFinite(len) && len > LINK_LIMITS.bytes) { await closeRow("refused"); return reply({ ok: false, error: "too_big" }, 200, origin); }
+        /* Read with a cap rather than trusting the header, which a server may not send. */
+        const buf = new Uint8Array(await res.arrayBuffer());
+        if (buf.byteLength > LINK_LIMITS.bytes) { await closeRow("refused"); return reply({ ok: false, error: "too_big" }, 200, origin); }
+        html = new TextDecoder("utf-8", { fatal: false }).decode(buf);
+        break;
+      }
+    } finally {
+      clearTimeout(timer);
+    }
+  } catch {
+    /* Nothing from the error reaches the caller or the log: it can carry the address back. */
+    console.error("study-ask: a link did not answer");
+    await closeRow("error");
+    return reply({ ok: false, error: "unreachable" }, 200, origin);
+  }
+
+  const got = extract(html, { title: host }) as { title: string; text: string };
+  const rows = linkPassages(got.text, { title: got.title }) as Array<{ heading: string; body: string }>;
+  if (!rows.length) { await closeRow("ok"); return reply({ ok: false, error: "empty" }, 200, origin); }
+
+  let saved: Record<string, unknown> | null = null;
+  try {
+    saved = (await rpc("ai_link_add", {
+      p_install: body.install,
+      p_url: url,
+      p_host: host,
+      p_title: got.title || host,
+      p_bodies: rows.map((r) => r.body),
+      /* The site name leads every heading, so a citation says where it came from and the per
+         source cap in the question builder can tell two of the owner's pages apart. */
+      p_headings: rows.map((r) => linkLabel(host, r.heading)),
+    })) as Record<string, unknown> | null;
+  } catch {
+    console.error("study-ask: ai_link_add failed");
+  }
+  await closeRow("ok");
+  if (!saved || saved.ok !== true) {
+    const error = saved && typeof saved.error === "string" && saved.error ? saved.error : "grader_error";
+    return reply({ ok: false, error }, 200, origin);
+  }
+  return reply({ ok: true, id: saved.id, n: saved.n, title: got.title || host, host, url }, 200, origin);
+}
+
 /* ---------------------------------------------------------------- the reranker
    Feature 'rerank' (migration 0033): the page's keyword scores came back weak, so one very small
    model reads the titles of the passages it was considering and says which of them bear on the
@@ -745,6 +886,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   if (purpose === null) return reply({ ok: false, error: "bad_request" }, 400, origin);
   if (purpose === "trap") return await trapNote(raw, req, origin);
   if (purpose === "rerank") return await rerankPick(raw, req, origin);
+  if (purpose === "link") return await pullLink(raw, req, origin);
 
   const body = validateAsk(raw) as AskBody | null;
   if (!body) return reply({ ok: false, error: "bad_request" }, 400, origin);
@@ -764,6 +906,17 @@ Deno.serve(async (req: Request): Promise<Response> => {
   body.hasTextbook = !!CORPUS[body.material];
   body.form = !!NUMBERED[CORPUS[body.material] || ""];
 
+  /* Research mode leaves the material out unless the student turned it back on. The page already
+     sends no passages in that case; this is the same decision made again here, because what the
+     answer is allowed to draw on is not a thing to take the page's word for. */
+  const research = body.mode === "shelf" || body.mode === "links";
+  if (research && !body.withMaterial) {
+    body.chunks = [];
+    body.map = "";
+    body.progress = "";
+    body.focus = "";
+  }
+
   /* The reserve is sized from what is about to be sent. The model only changes request fields
      that carry no text, so the default stands in until ai_begin2 names the real one. Corrections
      and shelf passages are fetched further down and are not in this estimate; they are short, and
@@ -773,9 +926,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
   let begun: Record<string, unknown> | null;
   try {
     begun = (await rpc("ai_begin2", {
-      /* A retry is its own feature, so it has its own daily cap, the breaker can pause it on its
-         own, and Plain mode refuses it outright. The page asks; the database decides. */
-      p_feature: body.fault ? "retry" : FEATURE,
+      /* Every kind of answer that costs more than the ordinary one is its own feature, so it has
+         its own daily cap, the breaker can pause it on its own, and Plain mode refuses it
+         outright. Deep research outranks the mode, because deep is what makes it dear. The page
+         asks; the database decides. */
+      p_feature: body.deep ? DEEP_FEATURE
+        : body.fault ? "retry"
+        : (MODE_FEATURE as Record<string, string>)[body.mode] || FEATURE,
       p_material: body.material,
       p_install: body.install,
       p_ip: clientIp(req),
@@ -918,28 +1075,55 @@ Deno.serve(async (req: Request): Promise<Response> => {
     console.error("study-ask: corrections lookup failed");
   }
 
-  /* The shelf, behind the same grant as the textbook, after the material's own passages. */
-  const shelf = shelfCorpus(body.material);
-  if (shelf && begun.textbook === true && body.chunks.length < 14) {
+  /* The shelf, and in research mode whichever body of sources the mode names.
+     In the ordinary mode the shelf is a second opinion behind the material, three passages, behind
+     the same grant as the textbook. In research mode it IS the answer, so it gets eight, a cap of
+     three from any one document so a long one cannot crowd out the rest, and, for the external
+     mode, the owner's own fetched pages instead of the class shelf. */
+  const CHUNK_CAP = body.deep ? DEEP_LIMITS.chunks : LIMITS.chunks;
+  const corpusWanted = body.mode === "links" ? "links-" + body.install : shelfCorpus(body.material);
+  /* The class shelf is the owner's to grant, the same as the textbook. A student's own saved links
+     are their own, so the external mode does not wait on that grant. */
+  const mayRead = body.mode === "links" || begun.textbook === true;
+  if (corpusWanted && mayRead && body.chunks.length < CHUNK_CAP) {
     try {
       const found = (await rpc("ai_passages_search", {
-        p_corpus: shelf,
+        p_corpus: corpusWanted,
         p_query: (body.question + " " + body.quote).slice(0, 1000),
         p_chapter: null,
-        p_limit: SHELF_PASSAGES,
+        p_limit: research ? RESEARCH_PASSAGES : SHELF_PASSAGES,
       })) as { ok?: boolean; passages?: Array<{ heading?: string; body?: string }> } | null;
+      const perSource = new Map<string, number>();
       for (const p of (found && found.ok && Array.isArray(found.passages)) ? found.passages : []) {
         if (!p || typeof p.body !== "string" || !p.body) continue;
-        if (body.chunks.length >= 14) break;
-        const label = ("[" + (p.heading || "Class notes") + "]").slice(0, 80);
-        body.chunks.push({ label, text: p.body.slice(0, TEXTBOOK_CHARS) });
+        if (body.chunks.length >= CHUNK_CAP) break;
+        const heading = String(p.heading || (body.mode === "links" ? "A page you saved" : "Class notes"));
+        /* Everything before the first colon is the document, which is how ai_link_add and
+           load_passages.mjs both write a heading. */
+        const source = heading.split(":")[0].trim().toLowerCase();
+        const used = perSource.get(source) || 0;
+        if (research && used >= RESEARCH_PER_SOURCE) continue;
+        perSource.set(source, used + 1);
+        const label = ("[" + heading + "]").slice(0, 80);
+        body.chunks.push({ label, text: p.body.slice(0, body.deep ? DEEP_LIMITS.chunkText : TEXTBOOK_CHARS) });
         body.textbookLabels.push(label);
-        /* As for a correction: the rule travels with the question that found a shelf passage. */
+        /* As for a correction: the rule travels with the question that found a passage. */
         body.shelf = true;
       }
     } catch {
-      console.error("study-ask: shelf search failed");
+      console.error("study-ask: source search failed");
     }
+  }
+  /* A research question with no sources behind it is refused rather than answered from nothing:
+     an empty research answer reads like an answer, and it is not one. The ledger row ai_begin2
+     opened is closed here, because nothing past this point will do it. */
+  if (research && !body.withMaterial && !body.chunks.length) {
+    try {
+      await rpc("ai_end", { p_call_id: callId, p_status: "refused", p_in: 0, p_out: 0, p_latency: 0 });
+    } catch {
+      console.error("study-ask: ai_end failed (no sources)");
+    }
+    return reply({ ok: false, error: "no_sources" }, 200, origin);
   }
 
   return streamAnswer(body, callId, model, origin);

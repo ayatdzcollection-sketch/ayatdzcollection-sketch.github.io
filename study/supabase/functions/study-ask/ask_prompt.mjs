@@ -125,6 +125,42 @@ export const LIMITS = {
   fault: 400
 };
 
+/* ---------------------------------------------------------------- research modes
+   Three modes, chosen by the student in Ask settings and sent with the question.
+
+     material   what Ask has always been: this material, its textbook, its shelf.
+     shelf      research mode on the class source shelf: the documents the owner loaded for this
+                class, answered from and cited by name.
+     links      research mode on pages the owner pasted themselves, fetched and split into
+                passages by link_fetch.mjs. The material is left out unless withMaterial is on.
+
+   Deep research is an intensifier on any of them, not a fourth mode: more room in and out, and
+   thinking. It is about eight times the price of an ordinary answer, which is why it is its own
+   feature row with its own cap and why the page shows the price before it runs.
+
+   The mode rides in the MESSAGE, never in the cached instructions, because a student switches
+   mode inside one conversation and a cached block that moves is a block paid for twice. */
+export const MODES = ['material', 'shelf', 'links'];
+export const DEFAULT_MODE = 'material';
+
+/* What a deep question may carry, replacing the ordinary limits. A whole article pasted in, three
+   times the passage text, and an answer with room to work through it. These are granted by
+   ai_begin2 like anything else: a request that asks for them and is refused the deep feature is
+   refused outright, so claiming deep never buys the larger request at the ordinary price. */
+export const DEEP_LIMITS = { question: 16000, chunkText: 3000, chunksTotal: 30000, chunks: 16 };
+export const DEEP_MAX_TOKENS = 4000;
+/* About 900 words. The LENGTH line still governs; this is what it says in deep mode. */
+export const DEEP_WORDS = 900;
+export const DEEP_FEATURE = 'deep';
+export const MODE_FEATURE = { material: FEATURE, shelf: 'research', links: 'extern' };
+
+/* How many passages a research question gets from its corpus. Three is right when the shelf is a
+   second opinion behind the material; eight is right when it is the whole answer, and eight is
+   also the most ai_passages_search will return, which is where the number comes from. Per source,
+   three, so that one long document cannot crowd out the other four the owner chose. */
+export const RESEARCH_PASSAGES = 8;
+export const RESEARCH_PER_SOURCE = 3;
+
 /* The tools a page can draw and compute itself, called by one machine line at the end of an
    answer. The page says which it has (tools in the request); only those are offered, and each is
    described here, on the server, so a request can name a tool but never write its instructions.
@@ -279,6 +315,22 @@ export const CORRECTION_RULE = 'A passage labelled Correction was written by the
    notes, an openly licensed reference), loaded into the private passages table like the textbook. */
 export const SHELF_RULE = 'Passages labelled with a source name in brackets, such as "[Class notes] ...", come from documents the owner added for this class. Treat them as the material: they are trusted, they are quotable under the same fifteen word limit, and the Sources line names them the same way.';
 
+/* Research mode on the class source shelf. Sent with the question and not cached, because the
+   student turns the mode on and off inside one conversation. */
+export const RESEARCH_RULE = 'This question is in research mode. The PASSAGES are documents chosen for this class, and they are what the answer is made of. Name the document a fact came from in the sentence that carries it, not only in the Sources line, and where the exact wording matters quote at most fifteen words of it in quotation marks. If the documents do not cover part of the question, say which part and leave it, rather than filling it in. Prefer a specific sentence from a document to a general statement you could have made without one.';
+
+/* Research mode on pages the owner pasted. The same discipline, plus the two things that are only
+   true of the web: pages disagree, and the assistant cannot go and look. */
+export const LINKS_RULE = 'This question is in research mode on pages the student chose and saved themselves. Every PASSAGE labelled with a site name in square brackets comes from one of those pages. They are what the answer is made of: name the page in the sentence that carries each fact, and quote at most fifteen words in quotation marks where the exact wording matters. When two pages disagree, say so and name both rather than quietly picking one. When the pages do not cover part of the question, say which part and leave it. You cannot open a link, read anything beyond the passages you were sent, or check whether a page is telling the truth: if the student asks for any of that, say so plainly in one sentence.';
+
+/* What either research mode means when the material is left out, which is the default, and what it
+   means when the student has turned the material back on beside their sources. */
+export const RESEARCH_ONLY = 'The material itself is not in this question. Answer from the passages here and from nothing else: not from the material, and not from your own knowledge. If they do not cover it, say so in one sentence and say what they do cover.';
+export const RESEARCH_WITH = 'The material\'s own passages are here as well, under their own labels. Use both, and make it clear in each sentence which kind it came from, because the student is researching beyond the material and needs to know which half of the answer their course actually backs.';
+
+/* Deep research. The room is granted by the feature and the limits; this is the shape. */
+export const DEEP_RULE = 'This is a deep answer: the student asked for thoroughness rather than brevity, and is paying about eight times the usual for it. Take the question apart and work through it in order, one part at a time, with the specifics rather than the summary. Headings are still not allowed, but a numbered part for each piece of the question is. End with one or two sentences on what the sources did not settle, which is the part a short answer has to leave out.';
+
 /* One retry, after the page's own checks caught something the answer cannot support. Only ever
    sent once per answer, and only for the two faults that make an answer actively wrong. */
 export const RETRY_RULE = 'The FAULT block names something wrong with the answer you just gave to this question. Write the answer again, fixing exactly that, and change nothing else that was right. Do not apologise, do not mention the fault or that this is a second attempt, and do not explain what changed: the student sees only the new answer.';
@@ -412,10 +464,12 @@ function clean(v) {
  * HIGHLIGHT, PASSAGES, QUESTION, each left out when empty except QUESTION. Passage numbers are the
  * 1 based index in the chunks array as sent, so the client can map "Sources: [n]" back to its
  * own list; a chunk with no text is skipped without renumbering the rest. */
-export function buildRequest({ model, map, question, quote, focus, chunks, history, progress, notes, practice, widgets, math, beyond, marks, effort, facts, tools, kinds, check, rules, items, checkwork, suggestNotes, fault, saq, hasFacts, hasTextbook, form, correction, shelf } = {}) {
+export function buildRequest({ model, map, question, quote, focus, chunks, history, progress, notes, practice, widgets, math, beyond, marks, effort, facts, tools, kinds, check, rules, items, checkwork, suggestNotes, fault, saq, hasFacts, hasTextbook, form, correction, shelf, mode, deep, withMaterial } = {}) {
   const mapText = clean(map);
   const level = EFFORTS[effort] ? effort : DEFAULT_EFFORT;
   const E = EFFORTS[level];
+  const research = mode === 'shelf' || mode === 'links';
+  const isDeep = deep === true;
   /* A third breakpoint, on the tools this material offers, which are the same for every question
      in it. Left out entirely when the page offers none, so the other materials are unchanged.
      Worked out first because whether there is a tools block decides which form of the ref rule the
@@ -481,11 +535,20 @@ export function buildRequest({ model, map, question, quote, focus, chunks, histo
   /* A pasted set needs room per item. Without this the LENGTH line asked for 110 words while the
      items rule asked for four numbered answers, which is not a brief the model can meet: measured
      on a real four item worksheet, auto picked quick and the whole thing got 298 tokens. */
-  const words = Number.isInteger(nItems) && nItems >= 2 ? Math.max(E.words, nItems * 70) : E.words;
+  let words = Number.isInteger(nItems) && nItems >= 2 ? Math.max(E.words, nItems * 70) : E.words;
+  if (isDeep) words = Math.max(words, DEEP_WORDS);
   blocks.push('LENGTH\nAbout ' + words + ' words, and at most ' + (Number.isInteger(nItems) && nItems >= 2 ? 'two bullet points an item' : E.bullets + ' bullet points') + '.');
   blocks.push('QUESTION\n' + clean(question));
   /* Per question instructions. They live here rather than in the cached system text because they
      change from question to question, and a cached block that changes is a block paid for twice. */
+  /* The mode, first of the per question instructions, because it governs the rest. It is here and
+     not in the cached block on purpose: a student turns research mode on in the middle of a
+     conversation, and a cached block that moves is a block written again at 1.25 times the price. */
+  if (research) {
+    blocks.push(mode === 'links' ? LINKS_RULE : RESEARCH_RULE);
+    blocks.push(withMaterial === true ? RESEARCH_WITH : RESEARCH_ONLY);
+  }
+  if (isDeep) blocks.push(DEEP_RULE);
   if (cr) blocks.push(CHAT_RULES_RULE);
   if (Number.isInteger(nItems) && nItems >= 2) blocks.push('The student\'s message holds ' + nItems + ' questions or items. ' + ITEMS_RULE);
   if (checkwork === true) blocks.push(CHECKWORK_RULE);
@@ -514,10 +577,10 @@ export function buildRequest({ model, map, question, quote, focus, chunks, histo
   const out = {
     system,
     messages: merged.map((t) => ({ role: t.role, content: t.text })),
-    max_tokens: E.max_tokens,
+    max_tokens: isDeep ? Math.max(E.max_tokens, DEEP_MAX_TOKENS) : E.max_tokens,
     ...modelParams(model)
   };
-  if (E.think) {
+  if (E.think || isDeep) {
     out.thinking = { type: 'adaptive' };
     out.output_config = Object.assign({}, out.output_config, { effort: 'medium' });
   }
@@ -578,7 +641,18 @@ function str(v, max, { min = 0, optional = false } = {}) {
    the right type. thread is null and turn is 0 when they are left out. */
 export function validateAsk(raw) {
   if (!isObj(raw)) return null;
-  const L = LIMITS;
+  /* The mode and Deep research come first because they decide the limits everything else is
+     checked against. Claiming deep does not grant it: ai_begin2 is asked for the 'deep' feature
+     afterwards, and a caller it refuses gets no answer at all, so the larger request can never be
+     had at the ordinary price. */
+  if (raw.mode !== undefined && (typeof raw.mode !== 'string' || MODES.indexOf(raw.mode) < 0)) return null;
+  const mode = raw.mode === undefined ? DEFAULT_MODE : raw.mode;
+  for (const k of ['deep', 'withMaterial']) if (raw[k] !== undefined && typeof raw[k] !== 'boolean') return null;
+  const deep = raw.deep === true;
+  /* withMaterial only means anything in a research mode; in the ordinary mode the material is the
+     whole point and the flag is ignored rather than refused. */
+  const withMaterial = mode === DEFAULT_MODE ? true : raw.withMaterial === true;
+  const L = deep ? Object.assign({}, LIMITS, DEEP_LIMITS) : LIMITS;
 
   const material = str(raw.material, L.material, { min: 1 });
   if (material === BAD || !MATERIAL_RE.test(material)) return null;
@@ -680,7 +754,7 @@ export function validateAsk(raw) {
   const items = raw.items === undefined ? 0 : raw.items;
   const marks = raw.marks === true, checkwork = raw.checkwork === true, suggestNotes = raw.suggestNotes !== false;
   const saq = raw.saq === true, hasFacts = raw.hasFacts === true;
-  return { material, install, adminToken: adminToken || null, question, quote, focus, map, chunks, history, progress, notes, thread, turn, textbook, practice, widgets, math, marks, effort, chapter, facts, tools, kinds, check, rules, items, checkwork, suggestNotes, fault, saq, hasFacts };
+  return { material, install, adminToken: adminToken || null, question, quote, focus, map, chunks, history, progress, notes, thread, turn, textbook, practice, widgets, math, marks, effort, chapter, facts, tools, kinds, check, rules, items, checkwork, suggestNotes, fault, saq, hasFacts, mode, deep, withMaterial };
 }
 
 /* ---------------------------------------------------------------- trap notes
@@ -746,7 +820,27 @@ export function purposeOf(raw) {
   if (raw.purpose === undefined || raw.purpose === 'ask') return 'ask';
   if (raw.purpose === 'trap') return 'trap';
   if (raw.purpose === 'rerank') return 'rerank';
+  /* Pulling one link the owner pasted into their own source shelf. No model, no tokens. Listing
+     and removing links are plain RPCs the page calls itself; only fetching needs the function,
+     because only the function is allowed to touch the network. */
+  if (raw.purpose === 'link') return 'link';
   return null;
+}
+
+/* The link request, normalized, or null. The address is checked again inside link_fetch.mjs and
+   again on every redirect; this only checks the shape. */
+export const LINK_FEATURE = 'fetch';
+export function validateLink(raw) {
+  if (!isObj(raw) || raw.purpose !== 'link') return null;
+  const material = str(raw.material, LIMITS.material, { min: 1 });
+  if (material === BAD || !MATERIAL_RE.test(material)) return null;
+  const install = str(raw.install, 32, { min: 32 });
+  if (install === BAD || !INSTALL_RE.test(install)) return null;
+  const adminToken = str(raw.adminToken, LIMITS.adminToken, { optional: true });
+  if (adminToken === BAD) return null;
+  const url = str(raw.url, 2000, { min: 8 });
+  if (url === BAD) return null;
+  return { purpose: 'link', material, install, adminToken: adminToken || null, url };
 }
 
 /* ---------------------------------------------------------------- the reranker (feature 'rerank')

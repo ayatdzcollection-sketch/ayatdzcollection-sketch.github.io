@@ -31,7 +31,18 @@ Rules that always apply:
   and handouts, the student's own notes, and openly licensed references are all named course
   documents for this purpose; check and record the licence of anything not the teacher's or the
   student's own before loading it. Shelf text lives only in that table: never in a material, never
-  in the repo. Web search is still not allowed, and there is no connector to one.
+  in the repo. From 2026-09-20, also the owner's decision, the same is true of **research mode**
+  (migration 0034): the owner may paste the addresses of pages they want an answer to come from,
+  and the Edge Function fetches exactly those pages, takes their text out of the HTML in code with
+  no model involved, and stores it in `study_ai_passages` under the corpus `links-<install>`.
+  Everything above applies to a fetched page word for word: the text lives only in that table,
+  never in a material and never in the repo, an answer may quote at most fifteen words of it with
+  the source named, and only https addresses are fetched, never a private one. Research mode is off
+  by default, has its own feature rows with their own daily caps and its own per question ceiling,
+  and leaves the material out of a research answer unless the owner turns it back on.
+  This is still not web search: nothing searches, nothing crawls, and nothing follows a link it
+  found inside a page. The function fetches the addresses the owner typed and no others.
+  Web search itself is still not allowed, and there is no connector to one.
   Ask conversations are stored in `study_ai_chats` (migration 0012).
 - Do not open the retired "Adaptive Study System" project on the Desktop or anything in it.
 - Content only from the named course documents, never general knowledge.

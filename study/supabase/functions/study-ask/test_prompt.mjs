@@ -249,7 +249,7 @@ assert.deepEqual(minimal, {
   material: good.material, install: good.install, adminToken: null, question: 'x', quote: '', focus: '', map: '', chunks: [], history: [],
   progress: '', notes: '', thread: null, turn: 0, textbook: false, practice: true, widgets: true, math: false, marks: false, effort: 'normal', chapter: null,
   facts: [], tools: [], kinds: '', check: false, rules: '', items: 0, checkwork: false, suggestNotes: true, fault: '',
-  saq: false, hasFacts: false
+  saq: false, hasFacts: false, mode: 'material', deep: false, withMaterial: true
 });
 assert.equal(validateAsk({ material: good.material, install: good.install, question: 'x', chunks: [{ label: 'a', text: 'b', ref: 'q:abc_1' }] }).chunks[0].ref, 'q:abc_1');
 assert.equal(validateAsk({ material: good.material, install: good.install, question: 'x', chunks: [{ label: 'a', text: 'b', ref: 'bad ref' }] }), null);
@@ -784,11 +784,108 @@ import {
      retry is billed to its own feature so it has its own cap and the breaker can pause it. */
   const idx = fs.readFileSync(new URL('./index.ts', import.meta.url), 'utf8');
   assert.ok(/return \/\^\[a-z0-9-\]\{1,40\}\$\/\.test\(cls\) \? "shelf-" \+ cls : "";/.test(idx), 'the shelf corpus comes from the class');
-  assert.ok(/shelf && begun\.textbook === true/.test(idx), 'the shelf is behind the same grant as the textbook');
-  assert.ok(/p_feature: body\.fault \? "retry" : FEATURE/.test(idx), 'a retry is billed to its own feature');
+  /* The class shelf is the owner's to grant, as the textbook is. A student's own saved links are
+     their own, which is why the external mode does not wait on that grant (migration 0034). */
+  assert.ok(/const mayRead = body\.mode === "links" \|\| begun\.textbook === true;/.test(idx), 'the class shelf is behind the textbook grant');
+  assert.ok(/p_feature: body\.deep \? DEEP_FEATURE/.test(idx), 'deep is billed to its own feature');
+  assert.ok(/: body\.fault \? "retry"/.test(idx), 'a retry is billed to its own feature');
   assert.ok(idx.indexOf('ai_corrections_get') > 0 && idx.indexOf('ai_corrections_get') < idx.indexOf('return streamAnswer('), 'corrections are fetched before the answer');
   assert.ok(/ahead\.concat\(body\.chunks\)/.test(idx), 'corrections go in front of the material');
   assert.ok(/purpose === "rerank"/.test(idx), 'the rerank purpose is dispatched');
   assert.ok(!DASHES.test(idx));
 }
 console.log('corrections, shelf, reranker and retry ok');
+
+/* ------------------------------------------- research modes and Deep research (migration 0034) */
+import {
+  MODES, DEFAULT_MODE, DEEP_LIMITS, DEEP_MAX_TOKENS, DEEP_WORDS, DEEP_FEATURE, MODE_FEATURE,
+  RESEARCH_PASSAGES, RESEARCH_PER_SOURCE, RESEARCH_RULE, LINKS_RULE, RESEARCH_ONLY, RESEARCH_WITH,
+  DEEP_RULE, LINK_FEATURE, validateLink
+} from './ask_prompt.mjs';
+{
+  const DASHES = new RegExp('[' + String.fromCharCode(0x2013, 0x2014) + ']');
+  const base = { material: 'apush/period1-2-test', install: '0123456789abcdef0123456789abcdef', question: 'x' };
+  for (const [name, rule] of Object.entries({ RESEARCH_RULE, LINKS_RULE, RESEARCH_ONLY, RESEARCH_WITH, DEEP_RULE })) {
+    assert.ok(!DASHES.test(rule), 'dash in ' + name);
+    assert.ok(rule.length > 100, name + ' is too short to be the rule it claims to be');
+  }
+  assert.deepEqual(MODES, ['material', 'shelf', 'links']);
+  assert.equal(DEFAULT_MODE, 'material');
+  assert.equal(MODE_FEATURE.material, 'ask');
+  assert.equal(MODE_FEATURE.shelf, 'research');
+  assert.equal(MODE_FEATURE.links, 'extern');
+  assert.equal(DEEP_FEATURE, 'deep');
+  assert.equal(LINK_FEATURE, 'fetch');
+  assert.ok(RESEARCH_PASSAGES <= 8, 'ai_passages_search will not return more than eight');
+  assert.ok(RESEARCH_PER_SOURCE >= 2 && RESEARCH_PER_SOURCE < RESEARCH_PASSAGES);
+
+  /* Only the three modes, and only a boolean for the two switches. */
+  assert.equal(validateAsk({ ...base, mode: 'links' }).mode, 'links');
+  assert.equal(validateAsk({ ...base, mode: 'web' }), null, 'there is no web mode');
+  assert.equal(validateAsk({ ...base, mode: 7 }), null);
+  assert.equal(validateAsk({ ...base, deep: 'yes' }), null);
+  assert.equal(validateAsk({ ...base, withMaterial: 1 }), null);
+  /* withMaterial is meaningless outside a research mode, so it is forced rather than refused. */
+  assert.equal(validateAsk({ ...base, withMaterial: false }).withMaterial, true);
+  assert.equal(validateAsk({ ...base, mode: 'shelf' }).withMaterial, false, 'research leaves the material out by default');
+  assert.equal(validateAsk({ ...base, mode: 'shelf', withMaterial: true }).withMaterial, true);
+
+  /* Deep buys the longer request, and only deep. A 16,000 character question is refused without
+     it, which is what stops a forged body having the deep room at the ordinary price: asking for
+     deep means asking ai_begin2 for the deep feature, and being refused it refuses the question. */
+  const long = 'q'.repeat(9000);
+  assert.equal(validateAsk({ ...base, question: long }), null, 'the ordinary question limit still holds');
+  assert.equal(validateAsk({ ...base, question: long, deep: true }).question.length, 9000);
+  assert.equal(validateAsk({ ...base, question: 'q'.repeat(DEEP_LIMITS.question + 1), deep: true }), null);
+  const bigChunk = { label: 'a', text: 'b'.repeat(2500) };
+  assert.equal(validateAsk({ ...base, chunks: [bigChunk] }), null);
+  assert.ok(validateAsk({ ...base, chunks: [bigChunk], deep: true }));
+
+  /* The mode rules ride in the message, never in the cached block, because a student turns the
+     mode on halfway through a conversation. */
+  const every = systemPrompt({ math: true, beyond: true, marks: true, saq: true, checked: true, tools: true, textbook: true, refs: true, form: true });
+  for (const [name, rule] of Object.entries({ RESEARCH_RULE, LINKS_RULE, RESEARCH_ONLY, RESEARCH_WITH, DEEP_RULE })) {
+    assert.ok(!every.includes(rule), name + ' must not be cached');
+  }
+  const material = { model: 'claude-sonnet-4-6', map: 'm', question: 'q' };
+  const plain = buildRequest(material);
+  const shelf = buildRequest({ ...material, mode: 'shelf' });
+  const links = buildRequest({ ...material, mode: 'links' });
+  const deep = buildRequest({ ...material, mode: 'links', deep: true });
+  assert.deepEqual(shelf.system, plain.system, 'a research question must not be a cold question');
+  assert.deepEqual(deep.system, plain.system, 'a deep question must not rewrite the prefix either');
+  assert.ok(shelf.messages[0].content.includes(RESEARCH_RULE) && shelf.messages[0].content.includes(RESEARCH_ONLY));
+  assert.ok(!shelf.messages[0].content.includes(LINKS_RULE));
+  assert.ok(links.messages[0].content.includes(LINKS_RULE) && !links.messages[0].content.includes(RESEARCH_RULE));
+  assert.ok(!plain.messages[0].content.includes(RESEARCH_RULE) && !plain.messages[0].content.includes(LINKS_RULE) && !plain.messages[0].content.includes(RESEARCH_ONLY));
+  assert.ok(buildRequest({ ...material, mode: 'shelf', withMaterial: true }).messages[0].content.includes(RESEARCH_WITH));
+
+  /* Deep: the room, the thinking and the length line. */
+  assert.ok(!plain.messages[0].content.includes(DEEP_RULE));
+  assert.ok(deep.messages[0].content.includes(DEEP_RULE));
+  assert.equal(deep.max_tokens, DEEP_MAX_TOKENS);
+  assert.deepEqual(deep.thinking, { type: 'adaptive' });
+  assert.equal(plain.thinking, undefined, 'an ordinary answer still does not think');
+  assert.ok(deep.messages[0].content.includes('About ' + DEEP_WORDS + ' words'));
+  /* Deep outranks a quick classification: a deep question is not a 110 word answer. */
+  assert.ok(buildRequest({ ...material, deep: true, effort: 'quick' }).messages[0].content.includes('About ' + DEEP_WORDS + ' words'));
+  assert.ok(!DASHES.test(JSON.stringify(deep)));
+
+  /* A link request: shape only, since the address is checked in link_fetch.mjs. */
+  const link = { purpose: 'link', material: base.material, install: base.install, url: 'https://example.com/a' };
+  assert.equal(validateLink(link).url, 'https://example.com/a');
+  assert.equal(validateLink({ ...link, purpose: 'ask' }), null);
+  assert.equal(validateLink({ ...link, url: '' }), null);
+  assert.equal(validateLink({ ...link, url: 'x'.repeat(2001) }), null);
+  assert.equal(validateLink({ ...link, install: 'nope' }), null);
+  assert.equal(purposeOf({ purpose: 'link' }), 'link');
+  assert.equal(purposeOf({ purpose: 'search' }), null, 'there is still no web search');
+
+  /* index.ts holds the two decisions that cannot be taken on the page's word. */
+  const src = fs.readFileSync(new URL('./index.ts', import.meta.url), 'utf8');
+  assert.ok(/research && !body\.withMaterial/.test(src), 'index.ts must drop the material itself, not trust the page to');
+  assert.ok(/no_sources/.test(src), 'a research question with no sources must be refused');
+  assert.ok(/p_feature: body\.deep \? DEEP_FEATURE/.test(src), 'deep must be its own feature or the guards never see it');
+  assert.ok(!DASHES.test(src), 'dash in index.ts');
+}
+console.log('research modes, deep research and links ok');
