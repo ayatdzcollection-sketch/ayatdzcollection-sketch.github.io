@@ -292,9 +292,10 @@ var StudyAuth = {
 
       /* Flags (0033): the sentences the page's own checks could not back, newest first, with the
          question and answer they came from. all true lists the reviewed ones as well. The stats
-         that come back are counted per kind, not per flag: total is how many kinds have ever been
-         seen and open is how many of those have nothing reviewed yet, so neither is a flag count.
-         by_kind is the one to show, and it counts reviewed flags too. */
+         are counted over the flags themselves: total is every flag ever written, open is the ones
+         not yet reviewed, and by_kind counts the open ones only. An earlier draft of the migration
+         grouped by kind first and so counted kinds rather than flags; that was fixed before it
+         was applied, and this note is here because the wrong version was believed for a while. */
       flags:         function (limit, all) {
         return rpc('admin_ai_flags', { p_token: ls(TOKEN_KEY),
           p_limit: limit == null ? null : limit, p_all: !!all });

@@ -2481,12 +2481,14 @@ function aiPaintGuards() {
       pair[0].value = n == null ? '' : String(n);
     });
 
+  var ceil = aiGuardNum(g.ceiling_cents);
+  var line = aiGuardNum(g.breaker_cents), hard = aiGuardNum(g.breaker_hard);
   e.guardRead.innerHTML = '';
   e.guardRead.appendChild(el('span', 'aireadline',
-    'A question may cost ' + aiGuardText(g.ceiling_cents, 'no more than the server says') +
-    ' at most. The breaker is ' + (g.breaker_on ? 'on' : 'off') + ', at ' +
-    aiGuardText(g.breaker_cents, 'its own line') + ' and ' +
-    aiGuardText(g.breaker_hard, 'its own hard line') + '.'));
+    (ceil == null ? 'The ceiling on one question is not set.'
+      : 'One question may cost ' + ceil + ' cents at most.') +
+    ' The breaker is ' + (g.breaker_on ? 'on' : 'off') +
+    (line == null || hard == null ? '.' : ', at ' + line + ' cents, hard at ' + hard + ' cents.')));
   /* mean_cents is null with the breaker off, and null again until there are ten answers to
      average, so neither case is printed as a number. */
   e.guardRead.appendChild(el('span', 'aireadline',
@@ -2494,7 +2496,7 @@ function aiPaintGuards() {
       ? 'Running mean: ' + aiGuardText(g.mean_cents, 'nothing measured yet') +
         ', over the last twenty answers.'
       : 'Nothing is measured while the breaker is off.') +
-    (aiWhen(g.at) ? ' Read ' + aiWhen(g.at) + '.' : '')));
+    (aiWhen(g.at) ? ' Last read ' + aiWhen(g.at) + '.' : '')));
 
   var paused = aiPausedNames(g);
   e.guardPaused.innerHTML = '';
@@ -2525,7 +2527,6 @@ function aiPaintGuards() {
   }
   e.guardClear.disabled = !paused.length && !why;
 
-  var ceil = aiGuardNum(g.ceiling_cents);
   e.guardGroup.state.textContent = (g.plain ? 'plain mode' : g.breaker_on ? 'breaker on' : 'breaker off') +
     (ceil == null ? '' : ' · ceiling ' + ceil + '¢') +
     (paused.length ? ' · ' + paused.length + ' paused' : '');
