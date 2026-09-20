@@ -54,6 +54,15 @@
           "tags": ["fraser", "cumulative", "full-study", "extra-credit", "spaced-repetition", "chapters-1-4", "learn-mode"],
           "added": "2026-09-09",
           "sort": 40
+        },
+        {
+          "id": "fraser-ch5",
+          "ask": true,
+          "title": "Fraser Ch 5: reading quiz prep",
+          "blurb": "For the chapter 5 reading quiz on Monday 21 September: ten multiple choice questions, all from The Making of a Revolution, and anywhere from three to seven of them in the EXCEPT form. A guide in nine sections in book order, each with its argument, the reading in beats, a cause and effect table to cover and recite, and what changed for whom. 154 questions, 66 of them EXCEPT, with every explanation saying why the false option is false and which true one is the trap. Mock quizzes in book order with three to five EXCEPT, a Seven EXCEPT quiz for the harder form, Learn, Cram, notecards, endless practice and a printable quiz.",
+          "tags": ["fraser", "reading-quiz", "except-questions", "cause-and-effect", "spaced-repetition", "chapter-5", "learn-mode"],
+          "added": "2026-09-19",
+          "sort": 5
         }
       ]
     },
