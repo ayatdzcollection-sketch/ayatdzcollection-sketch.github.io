@@ -364,8 +364,11 @@ function mergeSettings(aVal, bVal, aM, bM) {
  *   - union by ts;
  *   - a note deleted on either side stays deleted: the tombstone is kept, its text dropped,
  *     so the delete keeps travelling to devices that still hold the note;
- *   - the same ts with different text keeps the longer (equal lengths: the greater string,
- *     so both merge directions agree);
+ *   - the same ts with different text keeps whichever carries the later v (the edit stamp), so
+ *     an edit that shortens a note is not undone by a stale copy on the other device; with no
+ *     stamp on either side it keeps the longer (equal lengths: the greater string, so both
+ *     merge directions agree);
+ *   - pinned travels the same way, by its own stamp pv, so unpinning reaches the other device;
  *   - sorted by ts, at most 80 kept: the oldest tombstones go first, then the oldest notes.
  * Entries without a finite numeric ts are dropped, and neither input is touched. A tombstone
  * comes out as { ts, t: '', del: true } so every entry has a string t. */
@@ -382,10 +385,15 @@ function mergeAskNotes(aVal, bVal) {
       var k = String(n.ts);
       var t = typeof n.t === 'string' ? n.t.slice(0, ASK_NOTE_MAX) : '';
       var del = n.del === true;
+      var v = typeof n.v === 'number' && isFinite(n.v) ? n.v : 0;
+      var p = n.p === true;
+      var pv = typeof n.pv === 'number' && isFinite(n.pv) ? n.pv : 0;
       var prev = byTs[k];
-      if (!prev) { byTs[k] = { ts: n.ts, t: t, del: del }; continue; }
+      if (!prev) { byTs[k] = { ts: n.ts, t: t, del: del, v: v, p: p, pv: pv }; continue; }
       if (del) prev.del = true;
-      if (t.length > prev.t.length || (t.length === prev.t.length && t > prev.t)) prev.t = t;
+      if (v !== prev.v) { if (v > prev.v) { prev.t = t; prev.v = v; } }
+      else if (t.length > prev.t.length || (t.length === prev.t.length && t > prev.t)) prev.t = t;
+      if (pv > prev.pv) { prev.p = p; prev.pv = pv; }
     }
   };
   take(aVal);
@@ -395,7 +403,13 @@ function mergeAskNotes(aVal, bVal) {
   for (var k in byTs) {
     var e = byTs[k];
     if (e.del) dead.push({ ts: e.ts, t: '', del: true });
-    else notes.push({ ts: e.ts, t: e.t });
+    else {
+      var out = { ts: e.ts, t: e.t };
+      if (e.v) out.v = e.v;
+      if (e.p) out.p = true;
+      if (e.pv) out.pv = e.pv;
+      notes.push(out);
+    }
   }
   var byTime = function (x, y) { return x.ts - y.ts; };
   notes.sort(byTime);

@@ -951,3 +951,32 @@ test('alg2u1 history: test results merge by their own stamp, which is at, not ts
   assert.equal(rule([{ at: 100, pts: 3 }], [{ at: 100, pts: 3 }]).length, 1, 'the same sitting is not doubled');
   assert.equal(REG['alg2u1:history'](  [{ at: 1 }], [{ at: 2 }]).length, 2);
 });
+
+/* ---------- asknotes: an edit and a pin have to reach the other device ----------
+   The merge used to rebuild every note as { ts, t, del }, so anything else on a note was lost
+   on the first sync. Editing a note to something shorter was undone by the stale copy, because
+   the longer text won. Both now travel by their own stamp. */
+test('asknotes: a later edit wins, however short, and a pin travels both ways', () => {
+  const rule = BUILTIN_MERGES['apushp12:asknotes'];
+  const phone = [{ ts: 1, t: 'the long original wording of this note', v: 10 }];
+  const mac   = [{ ts: 1, t: 'short', v: 20 }];
+  for (const [a, b] of [[phone, mac], [mac, phone]]) {
+    const m = rule(a, b);
+    assert.equal(m.length, 1);
+    assert.equal(m[0].t, 'short', 'the later edit wins even when it is shorter');
+    assert.equal(m[0].v, 20);
+  }
+  /* With no stamp at all the old rule still holds, so notes written before this keep working. */
+  assert.equal(rule([{ ts: 2, t: 'aa' }], [{ ts: 2, t: 'aaa' }])[0].t, 'aaa');
+
+  /* Pinning, and unpinning, by their own stamp. */
+  const pinned = [{ ts: 3, t: 'n', p: true, pv: 5 }];
+  const unpin  = [{ ts: 3, t: 'n', p: false, pv: 9 }];
+  assert.equal(rule(pinned, [{ ts: 3, t: 'n' }])[0].p, true, 'a pin reaches a device that has none');
+  for (const [a, b] of [[pinned, unpin], [unpin, pinned]]) {
+    assert.ok(!rule(a, b)[0].p, 'the later change wins, so unpinning travels');
+  }
+  /* A deleted note is still a tombstone, whatever else was on it. */
+  const dead = rule([{ ts: 4, t: 'n', p: true, pv: 1 }], [{ ts: 4, t: '', del: true }]);
+  assert.deepEqual(dead, [{ ts: 4, t: '', del: true }]);
+});
