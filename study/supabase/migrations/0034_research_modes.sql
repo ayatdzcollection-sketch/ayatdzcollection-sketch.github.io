@@ -138,8 +138,8 @@ begin
   v_corpus := 'links-' || p_install;
   v_title  := nullif(left(trim(coalesce(p_title, '')), 200), '');
 
-  /* The same url again means replace, not a second copy: drop its passages by the range the old
-     row recorded, then the row, before anything is counted. */
+  -- The same url again means replace, not a second copy: drop its passages by the range the old
+  -- row recorded, then the row, before anything is counted.
   select l.ord_from, l.ord_to into v_from, v_to
     from public.study_ai_links l where l.install = p_install and l.url = p_url;
   if found then
@@ -150,8 +150,8 @@ begin
   select count(*) into v_have from public.study_ai_links where install = p_install;
   if v_have >= 12 then return jsonb_build_object('ok', false, 'error', 'too_many'); end if;
 
-  /* Clip first, count second: what the caller sent is not what gets stored, so the ceiling has to
-     be measured against the passages that will actually exist. */
+  -- Clip first, count second: what the caller sent is not what gets stored, so the ceiling has to
+  -- be measured against the passages that will actually exist.
   for i in 1 .. least(coalesce(array_length(p_bodies, 1), 0), 40) loop
     v_body := left(coalesce(p_bodies[i], ''), 1500);
     if trim(v_body) = '' then continue; end if;
@@ -290,12 +290,12 @@ begin
     into v_n, v_mean, v_tools, v_retry
     from (select cost_microcents, tool_round, retry from public.study_ai_chats
            where feature = 'ask' and route <> 'page'
-             /* A deep answer is meant to cost about eight times an ordinary one, and the student
-                is shown that price before they ask for it. Letting those rows into this average
-                would mean one deep question pausing the cheap escalations for everybody, which is
-                the breaker firing at the one cost it was told about in advance. Every other mode
-                stays in: research questions are ordinary questions with more passages, and if they
-                are drifting up that is exactly what this is for. */
+             -- A deep answer is meant to cost about eight times an ordinary one, and the student
+             -- is shown that price before they ask for it. Letting those rows into this average
+             -- would mean one deep question pausing the cheap escalations for everybody, which is
+             -- the breaker firing at the one cost it was told about in advance. Every other mode
+             -- stays in: research questions are ordinary questions with more passages, and if they
+             -- are drifting up that is exactly what this is for.
              and coalesce(mode, '') not like '%deep%'
            order by id desc limit 20) t;
 
@@ -307,7 +307,7 @@ begin
       v_paused := array['deep', 'search', 'wiki', 'tools'];
       v_note := 'average ' || round(v_mean, 2) || ' cents over the last ' || v_n;
     end if;
-    /* Rate breakers: a stage that fires this often means the stage before it is not working. */
+    -- Rate breakers: a stage that fires this often means the stage before it is not working.
     if coalesce(v_tools, 0) > 0.25 and not ('tools' = any (v_paused)) then
       v_paused := v_paused || 'tools';
       v_note := trim(both ' ,' from v_note || ', tool rounds on ' || round(v_tools * 100) || ' per cent');
@@ -372,24 +372,24 @@ begin
     return jsonb_build_object('ok', false, 'error', 'off');
   end if;
 
-  /* An escalation is anything beyond the one call an answer already costs. fetch is
-     deliberately not in this list: pulling a link spends no tokens at all, so Plain mode,
-     the breaker and the per question ceiling have nothing to weigh. */
+  -- An escalation is anything beyond the one call an answer already costs. fetch is
+  -- deliberately not in this list: pulling a link spends no tokens at all, so Plain mode,
+  -- the breaker and the per question ceiling have nothing to weigh.
   v_esc := f.id in ('rerank', 'retry', 'tools', 'wiki', 'search', 'deep', 'research', 'extern');
   if v_esc then
     if s.plain then return jsonb_build_object('ok', false, 'error', 'plain_mode'); end if;
     v_paused := (public._ai_breaker_check()) -> 'paused';
     if v_paused ? f.id then return jsonb_build_object('ok', false, 'error', 'paused'); end if;
-    /* The ceiling on one question. Read from the ledger rather than from anything the caller
-       sends, so a forged request cannot buy itself more room: what this device has already spent
-       in the last two minutes is what a question in flight has cost so far. */
+    -- The ceiling on one question. Read from the ledger rather than from anything the caller
+    -- sends, so a forged request cannot buy itself more room: what this device has already spent
+    -- in the last two minutes is what a question in flight has cost so far.
     select coalesce(sum(c.cost_microcents), 0) into v_spent
       from public.study_ai_calls c
      where c.install = nullif(v_install, '') and c.created_at > now() - interval '2 minutes';
-    /* Deep research has its own ceiling, and it has to. The shared one defaults to 6 cents and a
-       deep question is meant to cost 11 to 13, so on the shared ceiling every deep question would
-       be refused by arithmetic, and the only way to allow one would be to raise the ceiling for
-       everything, which is the opposite of guarding it. */
+    -- Deep research has its own ceiling, and it has to. The shared one defaults to 6 cents and a
+    -- deep question is meant to cost 11 to 13, so on the shared ceiling every deep question would
+    -- be refused by arithmetic, and the only way to allow one would be to raise the ceiling for
+    -- everything, which is the opposite of guarding it.
     if v_spent + public._ai_cost(
          (select mm.id from public.study_ai_models mm where mm.id = f.model),
          least(greatest(coalesce(p_in, 0), 3000), 60000),
@@ -523,7 +523,7 @@ begin
     return jsonb_build_object('ok', false, 'error', 'bad_row');
   end if;
   v_call := nullif(p_row ->> 'call_id', '')::bigint;
-  /* The code is read from the call the ledger opened for it, never from the row sent here. */
+  -- The code is read from the call the ledger opened for it, never from the row sent here.
   if v_call is not null then
     select l.pass_id into v_pass from public.study_ai_calls l where l.id = v_call;
     if v_pass is not null then
