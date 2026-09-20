@@ -215,7 +215,10 @@ export function passages(text, { title = '', max = LINK_LIMITS.passages } = {}) 
     if (!p) continue;
     if (p[0] === MARK) {
       close();
-      heading = p.slice(1).replace(/\s+/g, ' ').trim();
+      /* Many wikis put an edit link inside the heading itself, which arrives as a trailing
+         "[ edit ]" and then travels into every citation of that section. It is page furniture,
+         not part of the title, so it goes here rather than in the label. */
+      heading = p.slice(1).replace(/\s+/g, ' ').replace(/\s*\[\s*edit\s*\]\s*$/i, '').trim();
       continue;
     }
     /* One paragraph longer than a whole passage becomes its own passages, cut on sentences. */

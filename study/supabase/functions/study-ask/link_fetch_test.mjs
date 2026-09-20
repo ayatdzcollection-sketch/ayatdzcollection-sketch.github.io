@@ -84,7 +84,7 @@ const PAGE = `<!doctype html>
        Americas and the rest of the world after 1492. It reshaped diets on every continent.</p>
     <p>Maize and the potato travelled east. Wheat, sugar and cattle travelled west, and so did the
        diseases that emptied whole regions of their people within a century of contact.</p>
-    <h2>Disease</h2>
+    <h2>Disease <span class="mw-editsection">[ edit ]</span></h2>
     <p>Smallpox and measles were the deadliest. Populations with no previous exposure fell by as
        much as ninety percent in the worst affected regions, which is a figure historians still
        argue about.</p>
@@ -111,6 +111,9 @@ assert.ok(rows.length >= 2, 'the page should be more than one passage: ' + rows.
 assert.ok(rows.every(r => r.body && r.body.length <= LINK_LIMITS.passageChars));
 assert.ok(rows.every(r => r.heading && r.heading.indexOf('Columbian exchange') === 0), 'every heading names the document: ' + JSON.stringify(rows.map(r => r.heading)));
 assert.ok(rows.some(r => /Disease/.test(r.heading)), 'the section heading was lost: ' + JSON.stringify(rows.map(r => r.heading)));
+/* A wiki puts an edit link inside its headings. Measured on the live Bacon's Rebellion page, it
+   travelled into the citation as "Historiography [ edit ]", so it is stripped from the heading. */
+assert.ok(rows.every(r => !/\[\s*edit\s*\]/i.test(r.heading)), 'an edit link reached a citation: ' + JSON.stringify(rows.map(r => r.heading)));
 assert.ok(rows.every(r => !//.test(r.body)), 'the heading marker leaked into a passage');
 assert.ok(rows.some(r => /ninety percent/.test(r.body)));
 
