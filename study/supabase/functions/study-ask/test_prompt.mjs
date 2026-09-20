@@ -102,7 +102,12 @@ assert.ok(systemPrompt({ beyond: true, marks: true, refs: true }).length < 12100
     { question: 'again', fault: 'You wrote a number nothing backs.', history: [{ role: 'user', text: 'q' }, { role: 'assistant', text: 'a' }] },
     { question: 'why', correction: true, shelf: true, chunks: [{ label: 'Correction: x', text: 'y' }] },
     { question: 'sig figs in 0.00450', facts: ['0.00450 has 3 significant figures'], rules: 'answer in French' },
-    { question: 'more', notes: 'n', suggestNotes: false, turn: 9 }
+    { question: 'more', notes: 'n', suggestNotes: false, turn: 9 },
+    /* Deep research asks for more room, more passages and a longer answer, all of which ride in
+       the message. It must not move the prefix: before 0036 a deep question read its own feature
+       row's beyond and so wrote a second prefix for the same material, and so did a retry. */
+    { question: 'deeply', deep: true },
+    { question: 'deeply again', deep: true, fault: 'the check failed' }
   ];
   for (const q of later) {
     const r2 = buildRequest({ model: 'claude-sonnet-4-6', ...material, ...q });
@@ -893,5 +898,38 @@ import {
   assert.ok(/const feature = body\.deep \? DEEP_FEATURE/.test(src)
     && /p_feature: feature,/.test(src), 'deep must be its own feature or the guards never see it');
   assert.ok(!DASHES.test(src), 'dash in index.ts');
+
+  /* Beyond the material is the material contract, not a property of whichever row was billed
+     (0036). The two halves of that: the Edge Function refuses it outright in a research mode,
+     because only it knows which mode asked and deep is one feature for both; and ai_begin2 hands
+     back the 'ask' row rather than the billed one, so an attempt, its retry and its deep version
+     are held to the same rule instead of three different ones. */
+  assert.ok(/body\.beyond = research \? false : begun\.beyond === true;/.test(src),
+    'a research answer must never be allowed past its sources');
+  const mig = fs.readFileSync(new URL('../../migrations/0036_beyond_is_the_contract.sql', import.meta.url), 'utf8');
+  assert.ok(/when f\.id in \('research', 'extern'\) then false/.test(mig), '0036 must refuse beyond to the research rows');
+  assert.ok(/where a\.id = 'ask'/.test(mig), "0036 must read beyond off the 'ask' row");
+  assert.ok(!DASHES.test(mig), 'dash in 0036');
+}
+
+/* The same question, billed three different ways, must come out under one rule. This is the whole
+   point of 0036 and it is cheap to check here: before it, the retry and the deep version were
+   held to ONLY_MATERIAL while the first attempt had BEYOND_CORE. */
+{
+  const base = { model: 'x', map: 'A map', question: 'why', chunks: [{ label: 'L', text: 'T' }],
+    mode: 'material', withMaterial: true, effort: 'normal' };
+  const core = (r) => r.system.map((b) => b.text).join('\n').includes('you may use your own knowledge');
+  for (const beyond of [false, true]) {
+    const plain = core(buildRequest({ ...base, beyond }));
+    assert.equal(core(buildRequest({ ...base, beyond, fault: 'the check failed' })), plain,
+      'a retry must answer under the same rule as the attempt it corrects');
+    assert.equal(core(buildRequest({ ...base, beyond, deep: true })), plain,
+      'a deep answer must answer under the same rule as an ordinary one');
+  }
+  /* And a research answer never carries the permission, whatever is passed in. */
+  for (const mode of ['links', 'shelf']) {
+    assert.equal(core(buildRequest({ ...base, mode, withMaterial: false, beyond: false })), false,
+      mode + ' must not carry the beyond permission');
+  }
 }
 console.log('research modes, deep research and links ok');

@@ -1681,10 +1681,19 @@ function aiFeatRow(id) {
   }
 
   if (!saq) {
-    /* Whether an answer may go past the material (0015). Hidden for a feature that has no such
-       switch, so an older server without the column shows nothing rather than a dead control. */
+    /* Whether an answer may go past the material (0015). It appears on the Ask row alone, because
+       since 0036 that row is where the rule lives: one material contract, read by every answer in
+       a material, including a retry and a deep one. It showed on ten of the eleven rows and meant
+       what it said on one. On six it was dead, since the reranker, the link reader and the trap
+       note build their own requests and never read it, and three rows are unbuilt. On the two
+       research modes it was worse than dead: their own rules say to answer from the sources the
+       owner chose and not from the model's own knowledge, so turning it on would have sent a
+       permission and a prohibition in the same request. */
     r.beyond = aiSwitch('Beyond the material');
     f = aiField('aibeyondf', 'Beyond the material', r.beyond);
+    f.field.insertBefore(el('p', 'aimeta',
+      'Applies to every answer in a material, including a retry and a deep one. A research answer '
+      + 'is always made of the sources you chose and never goes past them.'), f.err);
     r.beyondField = f.field;
     r.beyondErr = f.err;
     r.beyondField.hidden = true;
@@ -1843,8 +1852,9 @@ function aiPaintFeatRow(r, f, s) {
   aiPaintMode(r, f.mode);
   aiPaintModelSelect(r.model, f.model);
   if (r.beyond) {
-    /* Trap notes never read the beyond switch, so their row does not offer it. */
-    r.beyondField.hidden = typeof f.beyond !== 'boolean' || f.id === 'trap';
+    /* The Ask row alone. Since 0036 every answer in a material reads that one switch, whichever
+       row the call was billed to, and a research answer never goes past its sources at all. */
+    r.beyondField.hidden = typeof f.beyond !== 'boolean' || f.id !== 'ask';
     r.beyond.setAttribute('aria-checked', String(!!f.beyond));
   }
   if (r.phone) {

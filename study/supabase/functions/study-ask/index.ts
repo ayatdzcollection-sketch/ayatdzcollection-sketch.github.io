@@ -1008,8 +1008,15 @@ Deno.serve(async (req: Request): Promise<Response> => {
   if (body.items >= 2) body.level = DEFAULT_EFFORT;
 
   /* Whether an answer may go past the material is the owner's switch, read here from ai_begin2
-     and never from the request: a forged body cannot turn it on. */
-  body.beyond = begun.beyond === true;
+     and never from the request: a forged body cannot turn it on. Since 0036 ai_begin2 answers with
+     the material contract, kept on the 'ask' row, rather than with whichever row was billed, so an
+     attempt, its retry and its deep version are all held to the same rule.
+
+     Research mode is settled here rather than there, because ai_begin2 is told the feature and not
+     the mode, and deep is one feature whichever mode asked for it. A research answer is made of
+     the sources the owner chose: LINKS_RULE and RESEARCH_ONLY already say so in as many words, and
+     letting BEYOND_CORE in beside them would put a permission and a prohibition in one request. */
+  body.beyond = research ? false : begun.beyond === true;
 
   /* Textbook passages: the owner's own copy of their course book (0013), so ai_begin2 says
      whether this caller may draw on it. The page's own textbook flag only asks; it never grants,
