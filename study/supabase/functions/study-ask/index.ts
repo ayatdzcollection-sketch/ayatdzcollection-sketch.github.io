@@ -439,8 +439,8 @@ function streamAnswer(body: AskBody, callId: unknown, model: string, origin: str
         timedOut = true;
         stream.abort();
       }, wall);
-      /* The client may have gone between the check above and here. */
-      if (cancelled) stream.abort();
+      /* The client may have gone between the check above and here. The request is already on its
+         way and its input is already owed, so it is left to finish: see cancel() below. */
 
       for await (const ev of stream) {
         if (ev.type === "message_start") {
@@ -520,11 +520,15 @@ function streamAnswer(body: AskBody, callId: unknown, model: string, origin: str
         keepAlive(work);
       },
       cancel() {
-        /* The client disconnected. Stop paying for tokens nobody will read; run() sees the abort,
-           records status error with the tokens used so far, and calls ai_end. */
+        /* The client disconnected: the panel's page was closed or reloaded while the answer was
+           being written. This used to abort the call, which saved the rest of the output and threw
+           away everything already paid for, and the input is about three quarters of an answer's
+           cost. The owner asked (2026-09-20) that an interrupted answer not be lost, so the call
+           now runs to its end with nobody listening, inside the same wall clock limit, and the
+           whole answer goes into the chat row, where ai_thread_answers (0039) lets the page that
+           asked fetch it back by its own install and thread. send() is a no-op once closed. */
         cancelled = true;
         closed = true;
-        if (live) live.abort();
       },
     });
 
