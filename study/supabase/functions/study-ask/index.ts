@@ -62,6 +62,8 @@ import {
   MODE_FEATURE,
   DEEP_FEATURE,
   DEEP_MAX_TOKENS,
+  DEEP_HARD_TOKENS,
+  DEEP_ROOMY_TOKENS,
   DEEP_LIMITS,
   RESEARCH_PASSAGES,
   RESEARCH_PER_SOURCE,
@@ -148,6 +150,8 @@ type AskBody = {
      comes with it, and whether the student asked for the deep and dear version. */
   mode: string;
   deep: boolean;
+  /* Longer answers, the owner's override: more words asked for and more room to write them. */
+  roomy?: boolean;
   withMaterial: boolean;
   facts: string[];
   tools: string[];
@@ -320,6 +324,7 @@ function streamAnswer(body: AskBody, callId: unknown, model: string, origin: str
   let live: { abort(): void } | null = null;
   let answer = "";
   let logged = false;
+  let lastStatus = 0;
 
   const finish = async (): Promise<void> => {
     if (ended) return;
@@ -423,11 +428,11 @@ function streamAnswer(body: AskBody, callId: unknown, model: string, origin: str
          longer answer than its own question asks for, and it never goes past the careful ceiling. */
       if (body.items >= 2) {
         const perItem = Math.min(body.items, Math.ceil(body.question.length / 40));
-        request.max_tokens = Math.min(ITEMS_MAX_TOKENS, Math.max(Number(request.max_tokens) || 0, 400 + perItem * 180));
+        request.max_tokens = Math.min(body.roomy ? ITEMS_MAX_TOKENS * 3 : ITEMS_MAX_TOKENS, Math.max(Number(request.max_tokens) || 0, 400 + perItem * (body.roomy ? 450 : 180)));
       }
       /* Deep research last, because it outranks both: it is the one thing the student is told the
          price of before they ask for it. */
-      if (body.deep) request.max_tokens = Math.max(Number(request.max_tokens) || 0, DEEP_MAX_TOKENS);
+      if (body.deep) request.max_tokens = Math.max(Number(request.max_tokens) || 0, body.roomy ? DEEP_ROOMY_TOKENS : DEEP_HARD_TOKENS);
       const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
       const wall = body.deep ? DEEP_TIMEOUT_MS : CALL_TIMEOUT_MS;
       const stream = client.messages.stream(
@@ -454,6 +459,12 @@ function streamAnswer(body: AskBody, callId: unknown, model: string, origin: str
         } else if (ev.type === "content_block_delta" && ev.delta.type === "text_delta" && ev.delta.text) {
           answer += ev.delta.text;
           send({ type: "delta", text: ev.delta.text });
+        } else if (ev.type === "content_block_delta" && (ev.delta.type === "thinking_delta" || ev.delta.type === "signature_delta")) {
+          /* A careful or deep answer thinks before it writes, sometimes for a minute, and the page
+             showed three dots for all of it. It is told that thinking is going on, at most once a
+             second. None of the thinking itself is sent: the phase and how long, nothing else. */
+          const now = Date.now();
+          if (now - lastStatus > 1000) { lastStatus = now; send({ type: "status", phase: "thinking" }); }
         }
       }
 
@@ -466,6 +477,15 @@ function streamAnswer(body: AskBody, callId: unknown, model: string, origin: str
         /* Text may already have streamed. The client drops it on this event. */
         status = "refused";
         send({ type: "error", error: "refused" });
+        return;
+      }
+
+      /* Every token went on thinking and none on an answer. It is billed like any other, so it is
+         not called ok, and the page is told what happened instead of "did not answer". */
+      if (!answer.trim()) {
+        status = "error";
+        console.error(`study-ask: empty answer (stop_reason ${msg.stop_reason})`);
+        send({ type: "error", error: msg.stop_reason === "max_tokens" ? "out_of_room" : "grader_error" });
         return;
       }
 

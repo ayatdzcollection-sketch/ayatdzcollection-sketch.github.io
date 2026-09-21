@@ -38,7 +38,7 @@ export const MAX_TOKENS = 700;
 export const EFFORTS = {
   quick:   { words: 110, max_tokens: 600,  think: false, bullets: 'three' },
   normal:  { words: 200, max_tokens: 1000, think: false, bullets: 'four' },
-  careful: { words: 350, max_tokens: 2400, think: true,  bullets: 'six' }
+  careful: { words: 350, max_tokens: 5000, think: true,  bullets: 'six' }
 };
 export const EFFORT_NAMES = ['quick', 'normal', 'careful'];
 
@@ -149,6 +149,24 @@ export const DEFAULT_MODE = 'material';
    refused outright, so claiming deep never buys the larger request at the ordinary price. */
 export const DEEP_LIMITS = { question: 16000, chunkText: 3000, chunksTotal: 30000, chunks: 16 };
 export const DEEP_MAX_TOKENS = 4000;
+/* What a deep request is actually allowed to generate. Thinking is billed as output and counts
+   inside max_tokens, and adaptive thinking has no budget of its own, so the 4,000 above, which is
+   the room the ANSWER needs, was also all the room the thinking had. On 2026-09-20 a 4,200
+   character worksheet sent deep thought for the whole 4,000 tokens, twice, and wrote nothing: 9.6
+   cents each and an empty answer. The cap is now the answer's room plus room to think. 10,000
+   keeps the worst case (a full input and every token used) under the 20 cent deep ceiling. The
+   reserve handed to ai_begin2 stays DEEP_MAX_TOKENS: it is the expected cost, not the worst. */
+export const DEEP_HARD_TOKENS = 10000;
+/* Longer answers, the owner's override in Ask settings (2026-09-20). The LENGTH line asks for two
+   and a half times the words and the hard stop moves with it, so the longer answer is not cut off.
+   Output is the dear side of a call, about a cent and a half for every thousand extra words on
+   Sonnet, and a deep answer on this setting can pass the 20 cent deep ceiling in the worst case,
+   which is why it is an override and off by default. The flag rides in the message, never in the
+   cached instructions. */
+export const ROOMY_WORDS = 2.5;
+export const ROOMY_TOKENS = 3;
+export const ROOMY_CAP = 9000;
+export const DEEP_ROOMY_TOKENS = 14000;
 /* About 900 words. The LENGTH line still governs; this is what it says in deep mode. */
 export const DEEP_WORDS = 900;
 export const DEEP_FEATURE = 'deep';
@@ -464,7 +482,7 @@ function clean(v) {
  * HIGHLIGHT, PASSAGES, QUESTION, each left out when empty except QUESTION. Passage numbers are the
  * 1 based index in the chunks array as sent, so the client can map "Sources: [n]" back to its
  * own list; a chunk with no text is skipped without renumbering the rest. */
-export function buildRequest({ model, map, question, quote, focus, chunks, history, progress, notes, practice, widgets, math, beyond, marks, effort, facts, tools, kinds, check, rules, items, checkwork, suggestNotes, fault, saq, hasFacts, hasTextbook, form, correction, shelf, mode, deep, withMaterial } = {}) {
+export function buildRequest({ roomy, model, map, question, quote, focus, chunks, history, progress, notes, practice, widgets, math, beyond, marks, effort, facts, tools, kinds, check, rules, items, checkwork, suggestNotes, fault, saq, hasFacts, hasTextbook, form, correction, shelf, mode, deep, withMaterial } = {}) {
   const mapText = clean(map);
   const level = EFFORTS[effort] ? effort : DEFAULT_EFFORT;
   const E = EFFORTS[level];
@@ -537,7 +555,8 @@ export function buildRequest({ model, map, question, quote, focus, chunks, histo
      on a real four item worksheet, auto picked quick and the whole thing got 298 tokens. */
   let words = Number.isInteger(nItems) && nItems >= 2 ? Math.max(E.words, nItems * 70) : E.words;
   if (isDeep) words = Math.max(words, DEEP_WORDS);
-  blocks.push('LENGTH\nAbout ' + words + ' words, and at most ' + (Number.isInteger(nItems) && nItems >= 2 ? 'two bullet points an item' : E.bullets + ' bullet points') + '.');
+  if (roomy === true) words = Math.round(words * ROOMY_WORDS / 10) * 10;
+  blocks.push('LENGTH\nAbout ' + words + ' words, and at most ' + (Number.isInteger(nItems) && nItems >= 2 ? 'two bullet points an item' : roomy === true ? 'as many bullet points as the answer needs' : E.bullets + ' bullet points') + '.');
   blocks.push('QUESTION\n' + clean(question));
   /* Per question instructions. They live here rather than in the cached system text because they
      change from question to question, and a cached block that changes is a block paid for twice. */
@@ -577,7 +596,8 @@ export function buildRequest({ model, map, question, quote, focus, chunks, histo
   const out = {
     system,
     messages: merged.map((t) => ({ role: t.role, content: t.text })),
-    max_tokens: isDeep ? Math.max(E.max_tokens, DEEP_MAX_TOKENS) : E.max_tokens,
+    max_tokens: isDeep ? Math.max(E.max_tokens, roomy === true ? DEEP_ROOMY_TOKENS : DEEP_HARD_TOKENS)
+      : roomy === true ? Math.min(ROOMY_CAP, E.max_tokens * ROOMY_TOKENS) : E.max_tokens,
     ...modelParams(model)
   };
   /* Haiku 4.5 has no adaptive thinking (the owner panel says as much beside Effort), so a feature
@@ -650,7 +670,7 @@ export function validateAsk(raw) {
      had at the ordinary price. */
   if (raw.mode !== undefined && (typeof raw.mode !== 'string' || MODES.indexOf(raw.mode) < 0)) return null;
   const mode = raw.mode === undefined ? DEFAULT_MODE : raw.mode;
-  for (const k of ['deep', 'withMaterial', 'long']) if (raw[k] !== undefined && typeof raw[k] !== 'boolean') return null;
+  for (const k of ['deep', 'withMaterial', 'long', 'roomy']) if (raw[k] !== undefined && typeof raw[k] !== 'boolean') return null;
   const deep = raw.deep === true;
   /* withMaterial only means anything in a research mode; in the ordinary mode the material is the
      whole point and the flag is ignored rather than refused. */
@@ -762,7 +782,7 @@ export function validateAsk(raw) {
   const items = raw.items === undefined ? 0 : raw.items;
   const marks = raw.marks === true, checkwork = raw.checkwork === true, suggestNotes = raw.suggestNotes !== false;
   const saq = raw.saq === true, hasFacts = raw.hasFacts === true;
-  return { material, install, adminToken: adminToken || null, question, quote, focus, map, chunks, history, progress, notes, thread, turn, textbook, practice, widgets, math, marks, effort, chapter, facts, tools, kinds, check, rules, items, checkwork, suggestNotes, fault, saq, hasFacts, mode, deep, withMaterial };
+  return { material, install, adminToken: adminToken || null, question, quote, focus, map, chunks, history, progress, notes, thread, turn, textbook, practice, widgets, math, marks, effort, chapter, facts, tools, kinds, check, rules, items, checkwork, suggestNotes, fault, saq, hasFacts, mode, deep, withMaterial, roomy: raw.roomy === true };
 }
 
 /* ---------------------------------------------------------------- trap notes

@@ -580,7 +580,70 @@ function mergeMarks(aVal, bVal, aM, bM) {
 /* Material-specific merges that the HUB also needs live here rather than being registered
  * by the material. The hub merges on load, on visibility and during import preview, all
  * while the quiz page may be closed. See README, "Adding a material". */
+/* Ask chat history, key 'askthreads' in every material that has Ask.
+ *
+ * It was never registered and never excluded, so until 2026-09-20 it travelled on the default
+ * rule: whichever device wrote last replaced the other's whole history. The kit's own comment
+ * said it never left the device. Both were wrong in a way nobody would notice until a chat
+ * went missing.
+ *
+ * A row is one conversation: { id, ts, title, tv, p, pv, msgs, ... }. Rows are joined by id.
+ *   - The row written later (ts) supplies the conversation itself: msgs, quote, rules, ctx,
+ *     pending, recovered. A conversation is only coherent whole, like an fsrs record.
+ *   - A rename is a version (tv), so a title given on one device is not undone by the other
+ *     device saving a new message under the old name. Same for a pin (pv).
+ *   - A delete on either side wins and keeps no text: { id, del: true, ts }.
+ *   - Pinned first, then newest, 24 live rows and 40 tombstones at most, and the whole value is
+ *     held under ASK_THREADS_BYTES by dropping the oldest unpinned rows, because the envelope
+ *     every material shares is limited to one megabyte.
+ * Pure, order independent, idempotent; inputs are never mutated. */
+var ASK_THREADS_MAX = 24, ASK_THREADS_TOMBS = 40, ASK_THREADS_BYTES = 70000;
+function mergeAskThreads(aVal, bVal) {
+  var byId = Object.create(null);
+  var num = function (x) { return typeof x === 'number' && isFinite(x) ? x : 0; };
+  var take = function (arr) {
+    if (!Array.isArray(arr)) return;
+    for (var i = 0; i < arr.length; i++) {
+      var t = arr[i];
+      if (!t || typeof t !== 'object' || typeof t.id !== 'string' || !t.id) continue;
+      var prev = byId[t.id];
+      if (!prev) { byId[t.id] = { row: t, del: t.del === true, delTs: t.del === true ? num(t.ts) : 0 }; prev = byId[t.id]; prev.title = t; prev.pin = t; continue; }
+      if (t.del === true) { prev.del = true; prev.delTs = Math.max(prev.delTs, num(t.ts)); }
+      var better = num(t.ts) > num(prev.row.ts) || (num(t.ts) === num(prev.row.ts) && canonicalJson(t) > canonicalJson(prev.row));
+      if (better) prev.row = t;
+      if (num(t.tv) > num(prev.title.tv) || (num(t.tv) === num(prev.title.tv) && num(t.tv) > 0 && String(t.title || '') > String(prev.title.title || ''))) prev.title = t;
+      if (num(t.pv) > num(prev.pin.pv) || (num(t.pv) === num(prev.pin.pv) && num(t.pv) > 0 && !!t.p && !prev.pin.p)) prev.pin = t;
+    }
+  };
+  take(aVal);
+  take(bVal);
+
+  var live = [], dead = [];
+  for (var id in byId) {
+    var e = byId[id];
+    if (e.del) { dead.push({ id: id, del: true, ts: e.delTs }); continue; }
+    var out = {};
+    for (var f in e.row) if (Object.prototype.hasOwnProperty.call(e.row, f)) out[f] = e.row[f];
+    /* With no rename on either side the title belongs to the conversation that won. */
+    if (num(e.title.tv) > 0) { out.title = e.title.title; out.tv = e.title.tv; }
+    if (num(e.pin.pv) > 0) { out.pv = e.pin.pv; if (e.pin.p) out.p = e.pin.p; else delete out.p; }
+    live.push(out);
+  }
+  var newest = function (x, y) { return num(y.ts) - num(x.ts) || (x.id < y.id ? -1 : x.id > y.id ? 1 : 0); };
+  var pins = live.filter(function (t) { return !!t.p; }).sort(newest);
+  var rest = live.filter(function (t) { return !t.p; }).sort(newest);
+  rest = rest.slice(0, Math.max(0, ASK_THREADS_MAX - pins.length));
+  while (rest.length > 2 && JSON.stringify(pins.concat(rest)).length > ASK_THREADS_BYTES) rest.pop();
+  dead.sort(newest);
+  var all = pins.concat(rest).concat(dead.slice(0, ASK_THREADS_TOMBS));
+  all.sort(function (x, y) { return num(x.ts) - num(y.ts) || (x.id < y.id ? -1 : x.id > y.id ? 1 : 0); });
+  return all;
+}
+
+/* A rule that holds for one key in every namespace is written once as '*:<key>'. A namespace's
+ * own rule still comes first. */
 var BUILTIN_MERGES = {
+  '*:askthreads': mergeAskThreads,
   'fifty-states:fsrs': mergeFsrsValue,
   'fifty-states:regionsDone': mergeRegionsDone,
   'periodic:fsrs': mergeCardsFsrs,
@@ -733,7 +796,7 @@ function mergeEnvelopes(a, b, registry) {
       if (bHas && !aHas) { outKeys[k] = bKeys[k]; continue; }
       var aEntry = aKeys[k], bEntry = bKeys[k];
       var aM = mtimeOf(aEntry), bM = mtimeOf(bEntry);
-      var fn = reg[nsName + ':' + k] || defaultMerge;
+      var fn = reg[nsName + ':' + k] || reg['*:' + k] || defaultMerge;
       outKeys[k] = {
         value: fn(aEntry ? aEntry.value : null, bEntry ? bEntry.value : null, aM, bM),
         mtime: Math.max(aM, bM)
@@ -845,6 +908,7 @@ if (typeof module !== 'undefined' && module.exports) {
     normalizeCode: normalizeCode,
     formatCode: formatCode,
     defaultMerge: defaultMerge,
+    mergeAskThreads: mergeAskThreads,
     mergeFsrsValue: mergeFsrsValue,
     mergeCardsFsrs: mergeCardsFsrs,
     makeFsrsMerge: makeFsrsMerge,

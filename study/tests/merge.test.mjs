@@ -851,21 +851,21 @@ const { makeSittingMerge, mergeQuizDraft, mergeSkillCounts } = require('../asset
  * Add a row when a material is added, or the guard below cannot see it. The sources are
  * gitignored, so this table is the only committed record of them. */
 const MATERIAL_KEYS = {
-  'fifty-states': ['asknotes', 'askprefs', 'deck', 'followFocus', 'fsrs', 'mapPrefs', 'regionsDone', 'trapnotes'],
-  'periodic':     ['asknotes', 'askprefs', 'best', 'fsrs', 'setsDone', 'settings', 'started', 'tests', 'trapnotes', 'ui'],
-  'fraser12':     ['asknotes', 'askprefs', 'fsrs', 'mcAttempt', 'mcDraft', 'trapnotes', 'ui'],
-  'fraser34':     ['asknotes', 'askprefs', 'fsrs', 'mcAttempt', 'mcDraft', 'trapnotes', 'ui'],
-  'fraserall':    ['asknotes', 'askprefs', 'fsrs', 'mcAttempt', 'mcDraft', 'trapnotes', 'ui'],
-  'fraser5':      ['asknotes', 'askprefs', 'fsrs', 'mcAttempt', 'mcDraft', 'trapnotes', 'ui'],
-  'acct1':        ['asknotes', 'askprefs', 'fsrs', 'mcAttempt', 'mcDraft', 'trapnotes', 'ui'],
-  'apushp12':     ['asknotes', 'askprefs', 'fsrs', 'trapnotes', 'ui'],
-  'chemunit':     ['asknotes', 'askprefs', 'fsrs', 'trapnotes', 'ui'],
-  'la10crucible': ['asknotes', 'askprefs', 'fsrs', 'trapnotes', 'ui'],
-  'la10crucible34': ['asknotes', 'askprefs', 'fsrs', 'trapnotes', 'ui'],
-  'la10vocab1':   ['asknotes', 'askprefs', 'fsrs', 'trapnotes', 'ui'],
-  'frchateaux':   ['asknotes', 'askprefs', 'fsrs', 'trapnotes', 'ui'],
-  'psychu0':      ['asknotes', 'askprefs', 'fsrs', 'trapnotes', 'ui'],
-  'alg2u1':       ['asknotes', 'askprefs', 'attempt', 'draft', 'history', 'lastDrill', 'mock', 'mockHistory', 'skills', 'trapnotes', 'ui']
+  'fifty-states': ['asknotes', 'askprefs', 'askthreads', 'deck', 'followFocus', 'fsrs', 'mapPrefs', 'regionsDone', 'trapnotes'],
+  'periodic':     ['asknotes', 'askprefs', 'askthreads', 'best', 'fsrs', 'setsDone', 'settings', 'started', 'tests', 'trapnotes', 'ui'],
+  'fraser12':     ['asknotes', 'askprefs', 'askthreads', 'fsrs', 'mcAttempt', 'mcDraft', 'trapnotes', 'ui'],
+  'fraser34':     ['asknotes', 'askprefs', 'askthreads', 'fsrs', 'mcAttempt', 'mcDraft', 'trapnotes', 'ui'],
+  'fraserall':    ['asknotes', 'askprefs', 'askthreads', 'fsrs', 'mcAttempt', 'mcDraft', 'trapnotes', 'ui'],
+  'fraser5':      ['asknotes', 'askprefs', 'askthreads', 'fsrs', 'mcAttempt', 'mcDraft', 'trapnotes', 'ui'],
+  'acct1':        ['asknotes', 'askprefs', 'askthreads', 'fsrs', 'mcAttempt', 'mcDraft', 'trapnotes', 'ui'],
+  'apushp12':     ['asknotes', 'askprefs', 'askthreads', 'fsrs', 'trapnotes', 'ui'],
+  'chemunit':     ['asknotes', 'askprefs', 'askthreads', 'fsrs', 'trapnotes', 'ui'],
+  'la10crucible': ['asknotes', 'askprefs', 'askthreads', 'fsrs', 'trapnotes', 'ui'],
+  'la10crucible34': ['asknotes', 'askprefs', 'askthreads', 'fsrs', 'trapnotes', 'ui'],
+  'la10vocab1':   ['asknotes', 'askprefs', 'askthreads', 'fsrs', 'trapnotes', 'ui'],
+  'frchateaux':   ['asknotes', 'askprefs', 'askthreads', 'fsrs', 'trapnotes', 'ui'],
+  'psychu0':      ['asknotes', 'askprefs', 'askthreads', 'fsrs', 'trapnotes', 'ui'],
+  'alg2u1':       ['asknotes', 'askprefs', 'askthreads', 'attempt', 'draft', 'history', 'lastDrill', 'mock', 'mockHistory', 'skills', 'trapnotes', 'ui']
 };
 
 /* Newest write wins on purpose, with the reason. Anything else without a rule is a bug: two
@@ -881,6 +881,7 @@ test('every key every material writes is merged, excluded, or deliberately last-
       const full = ns + ':' + key;
       if (askExcluded(ns, key)) continue;                 // stays on the device
       if (typeof REG[full] === 'function') continue;      // has a rule
+      if (typeof REG['*:' + key] === 'function') continue; // one rule for that key in every namespace
       if (full in DELIBERATE_LAST_WRITE) continue;        // named, with a reason
       unruled.push(full);
     }
@@ -980,3 +981,63 @@ test('asknotes: a later edit wins, however short, and a pin travels both ways', 
   const dead = rule([{ ts: 4, t: 'n', p: true, pv: 1 }], [{ ts: 4, t: '', del: true }]);
   assert.deepEqual(dead, [{ ts: 4, t: '', del: true }]);
 });
+
+
+/* ---------- *:askthreads: Ask chat history ---------- */
+{
+  const { mergeAskThreads } = require('../assets/sync.js');
+  const chat = (id, ts, extra) => Object.assign({ id, ts, title: 'chat ' + id, msgs: [{ role: 'user', text: 'q ' + id }, { role: 'assistant', text: 'a ' + id }] }, extra || {});
+
+  test('askthreads: one rule for every namespace, reached through the wildcard', () => {
+    assert.equal(REG['*:askthreads'], mergeAskThreads);
+    const a = { v: 1, ns: { fraser5: { askthreads: { value: [chat('ask-1', 10)], mtime: 900 } } } };
+    const b = { v: 1, ns: { fraser5: { askthreads: { value: [chat('ask-2', 20)], mtime: 100 } } } };
+    const ids = mergeEnvelopes(a, b).merged.ns.fraser5.askthreads.value.map(t => t.id);
+    assert.deepEqual(ids, ['ask-1', 'ask-2'], 'the older envelope loses no chat, which the default rule did');
+  });
+
+  test('askthreads: the later write supplies the conversation, whole', () => {
+    const old = chat('ask-1', 10), now = chat('ask-1', 50, { msgs: [{ role: 'user', text: 'q' }, { role: 'assistant', text: 'a' }, { role: 'user', text: 'q2' }, { role: 'assistant', text: 'a2' }] });
+    assert.equal(mergeAskThreads([old], [now])[0].msgs.length, 4);
+    assert.equal(mergeAskThreads([now], [old])[0].msgs.length, 4);
+  });
+
+  test('askthreads: a rename and a pin survive a later message from the other device', () => {
+    const renamed = chat('ask-1', 10, { title: 'Stamp Act notes', tv: 40, p: 1, pv: 41 });
+    const later = chat('ask-1', 90);
+    const out = mergeAskThreads([renamed], [later])[0];
+    assert.equal(out.title, 'Stamp Act notes'); assert.equal(out.tv, 40);
+    assert.equal(out.p, 1); assert.equal(out.ts, 90);
+    const unpinned = chat('ask-1', 20, { pv: 99 });
+    assert.equal(mergeAskThreads([renamed], [unpinned])[0].p, undefined, 'the later pin decision wins, and it was to unpin');
+  });
+
+  test('askthreads: a delete on either side wins and the tombstone keeps no text', () => {
+    const out = mergeAskThreads([chat('ask-1', 10)], [{ id: 'ask-1', del: true, ts: 5 }]);
+    assert.deepEqual(out, [{ id: 'ask-1', del: true, ts: 5 }]);
+    assert.deepEqual(mergeAskThreads([{ id: 'ask-1', del: true, ts: 5 }], [chat('ask-1', 999)]), out, 'even against a newer copy');
+  });
+
+  test('askthreads: pinned first, 24 live at most, and under the byte cap', () => {
+    const many = []; for (let i = 0; i < 40; i++) many.push(chat('ask-' + String(i).padStart(2, '0'), i + 1));
+    many[0].p = 1; many[0].pv = 1;
+    const out = mergeAskThreads(many, []);
+    assert.equal(out.length, 24);
+    assert.ok(out.some(t => t.id === 'ask-00'), 'the pinned chat is the oldest and is still here');
+    assert.ok(!out.some(t => t.id === 'ask-01'), 'the oldest unpinned went');
+    const fat = []; for (let i = 0; i < 24; i++) fat.push(chat('big-' + i, i + 1, { msgs: [{ role: 'user', text: 'q' }, { role: 'assistant', text: 'x'.repeat(6000) }] }));
+    assert.ok(JSON.stringify(mergeAskThreads(fat, [])).length <= 70000 + 8000, 'held near the cap');
+  });
+
+  test('askthreads: order independent, idempotent, and the inputs are never mutated', () => {
+    const a = [chat('ask-1', 10, { title: 'A', tv: 5 }), chat('ask-2', 30), { id: 'ask-9', del: true, ts: 3 }];
+    const b = [chat('ask-1', 20, { title: 'B', tv: 5 }), chat('ask-3', 5, { p: 1, pv: 2 })];
+    const fa = JSON.stringify(a), fb = JSON.stringify(b);
+    const ab = mergeAskThreads(a, b), ba = mergeAskThreads(b, a);
+    assert.deepEqual(ab, ba);
+    assert.deepEqual(mergeAskThreads(ab, ab), ab);
+    assert.deepEqual(mergeAskThreads(ab, a), ab);
+    assert.equal(JSON.stringify(a), fa); assert.equal(JSON.stringify(b), fb);
+    assert.deepEqual(mergeAskThreads(null, 'junk'), []);
+  });
+}

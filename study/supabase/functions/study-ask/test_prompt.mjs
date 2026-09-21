@@ -254,7 +254,7 @@ assert.deepEqual(minimal, {
   material: good.material, install: good.install, adminToken: null, question: 'x', quote: '', focus: '', map: '', chunks: [], history: [],
   progress: '', notes: '', thread: null, turn: 0, textbook: false, practice: true, widgets: true, math: false, marks: false, effort: 'normal', chapter: null,
   facts: [], tools: [], kinds: '', check: false, rules: '', items: 0, checkwork: false, suggestNotes: true, fault: '',
-  saq: false, hasFacts: false, mode: 'material', deep: false, withMaterial: true
+  saq: false, hasFacts: false, mode: 'material', deep: false, withMaterial: true, roomy: false
 });
 assert.equal(validateAsk({ material: good.material, install: good.install, question: 'x', chunks: [{ label: 'a', text: 'b', ref: 'q:abc_1' }] }).chunks[0].ref, 'q:abc_1');
 assert.equal(validateAsk({ material: good.material, install: good.install, question: 'x', chunks: [{ label: 'a', text: 'b', ref: 'bad ref' }] }), null);
@@ -296,7 +296,8 @@ assert.equal(validateAsk({ material: good.material, install: good.install, quest
   }
   assert.deepEqual(lens, { quick: '110', normal: '200', careful: '350' });
   const r = buildRequest({ model: 'claude-sonnet-4-6', map: 'm', question: 'q', effort: 'careful' });
-  assert.equal(r.max_tokens, 2400, 'careful must have room to finish');
+  /* Thinking is billed inside max_tokens, so careful gets the answer's room and room to think. */
+  assert.equal(r.max_tokens, 5000, 'careful must have room to think and still finish');
   assert.deepEqual(r.thinking, { type: 'adaptive' }, 'careful must think');
   assert.ok(!buildRequest({ model: 'claude-sonnet-4-6', map: 'm', question: 'q', effort: 'quick' }).thinking, 'quick must not think');
   assert.equal(validateAsk({ material: good.material, install: good.install, question: 'x', effort: 'auto' }).effort, 'auto');
@@ -815,7 +816,7 @@ console.log('corrections, shelf, reranker and retry ok');
 
 /* ------------------------------------------- research modes and Deep research (migration 0034) */
 import {
-  MODES, DEFAULT_MODE, DEEP_LIMITS, DEEP_MAX_TOKENS, DEEP_WORDS, DEEP_FEATURE, MODE_FEATURE,
+  MODES, DEFAULT_MODE, DEEP_LIMITS, DEEP_MAX_TOKENS, DEEP_HARD_TOKENS, DEEP_WORDS, DEEP_FEATURE, MODE_FEATURE,
   RESEARCH_PASSAGES, RESEARCH_PER_SOURCE, RESEARCH_RULE, LINKS_RULE, RESEARCH_ONLY, RESEARCH_WITH,
   DEEP_RULE, LINK_FEATURE, validateLink
 } from './ask_prompt.mjs';
@@ -887,7 +888,22 @@ import {
   /* Deep: the room, the thinking and the length line. */
   assert.ok(!plain.messages[0].content.includes(DEEP_RULE));
   assert.ok(deep.messages[0].content.includes(DEEP_RULE));
-  assert.equal(deep.max_tokens, DEEP_MAX_TOKENS);
+  /* Thinking counts inside max_tokens, so a deep request gets the answer's room plus room to think. */
+  assert.equal(deep.max_tokens, DEEP_HARD_TOKENS);
+  assert.ok(DEEP_HARD_TOKENS >= DEEP_MAX_TOKENS * 2, 'thinking must never be able to take the whole allowance');
+  /* Longer answers: more words asked for, more room to write them, and only when asked. */
+  {
+    const base2 = { model: 'claude-sonnet-4-6', map: 'm', question: 'q', effort: 'normal' };
+    const plainR = buildRequest(base2), roomyR = buildRequest({ ...base2, roomy: true });
+    const lenOf = (rq) => Number(JSON.stringify(rq.messages).match(/About (\d+) words/)[1]);
+    assert.equal(lenOf(plainR), 200); assert.equal(lenOf(roomyR), 500);
+    assert.equal(plainR.max_tokens, 1000); assert.equal(roomyR.max_tokens, 3000);
+    assert.equal(JSON.stringify(plainR.system), JSON.stringify(roomyR.system), 'the cached instructions must not move');
+    assert.equal(buildRequest({ ...base2, deep: true, roomy: true }).max_tokens, 14000);
+    assert.equal(validateAsk({ ...base, roomy: true }).roomy, true);
+    assert.equal(validateAsk({ ...base }).roomy, false);
+    assert.equal(validateAsk({ ...base, roomy: 1 }), null);
+  }
   assert.deepEqual(deep.thinking, { type: 'adaptive' });
   assert.equal(plain.thinking, undefined, 'an ordinary answer still does not think');
   assert.ok(deep.messages[0].content.includes('About ' + DEEP_WORDS + ' words'));
