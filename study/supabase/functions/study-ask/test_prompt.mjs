@@ -298,7 +298,7 @@ assert.equal(validateAsk({ material: good.material, install: good.install, quest
   const r = buildRequest({ model: 'claude-sonnet-4-6', map: 'm', question: 'q', effort: 'careful' });
   /* Thinking is billed inside max_tokens, so careful gets the answer's room and room to think. */
   assert.equal(r.max_tokens, 5000, 'careful must have room to think and still finish');
-  assert.deepEqual(r.thinking, { type: 'adaptive' }, 'careful must think');
+  assert.deepEqual(r.thinking, { type: 'enabled', budget_tokens: 1600 }, 'careful must think, inside a budget');
   assert.ok(!buildRequest({ model: 'claude-sonnet-4-6', map: 'm', question: 'q', effort: 'quick' }).thinking, 'quick must not think');
   assert.equal(validateAsk({ material: good.material, install: good.install, question: 'x', effort: 'auto' }).effort, 'auto');
   assert.equal(validateAsk({ material: good.material, install: good.install, question: 'x', effort: 'huge' }), null);
@@ -891,6 +891,23 @@ import {
   /* Thinking counts inside max_tokens, so a deep request gets the answer's room plus room to think. */
   assert.equal(deep.max_tokens, DEEP_HARD_TOKENS);
   assert.ok(DEEP_HARD_TOKENS >= DEEP_MAX_TOKENS * 2, 'thinking must never be able to take the whole allowance');
+  /* Thinking keeps its effort and gets a hard budget where the model takes one, so it stops and
+     writes inside the platform's 150 seconds. A newer model refuses a budget and thinks adaptively. */
+  {
+    const b3 = { model: 'claude-sonnet-4-6', map: 'm', effort: 'careful' };
+    const careful = buildRequest({ ...b3, question: 'Why did the Stamp Act fail?' });
+    assert.deepEqual(careful.thinking, { type: 'enabled', budget_tokens: 1600 });
+    assert.equal(careful.output_config.effort, 'medium');
+    const deepR = buildRequest({ ...b3, question: 'x'.repeat(1600), deep: true });
+    assert.deepEqual(deepR.thinking, { type: 'enabled', budget_tokens: 2800 });
+    assert.equal(deepR.output_config.effort, 'medium', 'the effort is not turned down');
+    assert.ok(deepR.thinking.budget_tokens < deepR.max_tokens && careful.thinking.budget_tokens < careful.max_tokens, 'a budget must sit under max_tokens');
+    assert.deepEqual(buildRequest({ ...b3, model: 'claude-sonnet-5', question: 'q' }).thinking, { type: 'adaptive' }, 'a newer model refuses a budget');
+    const off = buildRequest({ ...b3, question: 'q', deep: true, noThink: true });
+    assert.equal(off.thinking, undefined, 'the second attempt does not think');
+    assert.equal(off.max_tokens, DEEP_HARD_TOKENS, 'and keeps the room');
+    assert.equal(JSON.stringify(off.system), JSON.stringify(deepR.system.map ? buildRequest({ ...b3, question: 'q', deep: true }).system : deepR.system), 'and reads the same cached instructions');
+  }
   /* Longer answers: more words asked for, more room to write them, and only when asked. */
   {
     const base2 = { model: 'claude-sonnet-4-6', map: 'm', question: 'q', effort: 'normal' };
@@ -904,7 +921,7 @@ import {
     assert.equal(validateAsk({ ...base }).roomy, false);
     assert.equal(validateAsk({ ...base, roomy: 1 }), null);
   }
-  assert.deepEqual(deep.thinking, { type: 'adaptive' });
+  assert.deepEqual(deep.thinking, { type: 'enabled', budget_tokens: 2800 }, 'deep thinks, inside a budget');
   assert.equal(plain.thinking, undefined, 'an ordinary answer still does not think');
   assert.ok(deep.messages[0].content.includes('About ' + DEEP_WORDS + ' words'));
   /* Deep outranks a quick classification: a deep question is not a 110 word answer. */

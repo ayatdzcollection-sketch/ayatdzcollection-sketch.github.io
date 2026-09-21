@@ -156,7 +156,13 @@ export const DEEP_MAX_TOKENS = 4000;
    cents each and an empty answer. The cap is now the answer's room plus room to think. 10,000
    keeps the worst case (a full input and every token used) under the 20 cent deep ceiling. The
    reserve handed to ai_begin2 stays DEEP_MAX_TOKENS: it is the expected cost, not the worst. */
-export const DEEP_HARD_TOKENS = 10000;
+export const DEEP_HARD_TOKENS = 12000;
+/* A hard ceiling on thinking, in tokens, for the models that still accept one. Deprecated there
+   and refused by everything newer (Sonnet 5, Opus 4.7 and later answer 400), so this list must
+   not grow: when the feature row moves to a newer model, thinking goes back to adaptive. */
+export const THINK_BUDGET_MODELS = ['claude-sonnet-4-6', 'claude-opus-4-6'];
+export const THINK_BUDGET = 1600;
+export const DEEP_THINK_BUDGET = 2800;
 /* Longer answers, the owner's override in Ask settings (2026-09-20). The LENGTH line asks for two
    and a half times the words and the hard stop moves with it, so the longer answer is not cut off.
    Output is the dear side of a call, about a cent and a half for every thousand extra words on
@@ -482,7 +488,7 @@ function clean(v) {
  * HIGHLIGHT, PASSAGES, QUESTION, each left out when empty except QUESTION. Passage numbers are the
  * 1 based index in the chunks array as sent, so the client can map "Sources: [n]" back to its
  * own list; a chunk with no text is skipped without renumbering the rest. */
-export function buildRequest({ roomy, model, map, question, quote, focus, chunks, history, progress, notes, practice, widgets, math, beyond, marks, effort, facts, tools, kinds, check, rules, items, checkwork, suggestNotes, fault, saq, hasFacts, hasTextbook, form, correction, shelf, mode, deep, withMaterial } = {}) {
+export function buildRequest({ noThink, roomy, model, map, question, quote, focus, chunks, history, progress, notes, practice, widgets, math, beyond, marks, effort, facts, tools, kinds, check, rules, items, checkwork, suggestNotes, fault, saq, hasFacts, hasTextbook, form, correction, shelf, mode, deep, withMaterial } = {}) {
   const mapText = clean(map);
   const level = EFFORTS[effort] ? effort : DEFAULT_EFFORT;
   const E = EFFORTS[level];
@@ -603,8 +609,19 @@ export function buildRequest({ roomy, model, map, question, quote, focus, chunks
   /* Haiku 4.5 has no adaptive thinking (the owner panel says as much beside Effort), so a feature
      row set to it would have sent a careful or a deep question with a parameter the model does not
      take. There the answer simply goes without. */
-  if ((E.think || isDeep) && !/haiku/.test(String(model))) {
-    out.thinking = { type: 'adaptive' };
+  /* Thinking is asked for only at careful and in deep, at medium effort.
+     Adaptive thinking has no ceiling of its own. On 2026-09-20 a 4,200 character worksheet sent
+     deep thought for more than 150 seconds, which is where the platform stops a function dead, so
+     the answer never came however much room or time it was given. The owner asked that thinking
+     keep its effort and be made to work, not be turned down. On the models that still take a
+     budget (THINK_BUDGET_MODELS) thinking is therefore given one: the same effort, a hard number
+     of tokens, then it writes. The numbers are what fits the clock at about fifty tokens a second.
+     A model that refuses a budget thinks adaptively and relies on the function's second attempt.
+     noThink is that second attempt: the same request with thinking off. */
+  if ((E.think || isDeep) && noThink !== true && !/haiku/.test(String(model))) {
+    out.thinking = THINK_BUDGET_MODELS.indexOf(String(model)) >= 0
+      ? { type: 'enabled', budget_tokens: isDeep ? DEEP_THINK_BUDGET : THINK_BUDGET }
+      : { type: 'adaptive' };
     out.output_config = Object.assign({}, out.output_config, { effort: 'medium' });
   }
   return out;

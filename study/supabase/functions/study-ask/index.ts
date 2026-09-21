@@ -81,11 +81,24 @@ const ALLOWED_ORIGINS = [
 
 /* One attempt, 60 seconds for the whole stream. The SDK's own timeout only covers the wait for
    the response headers, so a wall clock timer below aborts a stream that runs past it. */
-const CALL_TIMEOUT_MS = 60_000;
+const CALL_TIMEOUT_MS = 110_000;
 /* A deep answer thinks first and may write four thousand tokens, which does not fit in a minute.
    On the shared limit it was cut at sixty seconds and recorded as an error with almost no output,
    since the output count only arrives with the last event. */
-const DEEP_TIMEOUT_MS = 120_000;
+/* The platform stops a function at 150 seconds whatever it is doing, without running another line:
+   proved on 2026-09-20, when a test call set to 330 seconds died at 150 with no chat row and its
+   ledger row left pending. Everything has to be over, the ledger included, inside that, so the
+   wall is 138 seconds and nothing may be set past it. */
+const DEEP_TIMEOUT_MS = 138_000;
+/* How long an answer may do nothing but think before it is stopped and asked again with thinking
+   off. Long enough that real thinking finishes, short enough that the second attempt has time to
+   write inside the same wall clock. */
+/* Thinking keeps the effort the owner asked for, for as long as the clock allows: 70 seconds of a
+   deep answer's 138, which leaves the second attempt 65 seconds, enough to write about 3,000
+   tokens. A question that thinks longer than that cannot be answered with thinking in one call on
+   this platform at all; the way to keep the thinking is to ask it in smaller pieces. */
+const THINK_LIMIT_MS = 45_000;
+const DEEP_THINK_LIMIT_MS = 70_000;
 const CALL_MAX_RETRIES = 0;
 
 /* The chat row keeps at most this much answer; ai_chat_log clips to the same. 700 tokens of
@@ -435,43 +448,88 @@ function streamAnswer(body: AskBody, callId: unknown, model: string, origin: str
       if (body.deep) request.max_tokens = Math.max(Number(request.max_tokens) || 0, body.roomy ? DEEP_ROOMY_TOKENS : DEEP_HARD_TOKENS);
       const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
       const wall = body.deep ? DEEP_TIMEOUT_MS : CALL_TIMEOUT_MS;
-      const stream = client.messages.stream(
-        { model, ...request } as never,
-        { timeout: wall, maxRetries: CALL_MAX_RETRIES },
-      );
-      live = stream;
       timer = setTimeout(() => {
         timedOut = true;
-        stream.abort();
+        if (live) live.abort();
       }, wall);
-      /* The client may have gone between the check above and here. The request is already on its
-         way and its input is already owed, so it is left to finish: see cancel() below. */
 
-      for await (const ev of stream) {
-        if (ev.type === "message_start") {
-          usage = { ...(ev.message.usage as Usage) };
-        } else if (ev.type === "message_delta") {
-          /* Running totals. Keep them so a stream cut short still records what it cost. */
-          const d = ev.usage as Usage;
-          for (const k of ["input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"] as const) {
-            if (typeof d[k] === "number") usage[k] = d[k];
+      /* Two attempts at most. The first is the request as built. If it thinks and is still only
+         thinking after THINK_LIMIT, it is stopped and asked again with thinking off, which starts
+         writing at once: a student who waits two minutes for nothing has been failed twice, once
+         by the wait and once by the bill. The second attempt reads the same cached instructions,
+         so most of what it costs is the message itself. What the first attempt used is carried
+         into the totals, so the ledger shows what the question really cost. */
+      // deno-lint-ignore no-explicit-any
+      let msg: any = null;
+      let carryIn = 0;
+      let carryOut = 0;
+      for (let attempt = 0; attempt < 2 && msg === null; attempt++) {
+        const req = attempt === 0
+          ? request
+          : { ...(buildRequest({ model, ...body, effort: body.level, noThink: true }) as Record<string, unknown>), max_tokens: request.max_tokens };
+        const thinks = attempt === 0 && !!(req as { thinking?: unknown }).thinking;
+        const left = Math.max(5_000, wall - (Date.now() - started));
+        const stream = client.messages.stream(
+          { model, ...req } as never,
+          { timeout: left, maxRetries: CALL_MAX_RETRIES },
+        );
+        live = stream;
+        let bailed = false;
+        let thinkChars = 0;
+        let attemptUsage: Usage = {};
+        const watchdog = thinks
+          ? setTimeout(() => {
+            if (!answer && !timedOut) { bailed = true; stream.abort(); }
+          }, body.deep ? DEEP_THINK_LIMIT_MS : THINK_LIMIT_MS)
+          : undefined;
+        try {
+          for await (const ev of stream) {
+            if (ev.type === "message_start") {
+              attemptUsage = { ...(ev.message.usage as Usage) };
+            } else if (ev.type === "message_delta") {
+              /* Running totals. Keep them so a stream cut short still records what it cost. */
+              const d = ev.usage as Usage;
+              for (const k of ["input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"] as const) {
+                if (typeof d[k] === "number") attemptUsage[k] = d[k];
+              }
+            } else if (ev.type === "content_block_delta" && ev.delta.type === "text_delta" && ev.delta.text) {
+              answer += ev.delta.text;
+              send({ type: "delta", text: ev.delta.text });
+            } else if (ev.type === "content_block_delta" && (ev.delta.type === "thinking_delta" || ev.delta.type === "signature_delta")) {
+              /* A careful or deep answer thinks before it writes, and the page showed three dots
+                 for all of it. It is told that thinking is going on, at most once a second. None
+                 of the thinking itself is sent: the phase, nothing else. Its length is kept, for
+                 the bill: a stream that is cut never reports the tokens it thought with. */
+              if (ev.delta.type === "thinking_delta") thinkChars += String((ev.delta as { thinking?: string }).thinking || "").length;
+              const now = Date.now();
+              if (now - lastStatus > 1000) { lastStatus = now; send({ type: "status", phase: "thinking" }); }
+            }
           }
-        } else if (ev.type === "content_block_delta" && ev.delta.type === "text_delta" && ev.delta.text) {
-          answer += ev.delta.text;
-          send({ type: "delta", text: ev.delta.text });
-        } else if (ev.type === "content_block_delta" && (ev.delta.type === "thinking_delta" || ev.delta.type === "signature_delta")) {
-          /* A careful or deep answer thinks before it writes, sometimes for a minute, and the page
-             showed three dots for all of it. It is told that thinking is going on, at most once a
-             second. None of the thinking itself is sent: the phase and how long, nothing else. */
-          const now = Date.now();
-          if (now - lastStatus > 1000) { lastStatus = now; send({ type: "status", phase: "thinking" }); }
+          msg = await stream.finalMessage();
+          if (msg.usage) attemptUsage = { ...(msg.usage as Usage) };
+          usage = attemptUsage;
+        } catch (e) {
+          usage = attemptUsage;
+          if (!(bailed && !answer && !timedOut)) {
+            if (thinkChars) usage.output_tokens = Math.max(num(usage.output_tokens), Math.ceil(thinkChars / 3.5));
+            usage.input_tokens = num(usage.input_tokens) + carryIn;
+            usage.output_tokens = num(usage.output_tokens) + carryOut;
+            throw e;
+          }
+          /* Stopped for thinking too long. Carry what it used and go again without thinking. */
+          carryIn += effectiveIn(attemptUsage);
+          carryOut += Math.max(num(attemptUsage.output_tokens), Math.ceil(thinkChars / 3.5));
+          console.error("study-ask: thought past the limit, asking again without thinking");
+          send({ type: "status", phase: "writing" });
+        } finally {
+          if (watchdog !== undefined) clearTimeout(watchdog);
         }
       }
-
-      const msg = await stream.finalMessage();
       clearTimeout(timer);
       timer = undefined;
-      if (msg.usage) usage = { ...(msg.usage as Usage) };
+      usage.input_tokens = num(usage.input_tokens) + carryIn;
+      usage.output_tokens = num(usage.output_tokens) + carryOut;
+      if (msg === null) throw new Error("no answer");
 
       if (msg.stop_reason === "refusal") {
         /* Text may already have streamed. The client drops it on this event. */
