@@ -650,12 +650,17 @@ export function validateAsk(raw) {
      had at the ordinary price. */
   if (raw.mode !== undefined && (typeof raw.mode !== 'string' || MODES.indexOf(raw.mode) < 0)) return null;
   const mode = raw.mode === undefined ? DEFAULT_MODE : raw.mode;
-  for (const k of ['deep', 'withMaterial']) if (raw[k] !== undefined && typeof raw[k] !== 'boolean') return null;
+  for (const k of ['deep', 'withMaterial', 'long']) if (raw[k] !== undefined && typeof raw[k] !== 'boolean') return null;
   const deep = raw.deep === true;
   /* withMaterial only means anything in a research mode; in the ordinary mode the material is the
      whole point and the flag is ignored rather than refused. */
   const withMaterial = mode === DEFAULT_MODE ? true : raw.withMaterial === true;
-  const L = deep ? Object.assign({}, LIMITS, DEEP_LIMITS) : LIMITS;
+  /* Long messages (the owner's override in Ask settings, 2026-09-20): one message may be as long
+     as a deep one, and nothing else about the request grows. A character count was never what
+     kept a question affordable; ai_begin2 reserves against the real size of the request, so a
+     message too dear for the per question ceiling or the day's cap is refused there. */
+  const L = deep ? Object.assign({}, LIMITS, DEEP_LIMITS)
+    : raw.long === true ? Object.assign({}, LIMITS, { question: DEEP_LIMITS.question }) : LIMITS;
 
   const material = str(raw.material, L.material, { min: 1 });
   if (material === BAD || !MATERIAL_RE.test(material)) return null;

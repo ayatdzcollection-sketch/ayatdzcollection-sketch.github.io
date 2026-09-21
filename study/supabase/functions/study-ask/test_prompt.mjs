@@ -854,6 +854,13 @@ import {
   assert.equal(validateAsk({ ...base, question: long }), null, 'the ordinary question limit still holds');
   assert.equal(validateAsk({ ...base, question: long, deep: true }).question.length, 9000);
   assert.equal(validateAsk({ ...base, question: 'q'.repeat(DEEP_LIMITS.question + 1), deep: true }), null);
+  /* Long messages, the owner's override: the question alone gets the deep room, the passages do
+     not, and the flag has to be a boolean. The price is real either way, because the estimate
+     handed to ai_begin2 is made from the request as it stands. */
+  assert.equal(validateAsk({ ...base, question: long, long: true }).question.length, 9000);
+  assert.equal(validateAsk({ ...base, question: 'q'.repeat(DEEP_LIMITS.question + 1), long: true }), null);
+  assert.equal(validateAsk({ ...base, question: 'short', long: 'yes' }), null);
+  assert.equal(validateAsk({ ...base, chunks: [{ label: 'a', text: 'b'.repeat(2500) }], long: true }), null, 'long buys no passage room');
   const bigChunk = { label: 'a', text: 'b'.repeat(2500) };
   assert.equal(validateAsk({ ...base, chunks: [bigChunk] }), null);
   assert.ok(validateAsk({ ...base, chunks: [bigChunk], deep: true }));
