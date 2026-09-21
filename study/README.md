@@ -273,14 +273,14 @@ Separate from review logs, and only in a material where the owner has turned a f
 
 Nothing sent to Anthropic carries a name, a code or a session token; the owner's token is
 checked by the Edge Function and not forwarded. If Ask is ever opened beyond the owner (the
-Features group in the owner panel, mode "Open with caps"), this table is the first thing to
+Features tab in the owner panel, mode "Open with caps"), this table is the first thing to
 revisit, because every student's conversations would then be kept too.
 
 Spending on an access code comes out of the money loaded on that code (its own daily cap and
 per minute limit too) and nothing else: since migration 0026 it neither counts against the
 owner's daily, monthly and per feature caps nor is stopped by them, so a friend is never cut
-off with money left on their code. The owner panel's Spend group prints the two on separate
-lines, and the Calls list says whose each call was. The master switch and each feature's own
+off with money left on their code. The strip at the top of the owner panel's AI section prints the two
+separately, and the Calls list says whose each call was. The master switch and each feature's own
 switch still stop every call, codes included.
 
 When a code ends, is ended early, switched off, emptied or deleted, its holder is a visitor

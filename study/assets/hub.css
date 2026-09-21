@@ -349,18 +349,72 @@ textarea.askinput{min-height:80px;padding:10px 12px}
 .ailink:hover,.ailink:focus-visible{color:var(--ink2)}
 @media (max-width:560px){ .aicaps{grid-template-columns:1fr} }
 
-/* ---------- admin: AI groups ---------- */
-/* The AI panel is eleven closed groups under four headings. Flat, they were a list nobody read;
-   the headings sort them by the question the owner arrived with. A group is one line until it is
-   opened: a name, the numbers worth seeing without opening it, and a chevron. Hairlines between
-   them, nothing heavier. */
+/* ---------- admin: AI panel ---------- */
+/* A strip that is always on screen (the two switches that hold everything, two meters, and
+   whatever needs the owner), then four tabs. It was ten folds under four headings, seven
+   thousand pixels with them open; now one question's worth shows at a time. */
 .aisections{margin:12px 0 0}
-.aisection + .aisection{margin-top:26px}
-.aisectionhead{display:flex;flex-direction:column;gap:2px;padding:0 2px 6px}
-.aisectionname{font-family:var(--cond);font-size:12px;font-weight:700;letter-spacing:.10em;
+.aistrip{padding:4px 0 12px;border-top:1px solid var(--rule)}
+.aistripsw{display:grid;grid-template-columns:1fr 1fr;gap:0 22px}
+.aistripsw .aimaster{border-bottom:0;padding-bottom:2px}
+.aimeters{display:grid;grid-template-columns:1fr 1fr;gap:10px 22px;margin:8px 0 2px}
+.aimeter{min-width:0}
+.aimetertop{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:2px 10px;
+  font-family:var(--mono);font-size:11.5px;letter-spacing:.03em;color:var(--ink2)}
+.aimetername{font-family:var(--cond);font-size:11px;font-weight:700;letter-spacing:.10em;
+  text-transform:uppercase;color:var(--ink3)}
+.aimetertrack{display:block;height:4px;margin-top:5px;background:var(--rule2);border-radius:2px;overflow:hidden}
+.aimeterfill{display:block;height:100%;width:0;background:var(--ink2);border-radius:2px;transition:width .25s}
+.near .aimeterfill{background:var(--warn)}
+.full .aimeterfill{background:var(--bad)}
+.aimeter.near .aimeterval{color:var(--warn)}
+.aimeter.full .aimeterval{color:var(--bad);font-weight:600}
+.aicodesline{margin:8px 0 0}
+.aiattn{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:6px}
+.aiattnitem{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 12px;
+  padding:6px 10px;border-left:2px solid var(--rule);background:var(--sheet);font-size:14px;line-height:1.35;color:var(--ink2)}
+.aiattnitem.warn{border-left-color:var(--warn);background:#FAF4E9;color:#5A3C12}
+.aiattnitem.bad{border-left-color:var(--bad);background:#F8ECE8;color:#6A2B1D}
+.aiattnitem.quiet{background:none;border-left-color:transparent;padding-left:0;font-family:var(--mono);
+  font-size:11px;letter-spacing:.04em;color:var(--ink3)}
+.aiattntext{flex:1 1 150px;min-width:0}
+.aiattnacts{display:flex;flex-wrap:wrap;gap:6px}
+.aiattnacts .btn{min-height:36px}
+
+.aitabs{display:flex;gap:2px;margin:6px 0 0;border-bottom:1px solid var(--rule);overflow-x:auto;
+  scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.aitabs::-webkit-scrollbar{display:none}
+.aitab{flex:0 0 auto;display:inline-flex;align-items:center;gap:6px;min-height:46px;padding:0 14px;border:0;
+  border-bottom:2px solid transparent;margin-bottom:-1px;background:none;color:var(--ink3);cursor:pointer;
+  font-family:var(--cond);font-size:14.5px;font-weight:600}
+.aitab:hover{color:var(--ink2)}
+.aitab[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--ink)}
+.aitab:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.aitabbadge{min-width:17px;padding:1px 5px;border-radius:9px;background:var(--warn);color:#fff;
+  font-family:var(--mono);font-size:10px;line-height:15px;text-align:center}
+.aipane{padding:12px 0 4px}
+.aipane>.aigroups{margin-top:0;border-top:0}
+.aipane>.note:first-child{margin-top:0}
+
+.aiblockpart{margin:0 0 22px}
+.aiblockname{margin:0;font-family:var(--cond);font-size:12px;font-weight:700;letter-spacing:.10em;
   text-transform:uppercase;color:var(--ink2)}
-.aisectionsub{font-size:12.5px;line-height:1.35;color:var(--ink3)}
-.aisection .aigroups{margin:0}
+.aiblocksub{margin:3px 0 8px;font-size:12.5px;line-height:1.4;color:var(--ink3)}
+.aicaps.aicaps3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.aicap{position:relative}
+.aicap .aisaved{position:absolute;right:0;top:0}
+
+/* Each feature's two numbers, one line each. */
+.aicaplist{list-style:none;margin:0;padding:0}
+.aicaprow{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr) 104px 104px;gap:4px 12px;align-items:center;
+  padding:5px 0;border-bottom:1px solid var(--rule2);position:relative}
+.aicaphead{padding:0 0 4px;font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink3)}
+.aicapname{font-family:var(--cond);font-size:14.5px;font-weight:600;color:var(--ink);overflow-wrap:anywhere}
+.aicaprow.off .aicapname{color:var(--ink3);font-weight:500}
+.aicaprow .aispent{margin:0}
+.aicaprow .aiinput{min-height:40px}
+.aicaperr{grid-column:1 / -1;margin:0;font-size:12.5px}
+.aicaptick{position:absolute;right:0;top:-2px;pointer-events:none}
 
 /* A feature's spend against its own ceiling, beside the field that sets it. Quiet until it is
    worth looking at, because this is the cap that refuses an answer while the caps at the top of
@@ -435,21 +489,44 @@ textarea.askinput{min-height:80px;padding:10px 12px}
 /* Features */
 .aiheld{margin:4px 0 8px;padding:8px 10px;border-left:2px solid var(--warn);background:#FAF4E9;
   font-size:14px;color:#5A3C12}
+.aifeatgroup{margin:0 0 18px}
+.aifeatgrouphead{display:flex;align-items:baseline;gap:10px;padding:0 0 2px;border-bottom:1px solid var(--rule)}
+.aifeatgroupcount{margin-left:auto;font-family:var(--mono);font-size:11px;letter-spacing:.04em;color:var(--ink3)}
+.aifeatgroup .aiblocksub{margin:6px 0 2px}
+summary.aifeatgrouphead{min-height:44px;align-items:center;cursor:pointer;list-style:none}
+summary.aifeatgrouphead::-webkit-details-marker{display:none}
+summary.aifeatgrouphead:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.aifeatfold[open]>summary .aichev{transform:translateY(4px) rotate(225deg)}
 .aifeats{list-style:none;margin:0;padding:0}
-.aifeat{padding:8px 0 14px;border-bottom:1px solid var(--rule2)}
-.aifeathead{display:flex;align-items:center;gap:10px;min-height:48px}
-.aifeatwho{flex:1 1 auto;min-width:0}
-.aifeattitle{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 8px}
+.aifeat{border-bottom:1px solid var(--rule2)}
+.aifeathead{display:flex;align-items:center;gap:6px;min-height:50px}
+.aifeatopen{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:8px;min-height:50px;padding:0 2px;border:0;
+  background:none;text-align:left;cursor:pointer;color:inherit}
+.aifeatopen:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.aifeatopen:active{background:#EDEDE7}
+.aifeatopen .aichev{margin:0 2px 4px 2px;flex:0 0 auto}
+.aifeatopen[aria-expanded="true"] .aichev{transform:translateY(4px) rotate(225deg)}
+.aifeattitle{flex:0 1 auto;min-width:0;display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 8px}
 .aifeatname{font-family:var(--cond);font-size:15px;font-weight:600;color:var(--ink);overflow-wrap:anywhere}
-.aifeat.off .aifeatname{color:var(--ink2)}
+.aifeat.off .aifeatname{color:var(--ink3);font-weight:500}
 .aibeta{display:inline-block;padding:1px 5px;border:1px solid currentColor;border-radius:2px;
   font-family:var(--mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
-.aifeatmeta{margin:2px 0 0;font-family:var(--mono);font-size:11px;letter-spacing:.04em;
+.aifeatspend{flex:0 0 96px;min-height:44px;padding:0 2px;border:0;background:none;cursor:pointer;text-align:right;
+  font-family:var(--mono);font-size:11px;letter-spacing:.02em;color:var(--ink3)}
+.aifeatspend:hover .aifeatspendtext{text-decoration:underline}
+.aifeatspend:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.aifeatspendtext{display:block;white-space:nowrap}
+.aifeatspend.near{color:var(--warn)}
+.aifeatspend.full{color:var(--bad);font-weight:600}
+.aifeatspend.nocap .aimetertrack{visibility:hidden}
+.aifeat.off .aifeatspend:not(.near):not(.full){opacity:.6}
+.aifeatbody{padding:0 2px 14px}
+.aifeatabout{margin:0 0 8px;font-size:13.5px;line-height:1.4;color:var(--ink2)}
+.aifeatmeta{margin:10px 0 0;font-family:var(--mono);font-size:11px;letter-spacing:.04em;
   color:var(--ink3);overflow-wrap:anywhere}
-.aifixed{flex:0 0 auto;max-width:45%;text-align:right;font-family:var(--mono);font-size:10.5px;
+.aifixed{flex:0 0 auto;max-width:30%;text-align:right;font-family:var(--mono);font-size:10px;
   letter-spacing:.08em;text-transform:uppercase;color:var(--ink3)}
-.aifeatctl{display:grid;grid-template-columns:max-content minmax(0,1fr) 112px;gap:8px 12px;
-  align-items:start;margin-top:6px}
+.aifeatctl{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:8px 14px;align-items:start}
 .aifield{min-width:0}
 .aifield .lbl{display:block;margin:0 0 4px}
 .aifield .aisel{max-width:none}
@@ -458,11 +535,14 @@ textarea.askinput{min-height:80px;padding:10px 12px}
    switch right, because it changes what an answer may say rather than who may ask. */
 .aifield.aibeyondf{grid-column:1 / -1;display:flex;align-items:center;justify-content:space-between;gap:12px;
   border-top:1px solid var(--rule);padding-top:8px;margin-top:2px}
-.aifield.aibeyondf .lbl{margin:0}
+.aifield.aibeyondf{flex-wrap:wrap}
+.aifield.aibeyondf .lbl{margin:0;flex:1 1 auto}
+.aifield.aibeyondf .aimeta{order:3;flex:1 1 100%;margin:0}
+.aifield.aibeyondf .err-inline{order:4;flex:1 1 100%}
 .aifixedval{margin:0;min-height:44px;display:flex;align-items:center;font-family:var(--mono);
   font-size:12px;color:var(--ink3)}
 .aifeatmsg{margin-top:6px}
-.aieffort{margin-top:14px;max-width:340px}
+.aieffort{margin:4px 0 14px;max-width:340px}
 .aieffort .aimeta{margin:4px 0 0}
 
 /* The per material AI control: one button, one short list. */
@@ -546,11 +626,24 @@ textarea.askinput{min-height:80px;padding:10px 12px}
 .aichatmore{margin-top:10px}
 
 @media (max-width:560px){
-  .aifeatctl{grid-template-columns:minmax(0,1fr) 104px}
-  .aifield.aimode{grid-column:1 / -1}
+  .aifeatctl{grid-template-columns:minmax(0,1fr)}
+  .aistripsw,.aimeters{grid-template-columns:1fr}
+  .aicaps.aicaps3{grid-template-columns:1fr 1fr}
+  .aitab{padding:0 8px;font-size:14px}
+  .aifeatspend{flex-basis:84px}
+  /* Name and spend on one line, the two numbers under them, each with its own small label since
+     the column heads are gone at this width. */
+  .aicaphead{display:none}
+  .aicaprow{grid-template-columns:1fr 1fr;padding:8px 0}
+  .aicapcell{display:block}
+  .aicapcell::before{display:block;margin:0 0 2px;font-family:var(--mono);font-size:10px;letter-spacing:.08em;
+    text-transform:uppercase;color:var(--ink3)}
+  .aicapcell:nth-of-type(3)::before{content:"Daily cap, $"}
+  .aicapcell:nth-of-type(4)::before{content:"Extra today, $"}
+  .aicaprow .aispent{text-align:right}
 }
 @media (prefers-reduced-motion:reduce){
-  .aichev,.aiswitch::before,.aiswitch::after{transition:none}
+  .aichev,.aiswitch::before,.aiswitch::after,.aimeterfill{transition:none}
 }
 
 /* Codes (migration 0017): one row per person, with their money, their switch and their end time. */

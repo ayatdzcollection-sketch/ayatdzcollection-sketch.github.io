@@ -305,8 +305,8 @@ var StudyAuth = {
       flagReviewed:  function (id) { return rpc('admin_flag_reviewed', { p_token: ls(TOKEN_KEY), p_id: id }); },
       /* Material, topic and body are all required; the server refuses a blank topic or body and
          cannot insert without a material, so pass the flag's own material. topic is matched by
-         its words longer than three letters, so a topic of only short words never matches
-         anything. flag is the flag this came from, or null; giving it marks that flag reviewed in
+         its words of three letters or more, every one of which has to appear in the question as
+         a whole word (0037), so a topic of only shorter words never matches anything. flag is the flag this came from, or null; giving it marks that flag reviewed in
          the same call. */
       correctionAdd: function (material, topic, body, flag) {
         return rpc('admin_correction_add', { p_token: ls(TOKEN_KEY), p_material: material,

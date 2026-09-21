@@ -68,7 +68,7 @@ import {
   LINK_FEATURE,
   validateLink,
 } from "./ask_prompt.mjs";
-import { LINK_LIMITS, checkUrl, checkType, extract, passages as linkPassages, linkLabel } from "./link_fetch.mjs";
+import { LINK_LIMITS, checkUrl, checkType, extract, passages as linkPassages, linkLabel, privateAddress } from "./link_fetch.mjs";
 
 /* ---------------------------------------------------------------- configuration */
 
@@ -80,6 +80,10 @@ const ALLOWED_ORIGINS = [
 /* One attempt, 60 seconds for the whole stream. The SDK's own timeout only covers the wait for
    the response headers, so a wall clock timer below aborts a stream that runs past it. */
 const CALL_TIMEOUT_MS = 60_000;
+/* A deep answer thinks first and may write four thousand tokens, which does not fit in a minute.
+   On the shared limit it was cut at sixty seconds and recorded as an error with almost no output,
+   since the output count only arrives with the last event. */
+const DEEP_TIMEOUT_MS = 120_000;
 const CALL_MAX_RETRIES = 0;
 
 /* The chat row keeps at most this much answer; ai_chat_log clips to the same. 700 tokens of
@@ -150,6 +154,9 @@ type AskBody = {
   kinds: string;
   check: boolean;
   fault: string;
+  /* What the small calls made on the way to this answer cost, in microcents (the intent
+     classifier today), so the ledger row for the answer carries them. */
+  sideMicro?: number;
 };
 
 /* A request for a list, a set to copy out, or everything on a topic. Those answers are long by
@@ -267,6 +274,16 @@ function effectiveIn(u: Usage): number {
   return Math.ceil(num(u.input_tokens) + 1.25 * num(u.cache_creation_input_tokens) + 0.1 * num(u.cache_read_input_tokens));
 }
 
+/* A small call made on the way to an answer (the intent classifier) is on a different model at a
+   different price, and the ledger row has one model and two token counts. So its cost is carried
+   the way the cache figures are: as however many plain input tokens of the answer's own model
+   cost the same. A dollar per million tokens is a hundred microcents a token. */
+function sideTokens(model: string, micro: number | undefined): number {
+  if (!micro || micro <= 0) return 0;
+  const price = (PRICES as Record<string, { in: number; out: number }>)[model] ?? { in: 5, out: 25 };
+  return Math.ceil(micro / (price.in * 100));
+}
+
 function dollars(model: string, inTok: number, outTok: number): number {
   /* An unknown model is priced at the dearest candidate so the number shown can never be
      lower than what was actually billed. Postgres computes the ledger's own figure. */
@@ -311,7 +328,7 @@ function streamAnswer(body: AskBody, callId: unknown, model: string, origin: str
       await rpc("ai_end", {
         p_call_id: callId,
         p_status: status,
-        p_in: effectiveIn(usage),
+        p_in: effectiveIn(usage) + sideTokens(model, body.sideMicro),
         p_out: num(usage.output_tokens),
         p_latency: Date.now() - started,
       });
@@ -326,7 +343,7 @@ function streamAnswer(body: AskBody, callId: unknown, model: string, origin: str
   const logChat = async (): Promise<number | string | null> => {
     if (logged) return null;
     logged = true;
-    const inTok = effectiveIn(usage);
+    const inTok = effectiveIn(usage) + sideTokens(model, body.sideMicro);
     const outTok = num(usage.output_tokens);
     try {
       const res = (await rpc("ai_chat_log", {
@@ -412,15 +429,16 @@ function streamAnswer(body: AskBody, callId: unknown, model: string, origin: str
          price of before they ask for it. */
       if (body.deep) request.max_tokens = Math.max(Number(request.max_tokens) || 0, DEEP_MAX_TOKENS);
       const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
+      const wall = body.deep ? DEEP_TIMEOUT_MS : CALL_TIMEOUT_MS;
       const stream = client.messages.stream(
         { model, ...request } as never,
-        { timeout: CALL_TIMEOUT_MS, maxRetries: CALL_MAX_RETRIES },
+        { timeout: wall, maxRetries: CALL_MAX_RETRIES },
       );
       live = stream;
       timer = setTimeout(() => {
         timedOut = true;
         stream.abort();
-      }, CALL_TIMEOUT_MS);
+      }, wall);
       /* The client may have gone between the check above and here. */
       if (cancelled) stream.abort();
 
@@ -452,7 +470,7 @@ function streamAnswer(body: AskBody, callId: unknown, model: string, origin: str
       }
 
       status = "ok";
-      const done: Json = { type: "done", model, cost_cents: costCents(model, effectiveIn(usage), num(usage.output_tokens)) };
+      const done: Json = { type: "done", model, cost_cents: costCents(model, effectiveIn(usage) + sideTokens(model, body.sideMicro), num(usage.output_tokens)) };
       if (body.textbookLabels && body.textbookLabels.length) done.textbook = body.textbookLabels;
       /* Which level this answer was given, so the panel can say what auto chose. */
       done.level = body.level;
@@ -472,6 +490,9 @@ function streamAnswer(body: AskBody, callId: unknown, model: string, origin: str
       else if (e instanceof APIConnectionError) kind = "connection";
       else if (e instanceof APIError) kind = `api_${e.status ?? 0}`;
       console.error(`study-ask: call failed (${kind})`);
+      /* The output count arrives with the stream's last event, so a stream that was cut has
+         almost none on record however much it wrote. What reached the student is the floor. */
+      if (answer) usage.output_tokens = Math.max(num(usage.output_tokens), Math.ceil(answer.length / 3.5));
       send({ type: "error", error: "grader_error" });
     } finally {
       if (timer !== undefined) clearTimeout(timer);
@@ -673,6 +694,23 @@ async function trapNote(raw: unknown, req: Request, origin: string): Promise<Res
    This is not a search and not a crawler. It fetches the one address given, follows at most three
    redirects, and checks every hop against the same rules as the first, because an address that is
    safe and redirects to one that is not is the whole trick. */
+/* Every address a name resolves to has to be a public one. The name alone proves nothing: a
+   public looking hostname can resolve to 169.254.169.254 or to 10.0.0.1. Called for each hop. A
+   name that does not resolve at all is refused too, since there is then nothing to check. */
+async function resolvesPublic(host: string): Promise<boolean> {
+  const found: string[] = [];
+  for (const kind of ["A", "AAAA"] as const) {
+    try {
+      const got = await Deno.resolveDns(host, kind);
+      for (const ip of got) found.push(String(ip));
+    } catch {
+      /* no record of this kind */
+    }
+  }
+  if (!found.length) return false;
+  return !found.some((ip) => privateAddress(ip));
+}
+
 async function pullLink(raw: unknown, req: Request, origin: string): Promise<Response> {
   const body = validateLink(raw) as { material: string; install: string; adminToken: string | null; url: string } | null;
   if (!body) return reply({ ok: false, error: "bad_request" }, 400, origin);
@@ -721,6 +759,7 @@ async function pullLink(raw: unknown, req: Request, origin: string): Promise<Res
     const timer = setTimeout(() => ctl.abort(), LINK_LIMITS.timeoutMs);
     try {
       for (let hop = 0; ; hop++) {
+        if (!(await resolvesPublic(host))) { await closeRow("refused"); return reply({ ok: false, error: "private_host" }, 200, origin); }
         const res = await fetch(url, {
           redirect: "manual",
           signal: ctl.signal,
@@ -729,6 +768,7 @@ async function pullLink(raw: unknown, req: Request, origin: string): Promise<Res
         });
         if (res.status >= 300 && res.status < 400) {
           const next = res.headers.get("location");
+          try { await res.body?.cancel(); } catch { /* nothing to release */ }
           if (!next || hop >= LINK_LIMITS.redirects) { await closeRow("error"); return reply({ ok: false, error: "unreachable" }, 200, origin); }
           const hopUrl = checkUrl(new URL(next, url).toString()) as { ok: boolean; url?: string; host?: string; error?: string };
           if (!hopUrl.ok) { await closeRow("refused"); return reply({ ok: false, error: hopUrl.error }, 200, origin); }
@@ -741,9 +781,29 @@ async function pullLink(raw: unknown, req: Request, origin: string): Promise<Res
         if (!type.ok) { await closeRow("refused"); return reply({ ok: false, error: type.error }, 200, origin); }
         const len = Number(res.headers.get("content-length") || 0);
         if (Number.isFinite(len) && len > LINK_LIMITS.bytes) { await closeRow("refused"); return reply({ ok: false, error: "too_big" }, 200, origin); }
-        /* Read with a cap rather than trusting the header, which a server may not send. */
-        const buf = new Uint8Array(await res.arrayBuffer());
-        if (buf.byteLength > LINK_LIMITS.bytes) { await closeRow("refused"); return reply({ ok: false, error: "too_big" }, 200, origin); }
+        /* Read with a cap rather than trusting the header, which a server may not send. It is a
+           cap on what is read, not a measurement afterwards: arrayBuffer() took the whole body
+           first, so a server that streamed without a length could fill the worker's memory inside
+           the timeout and leave the ledger row open when it died. */
+        const reader = res.body?.getReader();
+        if (!reader) { await closeRow("error"); return reply({ ok: false, error: "unreachable" }, 200, origin); }
+        const parts: Uint8Array[] = [];
+        let size = 0;
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          if (!value) continue;
+          size += value.byteLength;
+          if (size > LINK_LIMITS.bytes) {
+            try { await reader.cancel(); } catch { /* already gone */ }
+            await closeRow("refused");
+            return reply({ ok: false, error: "too_big" }, 200, origin);
+          }
+          parts.push(value);
+        }
+        const buf = new Uint8Array(size);
+        let at = 0;
+        for (const part of parts) { buf.set(part, at); at += part.byteLength; }
         html = new TextDecoder("utf-8", { fatal: false }).decode(buf);
         break;
       }
@@ -757,8 +817,18 @@ async function pullLink(raw: unknown, req: Request, origin: string): Promise<Res
     return reply({ ok: false, error: "unreachable" }, 200, origin);
   }
 
-  const got = extract(html, { title: host }) as { title: string; text: string };
-  const rows = linkPassages(got.text, { title: got.title }) as Array<{ heading: string; body: string }>;
+  /* Inside a try, because a throw out here left the ledger row open: nothing past this point
+     would have closed it. */
+  let got: { title: string; text: string };
+  let rows: Array<{ heading: string; body: string }>;
+  try {
+    got = extract(html, { title: host }) as { title: string; text: string };
+    rows = linkPassages(got.text, { title: got.title }) as Array<{ heading: string; body: string }>;
+  } catch {
+    console.error("study-ask: a fetched page could not be read");
+    await closeRow("error");
+    return reply({ ok: false, error: "empty" }, 200, origin);
+  }
   if (!rows.length) { await closeRow("ok"); return reply({ ok: false, error: "empty" }, 200, origin); }
 
   let saved: Record<string, unknown> | null = null;
@@ -951,7 +1021,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
       p_ip: clientIp(req),
       p_token: body.adminToken,
       p_in: estimate,
-      p_out: RESERVE_OUT,
+      /* A deep answer may write four thousand tokens, so that is what is held for it: on the
+         ordinary reserve the deep ceiling was checked against a fifth of the real figure. */
+      p_out: body.deep ? DEEP_MAX_TOKENS : RESERVE_OUT,
     })) as Record<string, unknown> | null;
   } catch {
     console.error("study-ask: ai_begin2 failed");
@@ -980,7 +1052,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const levels = EFFORTS as Record<string, { words: number; max_tokens: number; think: boolean; bullets: string }>;
   const byIntent = INTENT_EFFORT as Record<string, string>;
   body.level = levels[body.effort] ? body.effort : DEFAULT_EFFORT;
-  if (body.effort === "auto") {
+  /* Not for a pasted set: that is answered at normal whatever this says (below), so the call was
+     made and thrown away. Never retried, since a slow classifier is simply skipped. And what it
+     cost goes on this answer's ledger row: it used to be spent where no cap, ceiling or total
+     could see it. */
+  if (body.effort === "auto" && !(body.items >= 2)) {
     try {
       const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
       const ctl = new AbortController();
@@ -990,8 +1066,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
         max_tokens: 6,
         system: INTENT_SYSTEM,
         messages: [{ role: "user", content: body.question }],
-      }, { signal: ctl.signal });
+      }, { signal: ctl.signal, maxRetries: 0 });
       clearTimeout(timer);
+      const iu = (r.usage || {}) as Usage;
+      body.sideMicro = (body.sideMicro || 0) + costMicrocents(INTENT_MODEL, effectiveIn(iu), num(iu.output_tokens));
       const first = r.content.find((c) => c.type === "text") as { text?: string } | undefined;
       const intent = String(first?.text || "").trim().toLowerCase().replace(/[^a-z]/g, "");
       if (byIntent[intent]) {
@@ -1027,7 +1105,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
      the client already holds stay valid, and their labels travel back in the done event. */
   body.textbookLabels = [];
   const corpus = CORPUS[body.material];
-  if (body.textbook && begun.textbook === true && corpus) {
+  /* Not in a research answer with the material off. That answer is made of the sources the owner
+     chose and nothing else; with this block running, a links question that matched no saved page
+     but did match the textbook was answered from the textbook, billed as research, and never
+     reached the no_sources refusal below. */
+  if (body.textbook && begun.textbook === true && corpus && !(research && !body.withMaterial)) {
     const seen = new Set<string>();
     /* A form question named by its number comes first, exactly, before the keyword search. */
     const asked = NUMBERED[corpus] ? formNumbers(body.question + " " + body.quote) : [];
@@ -1069,9 +1151,14 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }
   }
 
-  /* Corrections come first of everything, including the textbook: the owner wrote one precisely
+  /* Corrections outrank everything, including the textbook: the owner wrote one precisely
      because an answer got this wrong before. They are cheap (three short rows at most) and they
-     are the only thing here that can overrule the material. */
+     are the only thing here that can overrule the material. They are looked up here and added
+     LAST, after the shelf: the page numbers its own passages from one and appends the labels in
+     the done event after them, so anything put in front moved every source tag in the answer
+     along by one, and the page then checked each sentence against the wrong passage.
+     CORRECTION_RULE makes a Correction win wherever it sits. */
+  const corrections: Array<{ label: string; text: string }> = [];
   try {
     const got = (await rpc("ai_corrections_get", {
       p_material: body.material,
@@ -1079,17 +1166,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
       p_limit: 3,
     })) as { ok?: boolean; corrections?: Array<{ topic?: string; body?: string }> } | null;
     const rows = (got && got.ok && Array.isArray(got.corrections)) ? got.corrections : [];
-    const ahead: Array<{ label: string; text: string }> = [];
     for (const c of rows) {
       if (!c || typeof c.body !== "string" || !c.body.trim()) continue;
-      ahead.push({ label: ("Correction: " + (c.topic ?? "")).slice(0, 80), text: c.body.slice(0, 1000) });
-    }
-    if (ahead.length) {
-      body.chunks = ahead.concat(body.chunks).slice(0, 14);
-      body.correctionCount = ahead.length;
-      /* The rule that says a Correction outranks the material rides with the question, not in the
-         cached block, because whether one was found is a property of this question. */
-      body.correction = true;
+      corrections.push({ label: ("Correction: " + (c.topic ?? "")).slice(0, 80), text: c.body.slice(0, 1000) });
     }
   } catch {
     console.error("study-ask: corrections lookup failed");
@@ -1105,15 +1184,22 @@ Deno.serve(async (req: Request): Promise<Response> => {
   /* The class shelf is the owner's to grant, the same as the textbook. A student's own saved links
      are their own, so the external mode does not wait on that grant. */
   const mayRead = body.mode === "links" || begun.textbook === true;
+  /* How many passages of the chosen sources actually went in: what the no_sources test reads. */
+  let sourcesIn = 0;
   if (corpusWanted && mayRead && body.chunks.length < CHUNK_CAP) {
     try {
       const found = (await rpc("ai_passages_search", {
         p_corpus: corpusWanted,
         p_query: (body.question + " " + body.quote).slice(0, 1000),
         p_chapter: null,
-        p_limit: research ? RESEARCH_PASSAGES : SHELF_PASSAGES,
+        /* Research asks for three times what it will keep. The cap of three from one document
+           is applied below, and applied to a list of eight it could not do its job: one long
+           document holding the top eight left the answer three passages and the owner's other
+           documents none. The search allows up to 24 for this since migration 0037. */
+        p_limit: research ? RESEARCH_PASSAGES * 3 : SHELF_PASSAGES,
       })) as { ok?: boolean; passages?: Array<{ heading?: string; body?: string }> } | null;
       const perSource = new Map<string, number>();
+      let kept = 0;
       for (const p of (found && found.ok && Array.isArray(found.passages)) ? found.passages : []) {
         if (!p || typeof p.body !== "string" || !p.body) continue;
         if (body.chunks.length >= CHUNK_CAP) break;
@@ -1123,8 +1209,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
         const source = heading.split(":")[0].trim().toLowerCase();
         const used = perSource.get(source) || 0;
         if (research && used >= RESEARCH_PER_SOURCE) continue;
+        if (kept >= (research ? RESEARCH_PASSAGES : SHELF_PASSAGES)) break;
         perSource.set(source, used + 1);
-        const label = ("[" + heading + "]").slice(0, 80);
+        kept++;
+        sourcesIn++;
+        /* The heading is cut, not the finished label: SHELF_RULE and LINKS_RULE both key on the
+           brackets, and a long page title used to lose the closing one. */
+        const label = "[" + heading.slice(0, 78) + "]";
         body.chunks.push({ label, text: p.body.slice(0, body.deep ? DEEP_LIMITS.chunkText : TEXTBOOK_CHARS) });
         body.textbookLabels.push(label);
         /* As for a correction: the rule travels with the question that found a passage. */
@@ -1137,13 +1228,25 @@ Deno.serve(async (req: Request): Promise<Response> => {
   /* A research question with no sources behind it is refused rather than answered from nothing:
      an empty research answer reads like an answer, and it is not one. The ledger row ai_begin2
      opened is closed here, because nothing past this point will do it. */
-  if (research && !body.withMaterial && !body.chunks.length) {
+  if (research && !body.withMaterial && sourcesIn === 0) {
     try {
       await rpc("ai_end", { p_call_id: callId, p_status: "refused", p_in: 0, p_out: 0, p_latency: 0 });
     } catch {
       console.error("study-ask: ai_end failed (no sources)");
     }
     return reply({ ok: false, error: "no_sources" }, 200, origin);
+  }
+
+  if (corrections.length) {
+    for (const c of corrections) {
+      body.chunks.push(c);
+      /* The student is never told a correction exists, so the label the page gets is plain. */
+      body.textbookLabels.push("A checked note for this material");
+    }
+    body.correctionCount = corrections.length;
+    /* The rule that says a Correction outranks the material rides with the question, not in the
+       cached block, because whether one was found is a property of this question. */
+    body.correction = true;
   }
 
   return streamAnswer(body, callId, model, origin);

@@ -580,7 +580,10 @@ export function buildRequest({ model, map, question, quote, focus, chunks, histo
     max_tokens: isDeep ? Math.max(E.max_tokens, DEEP_MAX_TOKENS) : E.max_tokens,
     ...modelParams(model)
   };
-  if (E.think || isDeep) {
+  /* Haiku 4.5 has no adaptive thinking (the owner panel says as much beside Effort), so a feature
+     row set to it would have sent a careful or a deep question with a parameter the model does not
+     take. There the answer simply goes without. */
+  if ((E.think || isDeep) && !/haiku/.test(String(model))) {
     out.thinking = { type: 'adaptive' };
     out.output_config = Object.assign({}, out.output_config, { effort: 'medium' });
   }

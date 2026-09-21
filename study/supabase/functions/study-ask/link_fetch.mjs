@@ -46,7 +46,7 @@ export const LINK_TYPES = ['text/html', 'application/xhtml+xml', 'text/plain', '
    somebody else's network, so a link is a way to ask it to fetch that network's own addresses.
    Literal IP addresses are refused outright rather than parsed and range checked, because the
    ranges are the part people get wrong, and a study source is never at a bare IP anyway. */
-const BAD_HOST = /^(localhost|.*\.localhost|.*\.local|.*\.internal|metadata\..*|.*\.home\.arpa)$/i;
+const BAD_HOST = /^(localhost|.*\.localhost|.*\.local|.*\.internal|.*\.svc|.*\.cluster\.local|.*\.lan|.*\.corp|metadata\..*|.*\.home\.arpa)$/i;
 const IPV4 = /^\d{1,3}(\.\d{1,3}){3}$/;
 const HEXY = /^[0-9a-f.:]+$/i;
 
@@ -65,8 +65,15 @@ export function checkUrl(raw) {
      every source worth reading has had https for a decade. */
   if (u.protocol !== 'https:') return { ok: false, error: 'not_https' };
   if (u.username || u.password) return { ok: false, error: 'bad_url' };
+  /* One trailing dot is the same name to a resolver and a different string to the tests below:
+     "localhost." and "foo.internal." both walked past them. It is taken off before anything is
+     tested, and off the address that is fetched. */
+  if (u.hostname.endsWith('.')) u.hostname = u.hostname.slice(0, -1);
   const host = u.hostname.toLowerCase();
-  if (!host || host.length > 253) return { ok: false, error: 'bad_url' };
+  if (!host || host.length > 253 || host.endsWith('.')) return { ok: false, error: 'bad_url' };
+  /* The ordinary https port and no other. A study source is never on port 22, and another port is
+     a way to knock on a service rather than read a page. */
+  if (u.port && u.port !== '443') return { ok: false, error: 'private_host' };
   if (BAD_HOST.test(host)) return { ok: false, error: 'private_host' };
   /* A bracketed v6 address, a bare v4 address, or anything with no dot in it at all. */
   if (u.hostname.startsWith('[') || IPV4.test(host) || (HEXY.test(host) && host.indexOf(':') >= 0)) {
@@ -75,6 +82,33 @@ export function checkUrl(raw) {
   if (host.indexOf('.') < 0) return { ok: false, error: 'private_host' };
   u.hash = '';
   return { ok: true, url: u.toString(), host };
+}
+
+/* Whether a resolved address is one this may fetch. checkUrl can only read the name, and a public
+   name can point anywhere: 10.0.0.1.nip.io is a perfectly good hostname for 10.0.0.1. So the
+   function resolves each hop and passes every address it got through here before fetching.
+   Loopback, private, link local (which is where cloud metadata lives), carrier NAT, multicast,
+   and their v6 counterparts, including a v4 address wrapped in v6. */
+export function privateAddress(ip) {
+  const s = String(ip || '').trim().toLowerCase();
+  if (!s) return true;
+  const v4 = s.match(/^(?:::ffff:)?(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (v4) {
+    const a = Number(v4[1]), b = Number(v4[2]);
+    if ([a, b, Number(v4[3]), Number(v4[4])].some((n) => n > 255)) return true;
+    return a === 0 || a === 10 || a === 127 || a >= 224
+      || (a === 100 && b >= 64 && b <= 127)
+      || (a === 169 && b === 254)
+      || (a === 172 && b >= 16 && b <= 31)
+      || (a === 192 && b === 168)
+      || (a === 192 && b === 0)
+      || (a === 198 && (b === 18 || b === 19));
+  }
+  if (s.indexOf(':') < 0) return true;
+  if (s === '::' || s === '::1') return true;
+  /* fc00::/7 unique local, fe80::/10 link local, ff00::/8 multicast, 64:ff9b::/96 and 2002::/16
+     carry a v4 address inside them, which is not worth unpicking for a study source. */
+  return /^(f[cd]|fe[89ab]|ff)/.test(s) || s.startsWith('64:ff9b:') || s.startsWith('2002:') || s.startsWith('::ffff:');
 }
 
 /* Whether the server sent something this can read. */

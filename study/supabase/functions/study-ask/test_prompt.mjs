@@ -800,7 +800,14 @@ import {
   assert.ok(/feature: body\.feature \|\| FEATURE,/.test(idx), 'the chat log records the feature that was billed');
   assert.ok(/body\.feature = feature;/.test(idx), 'the billed feature is carried to the log');
   assert.ok(idx.indexOf('ai_corrections_get') > 0 && idx.indexOf('ai_corrections_get') < idx.indexOf('return streamAnswer('), 'corrections are fetched before the answer');
-  assert.ok(/ahead\.concat\(body\.chunks\)/.test(idx), 'corrections go in front of the material');
+  /* Corrections go in LAST. The page numbers its own passages from one and appends the labels the
+     done event carries, so a correction put in front moved every source tag along by one and the
+     page then checked each sentence against the wrong passage. */
+  assert.ok(!/ahead\.concat\(body\.chunks\)/.test(idx), 'nothing is put in front of the passages the page numbered');
+  assert.ok(idx.indexOf('body.chunks.push(c);') > idx.indexOf('source search failed'), 'corrections are appended after the shelf');
+  assert.ok(/sourcesIn === 0/.test(idx), 'no_sources reads the sources that went in, not whatever else did');
+  assert.ok(/!\(research && !body\.withMaterial\)\) \{/.test(idx), 'no textbook in a research answer made of the sources alone');
+  assert.ok(/maxRetries: 0/.test(idx) && /body\.sideMicro/.test(idx), 'the classifier is never retried and its cost reaches the ledger');
   assert.ok(/purpose === "rerank"/.test(idx), 'the rerank purpose is dispatched');
   assert.ok(!DASHES.test(idx));
 }

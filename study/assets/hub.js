@@ -839,8 +839,10 @@ function aiTagControl(m, i) {
    Ask's tag, so no material carries one and the per material control leaves them out. All
    five are off on the server until they are turned on. */
 var AI_FEATURES = [
-  { id: 'saq', tag: 'ai',     label: 'SAQ grading', short: 'SAQ' },
-  { id: 'ask', tag: 'ai-ask', label: 'Ask (beta)',  short: 'Ask' },
+  { id: 'saq', tag: 'ai',     label: 'SAQ grading', short: 'SAQ', own: true },
+  { id: 'ask', tag: 'ai-ask', label: 'Ask (beta)',  short: 'Ask', own: true },
+  { id: 'trap', tag: 'ai-ask', label: 'Trap note', short: 'Trap',
+    about: 'A two line note on a card, written once and stored, so it is paid for once.' },
   { id: 'rerank', tag: 'ai-ask', label: 'Reranker', short: 'Rerank', esc: true,
     about: 'Picks better passages when the keyword search is weak.' },
   { id: 'retry', tag: 'ai-ask', label: 'Retry', short: 'Retry', esc: true,
@@ -861,8 +863,21 @@ var AI_FEATURES = [
     about: 'Answers from pages the owner pasted in, cited by site. About 2.5 cents.' },
   { id: 'deep', tag: 'ai-ask', label: 'Deep research', short: 'Deep', esc: true,
     about: 'A long answer that thinks first, from three times as much of the sources. About 12 cents, and its own ceiling.' },
-  { id: 'fetch', tag: 'ai-ask', label: 'Pull a link', short: 'Fetch', esc: false,
+  { id: 'fetch', tag: 'ai-ask', label: 'Pull a link', short: 'Fetch', esc: false, nomodel: true,
     about: 'Reading a page into the shelf. No model and no tokens: the text is extracted in code.' }
+];
+
+/* How the Features tab groups its rows, in the order they are shown. An id the panel has never
+   heard of lands in other, so a row added on the server is never invisible here. */
+var AI_FEATURE_GROUPS = [
+  { id: 'main', title: 'Features', ids: ['saq', 'ask', 'trap'] },
+  { id: 'extras', title: 'Extras on an Ask answer', ids: ['rerank', 'retry'],
+    sub: 'Each runs only when an answer needs it. Plain mode holds them, and the breaker can pause them.' },
+  { id: 'research', title: 'Research', ids: ['research', 'extern', 'deep', 'fetch'],
+    sub: 'Answers from sources you chose. Plain mode and the breaker hold these too, except pulling a link, which spends nothing.' },
+  { id: 'other', title: 'Other', ids: [] },
+  { id: 'unbuilt', title: 'Not built yet', ids: ['tools', 'wiki', 'search'], folded: true,
+    sub: 'Rows that exist on the server with nothing behind them. Web search is not allowed at all.' }
 ];
 
 function aiFeatureInfo(id) {
@@ -871,10 +886,12 @@ function aiFeatureInfo(id) {
   return hit;
 }
 
-/* The features a material can be tagged for. The escalations share Ask's tag and are never
-   offered on their own, so they are not in the per material list nor in its count. */
+/* The features a material can be tagged for: the ones with a tag of their own. Everything else
+   runs inside Ask on Ask's tag. This used to be "not an escalation", which let Pull a link in
+   (it is not one, since it spends nothing): every material then offered a third checkbox that
+   wrote the same ai-ask tag as the second, and counted itself in "AI 2/3". */
 function aiTagFeatures() {
-  return AI_FEATURES.filter(function (f) { return !f.esc; });
+  return AI_FEATURES.filter(function (f) { return f.own; });
 }
 
 function aiHasAnyTag(m) {
@@ -901,6 +918,7 @@ var AI_IN_TOKENS = 1200, AI_OUT_TOKENS = 250;
 
 /* Which groups are open is a per browser convenience, nothing more. */
 var AI_GROUPS_KEY = 'studyhub:admin:aigroups';
+var AI_TAB_KEY = 'studyhub:admin:aitab';
 
 /* Chats: twenty to a page on screen; an export asks for the server's largest page and stops
    after twenty of them, ten thousand chats, rather than looping on a server that misbehaves. */
@@ -912,9 +930,10 @@ var AI_CHATS_EXPORT_PAGES = 20;
    to offer: the list says how many of the newest to ask for and asks again. */
 var AI_FLAG_LIMITS = [20, 50, 100, 200];
 
-/* Every guard is stored in cents, not dollars like the caps in Spend, and the server holds
-   each one to this range. */
+/* Every guard is stored in cents, not dollars like the caps, and the server holds each one to
+   a range: 100, except the deep ceiling, which 0034 holds to 200. */
 var AI_GUARD_MAX_CENTS = 100;
+var AI_GUARD_MAX = { deep_ceiling: 200 };
 
 var aiEl = null;
 var aiState = { settings: null, models: [], usage: null, features: [], saq: null, featErr: '',
@@ -1195,8 +1214,127 @@ function aiWordsInput(rows) {
   return n;
 }
 
+/* A row of tabs over one pane each. The panel was ten folds under four headings, seven
+   thousand pixels tall with them open; a tab shows one question's worth at a time and the
+   strip above them carries what used to need three folds opened to see. Left and Right move
+   along the row, as a tablist should. Which tab was open is a per browser convenience. */
+function aiTabs(parent, defs) {
+  var bar = el('div', 'aitabs');
+  bar.setAttribute('role', 'tablist');
+  bar.setAttribute('aria-label', 'AI settings');
+  parent.appendChild(bar);
+  var t = { bar: bar, tabs: {}, panes: {}, badges: {}, order: [], current: null };
+  defs.forEach(function (d) {
+    var b = el('button', 'aitab');
+    b.type = 'button';
+    b.id = 'aitab-' + d.id;
+    b.setAttribute('role', 'tab');
+    b.setAttribute('aria-selected', 'false');
+    b.setAttribute('aria-controls', 'aipane-' + d.id);
+    b.tabIndex = -1;
+    b.appendChild(el('span', null, d.title));
+    var badge = el('span', 'aitabbadge');
+    badge.hidden = true;
+    b.appendChild(badge);
+    bar.appendChild(b);
+    var pane = el('div', 'aipane');
+    pane.id = 'aipane-' + d.id;
+    pane.setAttribute('role', 'tabpanel');
+    pane.setAttribute('aria-labelledby', b.id);
+    pane.hidden = true;
+    parent.appendChild(pane);
+    t.tabs[d.id] = b; t.panes[d.id] = pane; t.badges[d.id] = badge; t.order.push(d.id);
+    b.addEventListener('click', function () { t.select(d.id); });
+  });
+  t.select = function (id, focus) {
+    if (!t.panes[id]) id = t.order[0];
+    t.current = id;
+    t.order.forEach(function (k) {
+      var on = k === id;
+      t.tabs[k].setAttribute('aria-selected', String(on));
+      t.tabs[k].tabIndex = on ? 0 : -1;
+      t.panes[k].hidden = !on;
+    });
+    try { localStorage.setItem(AI_TAB_KEY, id); } catch (e) {}
+    if (focus) { try { t.tabs[id].focus(); } catch (e) {} }
+    try { if (t.tabs[id].scrollIntoView) t.tabs[id].scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (e) {}
+  };
+  t.badge = function (id, n) {
+    var b = t.badges[id];
+    if (!b) return;
+    n = Number(n) || 0;
+    b.textContent = n > 0 ? String(n) : '';
+    b.hidden = !(n > 0);
+  };
+  bar.addEventListener('keydown', function (ev) {
+    var step = ev.key === 'ArrowRight' ? 1 : ev.key === 'ArrowLeft' ? -1 : 0;
+    if (!step) return;
+    ev.preventDefault();
+    var i = t.order.indexOf(t.current);
+    t.select(t.order[(i + step + t.order.length) % t.order.length], true);
+  });
+  var stored = null;
+  try { stored = localStorage.getItem(AI_TAB_KEY); } catch (e) {}
+  t.select(stored || t.order[0]);
+  return t;
+}
+
+/* A thin bar with its numbers over it: spent against a ceiling, amber near it, red at it. */
+function aiMeter(name) {
+  var wrap = el('div', 'aimeter');
+  var top = el('div', 'aimetertop');
+  top.appendChild(el('span', 'aimetername', name));
+  var val = el('span', 'aimeterval');
+  top.appendChild(val);
+  wrap.appendChild(top);
+  var track = el('div', 'aimetertrack');
+  var fill = el('div', 'aimeterfill');
+  track.appendChild(fill);
+  wrap.appendChild(track);
+  return { wrap: wrap, val: val, fill: fill };
+}
+
+function aiMeterPaint(m, spent, cap, text) {
+  spent = Number(spent) || 0;
+  cap = Number(cap) || 0;
+  var share = cap > 0 ? spent / cap : (spent > 0 ? 1 : 0);
+  m.fill.style.width = Math.max(0, Math.min(100, share * 100)).toFixed(1) + '%';
+  m.wrap.classList.toggle('near', share >= 0.85 && share < 1);
+  m.wrap.classList.toggle('full', share >= 1);
+  m.val.textContent = text;
+}
+
+/* A small heading inside a pane, with one line under it where one is needed. */
+function aiBlock(parent, title, sub) {
+  var wrap = el('div', 'aiblockpart');
+  wrap.appendChild(el('h4', 'aiblockname', title));
+  if (sub) wrap.appendChild(el('p', 'aiblocksub', sub));
+  parent.appendChild(wrap);
+  return wrap;
+}
+
+/* The word Saved beside a field for a moment. Every number in the panel saves when it is left,
+   so this is the only sign that it did. */
+function aiTick(node) {
+  if (!node) return;
+  node.textContent = 'Saved';
+  clearTimeout(node._t);
+  node._t = setTimeout(function () { node.textContent = ''; }, 1800);
+}
+
+/* Go to a tab, open a fold in it, and put the cursor on a control: what the strip's buttons and
+   a feature's spend figure do, so a warning is one tap from the thing that answers it. */
+function aiGo(tab, group, node) {
+  if (!aiEl) return;
+  aiEl.tabs.select(tab);
+  if (group && group.det) group.det.open = true;
+  var to = node || (group && group.det) || aiEl.tabs.panes[tab];
+  try { to.scrollIntoView({ block: 'center' }); } catch (e) {}
+  if (node) { try { node.focus(); if (node.select) node.select(); } catch (e) {} }
+}
+
 function buildAi(sec) {
-  var e = { cap: {}, rows: Object.create(null) };
+  var e = { cap: {}, rows: Object.create(null), capRows: Object.create(null), groups: Object.create(null) };
 
   var head = el('div', 'aihead');
   head.appendChild(el('h3', 'rubric', 'AI'));
@@ -1205,10 +1343,8 @@ function buildAi(sec) {
   head.appendChild(e.refresh);
   sec.appendChild(head);
   sec.appendChild(el('p', 'note',
-    'Every feature is off until you turn it on, spends against the caps in Spend, and runs ' +
-    'only in a material that carries its tag (the AI button on each row above). What a ' +
-    'student types goes to Anthropic for the answer. The ledger keeps no text; Ask saves its ' +
-    'questions and answers, and they are in Chats.'));
+    'Nothing runs unless it is switched on here and the material carries its tag (the AI button ' +
+    'on each row above). What a student types goes to Anthropic for the answer.'));
 
   e.msg = el('p', 'err-inline');
   e.msg.hidden = true;
@@ -1217,16 +1353,11 @@ function buildAi(sec) {
   e.body = el('div', 'aisections');
   sec.appendChild(e.body);
 
-  /* The four headings, made before any group so each one lands under the right question. The
-     order is the order the questions come up: what is it costing, what may it do, who may use
-     it, what has it done. */
-  e.secMoney = aiSection(e.body, 'Money', 'Caps, and what each feature has spent against them.');
-  e.secDoes = aiSection(e.body, 'What it may do', 'Which features are on, and the limits that hold whatever they say.');
-  e.secWho = aiSection(e.body, 'Who may use it', 'Codes you hand out, and what people send back.');
-  e.secDone = aiSection(e.body, 'What it has done', 'Every call, every chat, and what went wrong.');
-
-  /* ---- Spend ---- */
-  e.spend = aiGroup(e.secMoney, 'spend', 'Spend');
+  /* ---- the strip: always on screen ---- */
+  /* The two switches that hold everything else, what has been spent against the two ceilings
+     that count, and whatever needs the owner, each with the button that deals with it. */
+  var strip = el('div', 'aistrip');
+  var sws = el('div', 'aistripsw');
   var master = el('div', 'aimaster');
   var mt = el('div', 'aimastertext');
   mt.appendChild(el('span', 'aimastername', 'All AI features'));
@@ -1234,63 +1365,91 @@ function buildAi(sec) {
   master.appendChild(mt);
   e.master = aiSwitch('All AI features');
   master.appendChild(e.master);
-  e.spend.body.appendChild(master);
+  sws.appendChild(master);
+
+  var gplain = el('div', 'aimaster');
+  var gpt = el('div', 'aimastertext');
+  gpt.appendChild(el('span', 'aimastername', 'Plain mode'));
+  gpt.appendChild(el('span', 'aimeta', 'On means Ask is one call with no extras.'));
+  gplain.appendChild(gpt);
+  e.guardPlain = aiSwitch('Plain mode');
+  gplain.appendChild(e.guardPlain);
+  sws.appendChild(gplain);
+  strip.appendChild(sws);
+
   e.masterErr = el('p', 'err-inline');
   e.masterErr.hidden = true;
-  e.spend.body.appendChild(e.masterErr);
+  strip.appendChild(e.masterErr);
+  /* Plain mode is the one setting that changes what Ask does rather than what it may spend, so
+     when it is on the panel says so in full rather than leaving a switch to be read. */
+  e.guardPlainOn = el('p', 'aiheld',
+    'Plain mode is on. Ask is back to a single call with no extras: no reranking, no retry, ' +
+    'no research, no deep answers, whatever each of those says under Features.');
+  e.guardPlainOn.hidden = true;
+  strip.appendChild(e.guardPlainOn);
 
-  e.readout = el('p', 'aireadout');
-  e.spend.body.appendChild(e.readout);
+  var meters = el('div', 'aimeters');
+  e.meterDay = aiMeter('Today');
+  e.meterMonth = aiMeter('This month');
+  meters.appendChild(e.meterDay.wrap);
+  meters.appendChild(e.meterMonth.wrap);
+  strip.appendChild(meters);
+  e.codesLine = el('p', 'aimeta aicodesline');
+  e.codesLine.hidden = true;
+  strip.appendChild(e.codesLine);
 
-  e.caps = el('div', 'aicaps');
-  AI_FIELDS.forEach(function (f) {
-    var inp = aiTextInput();
-    var fld = aiField('aicap', f.label + (f.money ? ' (dollars)' : ''), inp);
-    e.cap[f.key] = { input: inp, err: fld.err };
-    e.caps.appendChild(fld.field);
-  });
-  e.spend.body.appendChild(e.caps);
+  e.attn = el('ul', 'aiattn');
+  strip.appendChild(e.attn);
+  e.body.appendChild(strip);
 
-  /* Today only (0016). It is not one of the stored caps: it lifts the daily ceiling until the
-     next day boundary and then lapses, so a cram night never quietly becomes the new normal. */
-  e.bonus = aiTextInput();
-  var bf = aiField('aibonus', 'Extra for today only (dollars)', e.bonus);
-  e.bonusErr = bf.err;
-  e.spend.body.appendChild(bf.field);
-  e.spend.body.appendChild(el('p', 'note',
-    'The daily and monthly caps count every feature in either mode, and each feature\'s own ' +
-    'daily cap sits inside them. The device and address limits hold features set to Open with ' +
-    'caps. The monthly cap is the one that cannot be talked around: a device id is spoofable, ' +
-    'a spend ceiling is not.'));
-  var saveRow = el('div', 'row wrap');
-  e.save = el('button', 'btn sm', 'Save the caps');
-  e.save.type = 'button';
-  e.bonus.addEventListener('input', function () { e.bonus.setAttribute('data-editing', '1'); });
-  e.bonus.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') e.bonus.blur(); });
-  e.bonus.addEventListener('change', function () {
-    e.bonus.removeAttribute('data-editing');
-    e.bonusErr.hidden = true;
-    var raw = e.bonus.value.trim().replace(/^\$/, '');
-    var n = raw === '' ? 0 : Number(raw);
-    if (!isFinite(n) || n < 0) { aiShowAt(e.bonusErr, 'Numbers only.'); return; }
-    aiBonusSet(null, Math.round(n * 100), e.bonusErr);
-  });
-  e.saveMsg = el('span', 'aisaved');
-  saveRow.appendChild(e.save);
-  saveRow.appendChild(e.saveMsg);
-  e.spend.body.appendChild(saveRow);
+  e.tabs = aiTabs(e.body, [
+    { id: 'features', title: 'Features' },
+    { id: 'limits', title: 'Limits' },
+    { id: 'people', title: 'People' },
+    { id: 'activity', title: 'Activity' }
+  ]);
+  var pFeat = e.tabs.panes.features, pLim = e.tabs.panes.limits;
 
-  /* ---- Features ---- */
-  e.feat = aiGroup(e.secDoes, 'features', 'Features');
-  e.held = el('p', 'aiheld', 'All AI features is off in Spend, so nothing here can run.');
+  /* ---- Features: what is on, who may use it, which model ---- */
+  e.held = el('p', 'aiheld', 'All AI features is off, so nothing here can run.');
   e.held.hidden = true;
-  e.feat.body.appendChild(e.held);
+  pFeat.appendChild(e.held);
   e.featNote = el('p', 'err-inline');
   e.featNote.hidden = true;
-  e.feat.body.appendChild(e.featNote);
-  e.featList = el('ul', 'aifeats');
-  e.feat.body.appendChild(e.featList);
+  pFeat.appendChild(e.featNote);
+  pFeat.appendChild(el('p', 'note',
+    'A row is its name, what it has spent against its own cap today, and its switch. Open a ' +
+    'row for who may use it and which model. The caps themselves are all under Limits.'));
 
+  AI_FEATURE_GROUPS.forEach(function (g) {
+    var wrap, list = el('ul', 'aifeats');
+    var count = el('span', 'aifeatgroupcount');
+    if (g.folded) {
+      wrap = el('details', 'aifeatgroup aifeatfold');
+      var sum = el('summary', 'aifeatgrouphead');
+      sum.appendChild(el('span', 'aiblockname', g.title));
+      sum.appendChild(count);
+      var chev = el('span', 'aichev');
+      chev.setAttribute('aria-hidden', 'true');
+      sum.appendChild(chev);
+      wrap.appendChild(sum);
+    } else {
+      wrap = el('div', 'aifeatgroup');
+      var h = el('div', 'aifeatgrouphead');
+      h.appendChild(el('h4', 'aiblockname', g.title));
+      h.appendChild(count);
+      wrap.appendChild(h);
+    }
+    if (g.sub) wrap.appendChild(el('p', 'aiblocksub', g.sub));
+    wrap.appendChild(list);
+    wrap.hidden = true;
+    pFeat.appendChild(wrap);
+    e.groups[g.id] = { wrap: wrap, list: list, count: count };
+  });
+
+  var extras = el('div', 'aigroups');
+  pFeat.appendChild(extras);
+  e.modelsGroup = aiGroup(extras, 'models', 'Effort and models');
   /* Effort is read off the settings row by every feature, not off a model row, so that is
      where it is written. The model row's own effort column is the eval's record of which
      setting was measured, and only the eval writes it. */
@@ -1307,78 +1466,125 @@ function buildAi(sec) {
   e.effortHint = el('p', 'aimeta', 'Haiku has no adaptive thinking and ignores this.');
   e.effortHint.hidden = true;
   eff.field.insertBefore(e.effortHint, eff.err);
-  e.feat.body.appendChild(eff.field);
-  e.feat.body.appendChild(el('p', 'note',
-    'Owner only takes your admin session on every call and skips the device and address ' +
-    'limits. Open with caps lets anyone studying use it, held by every cap in Spend.'));
+  e.modelsGroup.body.appendChild(eff.field);
+  /* The selects alone would make each choice blind. This list is the reason for the choice:
+     what the eval measured, and what one grade costs at that model's prices. */
+  e.models = el('div', 'aimodels');
+  e.modelsGroup.body.appendChild(e.models);
 
-  /* ---- Guards ---- */
-  /* What one Ask answer may cost, whatever the switches above say (0033). Every amount in
-     this group is in cents, not the dollars Spend is typed in: one answer costs a fraction of
-     a cent, so a ceiling written in dollars would be four zeroes and a guess. Every label
-     here says cents so the two groups cannot be read as contradicting each other.
+  /* ---- Limits: every number that holds spending, in one place ---- */
+  pLim.appendChild(el('p', 'note',
+    'Every number here saves when you leave the field. The first three blocks are in dollars; ' +
+    'one question and the breaker are in cents, because one answer costs a cent or two.'));
+
+  var bAcct = aiBlock(pLim, 'Your account',
+    'Counts every feature. Money a code spends comes off that code and never touches these.');
+  e.caps = el('div', 'aicaps');
+  var bVis = null, visCaps = el('div', 'aicaps aicaps3');
+  AI_FIELDS.forEach(function (f) {
+    var inp = aiTextInput();
+    var fld = aiField('aicap', f.label + (f.money ? ' ($)' : ''), inp);
+    var tick = el('span', 'aisaved');
+    fld.field.appendChild(tick);
+    e.cap[f.key] = { input: inp, err: fld.err, tick: tick };
+    (f.money ? e.caps : visCaps).appendChild(fld.field);
+  });
+  /* Today only (0016). It is not one of the stored caps: it lifts the daily ceiling until the
+     next day boundary and then lapses, so a cram night never quietly becomes the new normal. */
+  e.bonus = aiTextInput();
+  var bf = aiField('aicap', 'Extra for today only ($)', e.bonus);
+  e.bonusErr = bf.err;
+  e.bonusTick = el('span', 'aisaved');
+  bf.field.appendChild(e.bonusTick);
+  e.caps.appendChild(bf.field);
+  e.caps.classList.add('aicaps3');
+  bAcct.appendChild(e.caps);
+  e.bonus.addEventListener('input', function () { e.bonus.setAttribute('data-editing', '1'); });
+  e.bonus.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') e.bonus.blur(); });
+  e.bonus.addEventListener('change', function () {
+    e.bonus.removeAttribute('data-editing');
+    e.bonusErr.hidden = true;
+    var raw = e.bonus.value.trim().replace(/^\$/, '');
+    var n = raw === '' ? 0 : Number(raw);
+    if (!isFinite(n) || n < 0) { aiShowAt(e.bonusErr, 'Numbers only.'); return; }
+    aiBonusSet(null, Math.round(n * 100), e.bonusErr).then(function (r) {
+      if (r !== null && !(r && r.ok === false)) aiTick(e.bonusTick);
+    });
+  });
+
+  /* Each feature's own daily cap, which sits inside the account's. One line each, so the whole
+     ladder of ceilings can be read top to bottom instead of one fold at a time. */
+  var bFeat = aiBlock(pLim, 'Each feature, per day',
+    'Inside the account caps. A feature at its own cap refuses until tomorrow, whatever is left above it.');
+  var capHead = el('div', 'aicaprow aicaphead');
+  ['Feature', 'Spent today', 'Daily cap, $', 'Extra today, $'].forEach(function (t) {
+    capHead.appendChild(el('span', null, t));
+  });
+  capHead.setAttribute('aria-hidden', 'true');
+  bFeat.appendChild(capHead);
+  e.capList = el('ul', 'aicaplist');
+  bFeat.appendChild(e.capList);
+
+  bVis = aiBlock(pLim, 'Requests',
+    'The two call limits hold a feature set to Open with caps; Owner only takes your session and ' +
+    'skips them. Max characters holds every request. The monthly cap is the one that cannot be ' +
+    'talked around: a device id is spoofable, a spend ceiling is not.');
+  bVis.appendChild(visCaps);
+
+  /* What one Ask answer may cost, whatever the switches say (0033). In cents, not the dollars
+     the caps are typed in: one answer costs a fraction of a cent, so a ceiling written in
+     dollars would be four zeroes and a guess. Every label says cents.
 
      Reading these values recomputes the breaker on the server and writes a row, so they are
      read when the panel loads and when the owner asks, and never on a timer. */
-  e.guardGroup = aiGroup(e.secDoes, 'guards', 'Guards');
-  e.guardGroup.body.appendChild(el('p', 'note',
-    'An answer can cost more than one call: picking passages again, one retry after a failed ' +
-    'check, a search during the answer, a Wikipedia lead. Each of those is a feature above ' +
-    'with its own switch and its own daily cap. These are the limits that hold whatever those ' +
-    'switches say, and every amount here is in cents.'));
-
-  var gplain = el('div', 'aimaster');
-  var gpt = el('div', 'aimastertext');
-  gpt.appendChild(el('span', 'aimastername', 'Plain mode'));
-  gpt.appendChild(el('span', 'aimeta',
-    'On means Ask is one call with no extras, exactly as it was before any of this.'));
-  gplain.appendChild(gpt);
-  e.guardPlain = aiSwitch('Plain mode');
-  gplain.appendChild(e.guardPlain);
-  e.guardGroup.body.appendChild(gplain);
-  /* Plain mode is the one setting here that changes what Ask does rather than what it may
-     spend, so when it is on the group says so in full rather than leaving a switch to be read. */
-  e.guardPlainOn = el('p', 'aiheld',
-    'Plain mode is on. Ask is back to a single call with no extras: no reranking, no retry, ' +
-    'no tools, no Wikipedia, no search, whatever each of those says above.');
-  e.guardPlainOn.hidden = true;
-  e.guardGroup.body.appendChild(e.guardPlainOn);
-
+  var bOne = aiBlock(pLim, 'One question',
+    'The most a single question may add up to, extras included. Past it the extra is refused and the ordinary answer goes ahead.');
   var gnums = el('div', 'aicaps');
   e.guardCeiling = aiTextInput();
-  var gc = aiField('aicap', 'Ceiling on one question (cents)', e.guardCeiling);
+  var gc = aiField('aicap', 'Ceiling (cents)', e.guardCeiling);
   e.guardCeilingErr = gc.err;
   gnums.appendChild(gc.field);
-  /* Deep research has its own ceiling because a deep question is meant to cost about 12 cents and
-     the shared one defaults to 6: on the shared ceiling every deep question would be refused, and
-     the only cure would be raising the ceiling for ordinary questions too (migration 0034). */
+  /* Deep research has its own ceiling because a deep question is meant to cost about 12 cents:
+     on the shared one every deep question would be refused by arithmetic (migration 0034). */
   e.guardDeep = aiTextInput();
-  var gd = aiField('aicap', 'Ceiling on one deep question (cents)', e.guardDeep);
+  var gd = aiField('aicap', 'Ceiling, deep question (cents)', e.guardDeep);
   e.guardDeepErr = gd.err;
   gnums.appendChild(gd.field);
+  bOne.appendChild(gnums);
+
+  var bBrk = aiBlock(pLim, 'Breaker',
+    'Reads the last twenty answers. Past the soft line it pauses the dearest extras, past the ' +
+    'hard line all of them, and one on its own if it fires too often. It never pauses Ask itself.');
+  var bon = el('div', 'aimaster');
+  var bont = el('div', 'aimastertext');
+  bont.appendChild(el('span', 'aimastername', 'Breaker'));
+  e.guardState = el('span', 'aimeta');
+  bont.appendChild(e.guardState);
+  bon.appendChild(bont);
+  e.guardOn = aiSwitch('Breaker');
+  bon.appendChild(e.guardOn);
+  bBrk.appendChild(bon);
+  e.guardOnErr = el('p', 'err-inline');
+  e.guardOnErr.hidden = true;
+  bBrk.appendChild(e.guardOnErr);
+  var bnums = el('div', 'aicaps');
   e.guardBreaker = aiTextInput();
-  var gb = aiField('aicap', 'Breaker line, running mean (cents)', e.guardBreaker);
+  var gb = aiField('aicap', 'Soft line, running mean (cents)', e.guardBreaker);
   e.guardBreakerErr = gb.err;
-  gnums.appendChild(gb.field);
+  bnums.appendChild(gb.field);
   e.guardHard = aiTextInput();
   var gh = aiField('aicap', 'Hard line, running mean (cents)', e.guardHard);
   e.guardHardErr = gh.err;
-  gnums.appendChild(gh.field);
-  e.guardGroup.body.appendChild(gnums);
-
-  e.guardOn = aiSwitch('Breaker');
-  var gon = aiField('aibeyondf', 'Breaker', e.guardOn);
-  e.guardOnErr = gon.err;
-  e.guardGroup.body.appendChild(gon.field);
+  bnums.appendChild(gh.field);
+  bBrk.appendChild(bnums);
 
   e.guardRead = el('p', 'aireadout');
-  e.guardGroup.body.appendChild(e.guardRead);
-  e.guardGroup.body.appendChild(el('p', 'lbl', 'Paused'));
+  bBrk.appendChild(e.guardRead);
   e.guardPaused = el('ul', 'aichips');
-  e.guardGroup.body.appendChild(e.guardPaused);
+  bBrk.appendChild(e.guardPaused);
   e.guardWhy = el('p', 'aiheld');
   e.guardWhy.hidden = true;
-  e.guardGroup.body.appendChild(e.guardWhy);
+  bBrk.appendChild(e.guardWhy);
 
   var grow = el('div', 'row wrap aipassctl');
   e.guardClear = el('button', 'btn sm out', 'Clear the pause');
@@ -1387,17 +1593,15 @@ function buildAi(sec) {
   e.guardRefresh = el('button', 'btn sm out', 'Read them again');
   e.guardRefresh.type = 'button';
   grow.appendChild(e.guardRefresh);
-  e.guardGroup.body.appendChild(grow);
+  bBrk.appendChild(grow);
   e.guardNote = el('p', 'err-inline');
   e.guardNote.hidden = true;
-  e.guardGroup.body.appendChild(e.guardNote);
-  e.guardGroup.body.appendChild(el('p', 'note',
-    'The breaker reads the last twenty answers. Past the breaker line it pauses the dearest ' +
-    'escalations first, past the hard line it pauses them all, and it pauses one on its own if ' +
-    'it fires too often. With the breaker off nothing is measured and nothing is paused.'));
+  bBrk.appendChild(e.guardNote);
+  /* aiPaintGuards writes its one line summary here, where the fold's closed line used to be. */
+  e.guardGroup = { state: e.guardState };
 
   e.guardPlain.addEventListener('click', function () {
-    aiGuardSet('plain', null, !aiSwitchOn(e.guardPlain), e.guardNote, [e.guardPlain]);
+    aiGuardSet('plain', null, !aiSwitchOn(e.guardPlain), e.masterErr, [e.guardPlain]);
   });
   e.guardOn.addEventListener('click', function () {
     aiGuardSet('breaker_on', null, !aiSwitchOn(e.guardOn), e.guardOnErr, [e.guardOn]);
@@ -1416,7 +1620,14 @@ function buildAi(sec) {
   });
   e.guardRefresh.addEventListener('click', function () { aiLoadGuards(); });
 
-  /* ---- Models ---- */
+  /* The folds below keep the parents they always had by name: who may use it, and what it has
+     done. Corrections sit beside Flags now, because one is the answer to the other. */
+  e.secWho = el('div', 'aigroups');
+  e.tabs.panes.people.appendChild(e.secWho);
+  e.secDone = el('div', 'aigroups');
+  e.tabs.panes.activity.appendChild(e.secDone);
+  e.secDoes = e.secDone;
+
   /* ---- Codes ---- */
   e.passGroup = aiGroup(e.secWho, 'passes', 'Codes');
   e.passGroup.body.appendChild(el('p', 'note',
@@ -1510,7 +1721,7 @@ function buildAi(sec) {
   e.flagGroup.body.appendChild(el('p', 'note',
     'A sentence the checks on the page could not back against the material, newest first, with ' +
     'the question that produced it. Correcting one writes what is true in your words, and the ' +
-    'next question whose words match the topic gets it ahead of the material\'s own passages.'));
+    'next question that carries every word of the topic gets it, and it outranks the material\'s own passages.'));
   var flrow = el('div', 'row wrap');
   e.flagAll = el('button', 'btn sm out', 'Open only');
   e.flagAll.type = 'button';
@@ -1554,8 +1765,8 @@ function buildAi(sec) {
   /* ---- Corrections ---- */
   e.corrGroup = aiGroup(e.secDoes, 'corrections', 'Corrections');
   e.corrGroup.body.appendChild(el('p', 'note',
-    'What you wrote after reading a flagged answer. A correction is sent ahead of the ' +
-    'material\'s own passages whenever a question carries the words of its topic. Nothing here ' +
+    'What you wrote after reading a flagged answer. A correction goes out with any question that ' +
+    'carries every word of its topic, and it outranks the material\'s own passages. Nothing here ' +
     'is deleted: switch one off and it stops being sent.'));
   var crow = el('div', 'row wrap');
   e.corrRefresh = el('button', 'btn sm out', 'Refresh');
@@ -1568,12 +1779,6 @@ function buildAi(sec) {
   e.corrNote.hidden = true;
   e.corrGroup.body.appendChild(e.corrNote);
   e.corrRefresh.addEventListener('click', function () { aiLoadCorrections(); });
-
-  e.modelsGroup = aiGroup(e.secMoney, 'models', 'Models');
-  /* The selects alone would make each choice blind. This list is the reason for the choice:
-     what the eval measured, and what one grade costs at that model's prices. */
-  e.models = el('div', 'aimodels');
-  e.modelsGroup.body.appendChild(e.models);
 
   /* ---- Recent calls ---- */
   e.callsGroup = aiGroup(e.secDone, 'calls', 'Recent calls');
@@ -1611,29 +1816,48 @@ function buildAi(sec) {
 }
 
 /* One row per feature. The row is built once and repainted in place, so a save elsewhere in
-   the section never throws away a cap someone is halfway through typing. */
+   the section never moves a control someone is using. Closed, a row is a name, what it has
+   spent against its own cap, and its switch: eleven of them fit on a screen. The rest of what
+   a feature has (who may use it, which model, and for Ask the two switches that are only
+   Ask's) is inside the row, behind its name. Its caps are under Limits with all the others. */
 function aiFeatRow(id) {
   var saq = id === 'saq';
   var r = { id: id, saq: saq };
   r.li = el('li', 'aifeat');
 
   var head = el('div', 'aifeathead');
-  var who = el('div', 'aifeatwho');
-  var title = el('div', 'aifeattitle');
+  r.open = el('button', 'aifeatopen');
+  r.open.type = 'button';
+  r.open.setAttribute('aria-expanded', 'false');
+  var title = el('span', 'aifeattitle');
   r.name = el('span', 'aifeatname');
   r.beta = el('span', 'aibeta', 'Beta');
   r.beta.hidden = true;
+  r.paused = el('span', 'aichip aichipflags', 'Paused');
+  r.paused.hidden = true;
   title.appendChild(r.name);
   title.appendChild(r.beta);
-  who.appendChild(title);
-  r.meta = el('p', 'aifeatmeta');
-  who.appendChild(r.meta);
-  /* One line on what the feature is, for the escalations (0033) whose names on the server say
-     nothing about when they cost anything. */
-  r.about = el('p', 'aifeatabout');
-  r.about.hidden = true;
-  who.appendChild(r.about);
-  head.appendChild(who);
+  title.appendChild(r.paused);
+  r.open.appendChild(title);
+  var chev = el('span', 'aichev');
+  chev.setAttribute('aria-hidden', 'true');
+  r.open.appendChild(chev);
+  head.appendChild(r.open);
+
+  /* What this feature has spent against its own cap today. A feature could refuse an answer at
+     its own ceiling while the only number on screen was the account's, with most of a dollar
+     still free; that is what "you hit your limit" looked like with 62 cents left. It is a
+     button because the next thing anyone wants after reading it is the cap it is measured on. */
+  r.spent = el('button', 'aifeatspend');
+  r.spent.type = 'button';
+  r.spentText = el('span', 'aifeatspendtext');
+  r.spent.appendChild(r.spentText);
+  var track = el('span', 'aimetertrack');
+  r.spentFill = el('span', 'aimeterfill');
+  track.appendChild(r.spentFill);
+  r.spent.appendChild(track);
+  head.appendChild(r.spent);
+
   if (saq) {
     /* SAQ grading predates the features table. Its only switch is the master one. */
     r.fixed = el('span', 'aifixed');
@@ -1644,51 +1868,35 @@ function aiFeatRow(id) {
   }
   r.li.appendChild(head);
 
+  r.body = el('div', 'aifeatbody');
+  r.body.id = 'aifeatbody-' + (++aiUid);
+  r.body.hidden = true;
+  r.open.setAttribute('aria-controls', r.body.id);
+  r.about = el('p', 'aifeatabout');
+  r.about.hidden = true;
+  r.body.appendChild(r.about);
+
   var ctl = el('div', 'aifeatctl');
   var f;
   r.seg = aiSeg();
   f = aiField('aimode', 'Who can use it', r.seg.wrap);
+  r.modeField = f.field;
   r.modeErr = f.err;
   ctl.appendChild(f.field);
 
   r.model = document.createElement('select');
   r.model.className = 'aisel';
   f = aiField('aimodelf', 'Model', r.model);
+  r.modelField = f.field;
   r.modelErr = f.err;
   ctl.appendChild(f.field);
-
-  if (saq) {
-    r.capFixed = el('p', 'aifixedval');
-    f = aiField('aicapf', 'Daily cap', r.capFixed);
-  } else {
-    r.cap = aiTextInput();
-    f = aiField('aicapf', 'Daily cap ($)', r.cap);
-    r.capErr = f.err;
-    /* What this feature has spent against that cap today. The server has sent it since 0011 and
-       the panel never showed it, so a feature could refuse an answer at its own ceiling while
-       the only number on screen was the global one, with most of a dollar still free. That is
-       what "you hit your limit" looked like with 62 cents left. */
-    r.spent = el('p', 'aispent');
-    f.field.insertBefore(r.spent, f.err);
-  }
-  ctl.appendChild(f.field);
-
-  if (!saq) {
-    r.bonus = aiTextInput();
-    f = aiField('aibonusf', 'Extra today ($)', r.bonus);
-    r.bonusErr = f.err;
-    ctl.appendChild(f.field);
-  }
 
   if (!saq) {
     /* Whether an answer may go past the material (0015). It appears on the Ask row alone, because
        since 0036 that row is where the rule lives: one material contract, read by every answer in
-       a material, including a retry and a deep one. It showed on ten of the eleven rows and meant
-       what it said on one. On six it was dead, since the reranker, the link reader and the trap
-       note build their own requests and never read it, and three rows are unbuilt. On the two
-       research modes it was worse than dead: their own rules say to answer from the sources the
-       owner chose and not from the model's own knowledge, so turning it on would have sent a
-       permission and a prohibition in the same request. */
+       a material, including a retry and a deep one. On the two research modes it would be worse
+       than dead: their own rules say to answer from the sources the owner chose, so turning it on
+       would send a permission and a prohibition in the same request. */
     r.beyond = aiSwitch('Beyond the material');
     f = aiField('aibeyondf', 'Beyond the material', r.beyond);
     f.field.insertBefore(el('p', 'aimeta',
@@ -1708,7 +1916,10 @@ function aiFeatRow(id) {
     r.phoneField.hidden = true;
     ctl.appendChild(f.field);
   }
-  r.li.appendChild(ctl);
+  r.body.appendChild(ctl);
+  r.meta = el('p', 'aifeatmeta');
+  r.body.appendChild(r.meta);
+  r.li.appendChild(r.body);
 
   r.msg = el('p', 'err-inline aifeatmsg');
   r.msg.hidden = true;
@@ -1719,22 +1930,37 @@ function aiFeatRow(id) {
 }
 
 function aiRowControls(r) {
-  return [r.sw, r.seg.owner, r.seg.open, r.model, r.cap, r.beyond, r.phone, r.bonus].filter(Boolean);
+  return [r.sw, r.seg.owner, r.seg.open, r.model, r.beyond, r.phone].filter(Boolean);
 }
 
 function aiRowClear(r) {
-  [r.modeErr, r.modelErr, r.capErr, r.beyondErr, r.phoneErr, r.bonusErr, r.msg].forEach(function (n) {
+  [r.modeErr, r.modelErr, r.beyondErr, r.phoneErr, r.msg].forEach(function (n) {
     if (!n) return;
     n.hidden = true;
     n.textContent = '';
   });
 }
 
+/* Where a refusal from admin_ai_feature_set is printed for a write that came from this row. */
+function aiRowCtx(r) {
+  return { busy: aiRowControls(r), msg: r.msg, clear: function () { aiRowClear(r); },
+    errs: { mode: r.modeErr, model: r.modelErr, beyond: r.beyondErr, phone_button: r.phoneErr } };
+}
+
 function aiWireRow(r) {
   var set = r.saq
     ? function (patch) { return aiSet(patch, r); }
-    : function (patch) { return aiFeatureSet(r, patch); };
+    : function (patch) { return aiFeatureSet(r.id, patch, aiRowCtx(r)); };
 
+  r.open.addEventListener('click', function () {
+    var on = r.open.getAttribute('aria-expanded') !== 'true';
+    r.open.setAttribute('aria-expanded', String(on));
+    r.body.hidden = !on;
+  });
+  r.spent.addEventListener('click', function () {
+    var c = aiEl && aiEl.capRows[r.id];
+    aiGo('limits', null, c ? c.cap : aiEl.cap.daily_cents.input);
+  });
   r.seg.owner.addEventListener('click', function () {
     if (r.seg.owner.getAttribute('aria-pressed') !== 'true') set({ mode: 'owner' });
   });
@@ -1753,31 +1979,59 @@ function aiWireRow(r) {
   if (r.phone) {
     r.phone.addEventListener('click', function () { set({ phone_button: !aiSwitchOn(r.phone) }); });
   }
-  if (r.bonus) {
-    r.bonus.addEventListener('input', function () { r.bonus.setAttribute('data-editing', '1'); });
-    r.bonus.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') r.bonus.blur(); });
-    r.bonus.addEventListener('change', function () {
-      r.bonus.removeAttribute('data-editing');
-      aiRowClear(r);
-      var raw = r.bonus.value.trim().replace(/^\$/, '');
-      var n = raw === '' ? 0 : Number(raw);
-      if (!isFinite(n) || n < 0) { aiShowAt(r.bonusErr, 'Numbers only.'); return; }
-      aiBonusSet(r.id, Math.round(n * 100), r.bonusErr, r);
-    });
+}
+
+/* One line under Limits for one feature's two numbers: its daily cap and today's extra. */
+function aiCapRow(id) {
+  var c = { id: id };
+  c.li = el('li', 'aicaprow');
+  c.name = el('span', 'aicapname');
+  c.li.appendChild(c.name);
+  c.spent = el('span', 'aispent');
+  c.li.appendChild(c.spent);
+  c.cap = aiTextInput();
+  c.bonus = aiTextInput();
+  var cw = el('span', 'aicapcell'), bw = el('span', 'aicapcell');
+  cw.appendChild(c.cap);
+  bw.appendChild(c.bonus);
+  c.li.appendChild(cw);
+  c.li.appendChild(bw);
+  c.err = el('p', 'err-inline aicaperr');
+  c.err.hidden = true;
+  c.li.appendChild(c.err);
+  c.tick = el('span', 'aisaved aicaptick');
+  c.li.appendChild(c.tick);
+
+  function clear() { c.err.hidden = true; c.err.textContent = ''; }
+  function money(inp, blank) {
+    var raw = inp.value.trim().replace(/^\$/, '');
+    if (raw === '') return blank;
+    var n = Number(raw);
+    return isFinite(n) && n >= 0 ? Math.round(n * 100) : NaN;
   }
-  if (r.cap) {
-    r.cap.addEventListener('input', function () { r.cap.setAttribute('data-editing', '1'); });
-    r.cap.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') r.cap.blur(); });
-    r.cap.addEventListener('change', function () {
-      r.cap.removeAttribute('data-editing');
-      aiRowClear(r);
-      var raw = r.cap.value.trim().replace(/^\$/, '');
-      if (raw === '') { paintAi(); return; }
-      var n = Number(raw);
-      if (!isFinite(n)) { aiShowAt(r.capErr, 'Numbers only.'); return; }
-      set({ daily_cents: Math.round(n * 100) });
+  [c.cap, c.bonus].forEach(function (inp) {
+    inp.addEventListener('input', function () { inp.setAttribute('data-editing', '1'); });
+    inp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') inp.blur(); });
+  });
+  c.cap.addEventListener('change', function () {
+    c.cap.removeAttribute('data-editing');
+    clear();
+    var cents = money(c.cap, null);
+    if (cents === null) { paintAi(); return; }
+    if (isNaN(cents)) { aiShowAt(c.err, 'Numbers only.'); return; }
+    aiFeatureSet(id, { daily_cents: cents }, { busy: [c.cap], msg: c.err, clear: clear, errs: { daily_cents: c.err } })
+      .then(function (r) { if (r && r.ok) aiTick(c.tick); });
+  });
+  c.bonus.addEventListener('change', function () {
+    c.bonus.removeAttribute('data-editing');
+    clear();
+    var cents = money(c.bonus, 0);
+    if (isNaN(cents)) { aiShowAt(c.err, 'Numbers only.'); return; }
+    aiBonusSet(id, cents, c.err).then(function (r) {
+      if (r !== null && !(r && r.ok === false)) aiTick(c.tick);
     });
-  }
+  });
+  return c;
 }
 
 /* ---- painting ---- */
@@ -1818,20 +2072,29 @@ function aiPaintMode(r, mode) {
 function aiPaintSaqRow(r, s) {
   var info = aiFeatureInfo('saq');
   r.name.textContent = info.label;
+  r.open.setAttribute('aria-label', info.label + ', settings');
   /* Without 0011 the ledger has no feature column and every call in it is a grade. */
   var today = aiState.saq ? aiState.saq.today_cents : (aiState.usage ? aiState.usage.today_cents : 0);
-  r.meta.textContent = 'Today ' + spendDollars(today) + ' · tag ' + info.tag;
+  /* No cap of its own to measure against, so no bar: the figure alone, and the button goes to
+     the account's daily cap, which is the one that holds it. */
+  r.spentText.textContent = aiCapCents(today) + ' today';
+  r.spent.classList.add('nocap');
+  r.spent.setAttribute('aria-label', aiCapCents(today) + ' today. It spends against the account caps under Limits.');
+  r.about.textContent = 'Marks a written short answer against the rubric. It has no switch or cap of its ' +
+    'own: it runs whenever All AI features is on, against the account caps.';
+  r.about.hidden = false;
+  r.meta.textContent = 'tag ' + info.tag;
   r.fixed.textContent = s.enabled ? 'On with All AI' : 'Off with All AI';
   r.li.classList.toggle('off', !s.enabled);
   aiPaintMode(r, s.mode);
   aiPaintModelSelect(r.model, s.model);
-  r.capFixed.textContent = 'Global ' + dollars(s.daily_cents);
 }
 
 function aiPaintFeatRow(r, f, s) {
   var name = String(f.name || f.id);
   var info = aiFeatureInfo(f.id);
   r.name.textContent = name;
+  r.open.setAttribute('aria-label', name + ', settings');
   if (r.about) {
     r.about.textContent = info && info.about ? info.about : '';
     r.about.hidden = !(info && info.about);
@@ -1839,11 +2102,10 @@ function aiPaintFeatRow(r, f, s) {
   r.beta.hidden = !f.beta;
   r.sw.setAttribute('aria-checked', String(!!f.enabled));
   r.sw.setAttribute('aria-label', name);
+  /* The breaker's pause is the one reason a switched on feature does nothing, so the row says
+     so itself rather than leaving it to be found under Limits. */
+  r.paused.hidden = aiPausedNames(aiState.guards).indexOf(f.id) < 0;
   var bonus = Number(f.bonus_cents) || 0;
-  /* The spend used to live here, as "Today $0.3747 of $0.40" in a line that also carried the
-     call count and the tag. Four decimal places of a dollar is not a number anyone reads, and
-     sitting in the metadata it gave no warning at the point it starts to matter. It has moved
-     next to the cap it is measured against, in cents, and this line keeps the rest. */
   r.meta.textContent = aiCount(f.today_calls, 'call') + ' today' +
     (bonus ? ' · ' + dollars(bonus) + ' extra today' : '') +
     (Number(f.codes_today_cents) > 0 ? ' · codes ' + spendDollars(f.codes_today_cents) + ' from their own money' : '') +
@@ -1851,6 +2113,9 @@ function aiPaintFeatRow(r, f, s) {
   r.li.classList.toggle('off', !s.enabled || !f.enabled);
   aiPaintMode(r, f.mode);
   aiPaintModelSelect(r.model, f.model);
+  /* Pulling a link runs no model at all, so a model select on its row would be a control that
+     controls nothing. */
+  r.modelField.hidden = !!(info && info.nomodel);
   if (r.beyond) {
     /* The Ask row alone. Since 0036 every answer in a material reads that one switch, whichever
        row the call was billed to, and a research answer never goes past its sources at all. */
@@ -1861,31 +2126,46 @@ function aiPaintFeatRow(r, f, s) {
     r.phoneField.hidden = typeof f.phone_button !== 'boolean' || f.id !== 'ask';
     r.phone.setAttribute('aria-checked', String(!!f.phone_button));
   }
-  if (r.cap.getAttribute('data-editing') !== '1') {
-    r.cap.value = f.daily_cents == null ? '' : (Number(f.daily_cents) / 100).toFixed(2);
-  }
-  if (r.bonus && r.bonus.getAttribute('data-editing') !== '1') {
-    r.bonus.value = bonus ? (bonus / 100).toFixed(2) : '';
-  }
-  if (r.spent) aiPaintSpent(r.spent, f.today_cents, f.daily_cents, bonus);
+  aiPaintSpent(r, f.today_cents, f.daily_cents, bonus);
 }
 
 /* One feature's spend against its own ceiling, in cents, because that is the unit these caps are
-   set in and a fraction of a cent written in dollars is four zeroes and a guess. It says how it
-   is going, not just the number, since the point is to see the wall before hitting it. */
-function aiPaintSpent(node, todayCents, capCents, bonusCents) {
-  var spent = Number(todayCents);
-  var cap = Number(capCents) + (Number(bonusCents) || 0);
-  node.classList.remove('near', 'full');
-  if (!isFinite(spent) || !isFinite(cap) || cap <= 0) { node.textContent = ''; return; }
-  var left = cap - spent;
-  var share = spent / cap;
-  node.textContent = aiCapCents(spent) + ' of ' + aiCapCents(cap) + ' today'
-    + (share >= 1 ? ', full until tomorrow'
-      : share >= 0.85 ? ', ' + aiCapCents(left) + ' left'
-      : '');
-  if (share >= 1) node.classList.add('full');
-  else if (share >= 0.85) node.classList.add('near');
+   felt in and a fraction of a cent written in dollars is four zeroes and a guess. */
+function aiSpentText(todayCents, capCents, bonusCents) {
+  var spent = Number(todayCents) || 0;
+  var cap = (Number(capCents) || 0) + (Number(bonusCents) || 0);
+  var share = cap > 0 ? spent / cap : (spent > 0 ? 1 : 0);
+  return { share: share, cap: cap,
+    text: aiCapCents(spent) + ' of ' + aiCapCents(cap),
+    tone: share >= 1 ? 'full' : share >= 0.85 ? 'near' : '' };
+}
+
+function aiPaintSpent(r, todayCents, capCents, bonusCents) {
+  var t = aiSpentText(todayCents, capCents, bonusCents);
+  r.spentText.textContent = t.text;
+  r.spentFill.style.width = Math.max(0, Math.min(100, t.share * 100)).toFixed(1) + '%';
+  r.spent.classList.toggle('near', t.tone === 'near');
+  r.spent.classList.toggle('full', t.tone === 'full');
+  r.spent.setAttribute('aria-label', t.text + ' today' +
+    (t.tone === 'full' ? ', full until tomorrow' : '') + '. Change the cap under Limits.');
+}
+
+function aiPaintCapRow(c, f) {
+  var bonus = Number(f.bonus_cents) || 0;
+  c.name.textContent = String(f.name || f.id);
+  c.cap.setAttribute('aria-label', 'Daily cap for ' + c.name.textContent + ', dollars');
+  c.bonus.setAttribute('aria-label', 'Extra today for ' + c.name.textContent + ', dollars');
+  var t = aiSpentText(f.today_cents, f.daily_cents, bonus);
+  c.spent.textContent = t.text + (t.tone === 'full' ? ', full' : '');
+  c.spent.classList.toggle('near', t.tone === 'near');
+  c.spent.classList.toggle('full', t.tone === 'full');
+  c.li.classList.toggle('off', !f.enabled);
+  if (c.cap.getAttribute('data-editing') !== '1') {
+    c.cap.value = f.daily_cents == null ? '' : (Number(f.daily_cents) / 100).toFixed(2);
+  }
+  if (c.bonus.getAttribute('data-editing') !== '1') {
+    c.bonus.value = bonus ? (bonus / 100).toFixed(2) : '';
+  }
 }
 
 /* A cap figure in cents, to as few places as say something true. Deliberately not aiCents, which
@@ -1893,7 +2173,16 @@ function aiPaintSpent(node, todayCents, capCents, bonusCents) {
    scope would leave whichever is written last answering for both. */
 function aiCapCents(n) {
   var v = Number(n) || 0;
-  return (v >= 10 ? v.toFixed(0) : v >= 1 ? v.toFixed(1) : v.toFixed(2).replace(/0$/, '')) + 'c';
+  if (v <= 0) return '0c';
+  return (v >= 100 ? v.toFixed(0) : v >= 1 ? v.toFixed(1).replace(/\.0$/, '') : v.toFixed(2).replace(/0$/, '')) + 'c';
+}
+
+/* Which group a feature's row sits under. One the panel has never heard of goes under Other
+   rather than vanishing, since the server's list is the truth about what exists. */
+function aiGroupOf(id) {
+  var hit = 'other';
+  AI_FEATURE_GROUPS.forEach(function (g) { if (g.ids.indexOf(id) >= 0) hit = g.id; });
+  return hit;
 }
 
 function aiPaintFeatures() {
@@ -1902,12 +2191,28 @@ function aiPaintFeatures() {
     return f && typeof f.id === 'string' && f.id !== 'saq';
   }));
   var keep = Object.create(null);
-  list.forEach(function (f, i) {
+  var byGroup = Object.create(null);
+  list.forEach(function (f) {
     keep[f.id] = true;
     var r = aiEl.rows[f.id] || (aiEl.rows[f.id] = aiFeatRow(f.id));
-    /* Moving a node that holds focus blurs it, so a row is only moved when it is out of place. */
-    if (aiEl.featList.children[i] !== r.li) aiEl.featList.insertBefore(r.li, aiEl.featList.children[i] || null);
+    var gid = aiGroupOf(f.id);
+    (byGroup[gid] || (byGroup[gid] = [])).push({ f: f, r: r });
     if (r.saq) aiPaintSaqRow(r, s); else aiPaintFeatRow(r, f, s);
+  });
+  AI_FEATURE_GROUPS.forEach(function (g) {
+    var box = aiEl.groups[g.id], rows = byGroup[g.id] || [];
+    /* In the order the group names them, then anything else as the server sent it. */
+    rows.sort(function (a, b) {
+      var ia = g.ids.indexOf(a.f.id), ib = g.ids.indexOf(b.f.id);
+      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+    });
+    rows.forEach(function (x, i) {
+      /* Moving a node that holds focus blurs it, so a row is only moved when it is out of place. */
+      if (box.list.children[i] !== x.r.li) box.list.insertBefore(x.r.li, box.list.children[i] || null);
+    });
+    box.wrap.hidden = !rows.length;
+    var on = rows.filter(function (x) { return x.r.saq ? s.enabled : x.f.enabled; }).length;
+    box.count.textContent = rows.length ? on + ' of ' + rows.length + ' on' : '';
   });
   Object.keys(aiEl.rows).forEach(function (id) {
     if (keep[id]) return;
@@ -1915,6 +2220,26 @@ function aiPaintFeatures() {
     if (gone.li.parentNode) gone.li.parentNode.removeChild(gone.li);
     delete aiEl.rows[id];
   });
+
+  /* The same features again under Limits, one line each, for their caps. */
+  var capKeep = Object.create(null), n = 0;
+  AI_FEATURE_GROUPS.forEach(function (g) {
+    (byGroup[g.id] || []).forEach(function (x) {
+      if (x.r.saq) return;
+      capKeep[x.f.id] = true;
+      var c = aiEl.capRows[x.f.id] || (aiEl.capRows[x.f.id] = aiCapRow(x.f.id));
+      if (aiEl.capList.children[n] !== c.li) aiEl.capList.insertBefore(c.li, aiEl.capList.children[n] || null);
+      n++;
+      aiPaintCapRow(c, x.f);
+    });
+  });
+  Object.keys(aiEl.capRows).forEach(function (id) {
+    if (capKeep[id]) return;
+    var gone = aiEl.capRows[id];
+    if (gone.li.parentNode) gone.li.parentNode.removeChild(gone.li);
+    delete aiEl.capRows[id];
+  });
+
   aiEl.held.hidden = !!s.enabled;
   aiEl.featNote.textContent = aiState.featErr || '';
   aiEl.featNote.hidden = !aiState.featErr;
@@ -1939,34 +2264,11 @@ function aiBonusToday(row) {
   return row ? (Number(row.bonus_today_cents) || 0) : 0;
 }
 
-function aiPaintReadout() {
-  var u = aiState.usage, s = aiState.settings;
-  var bonus = aiBonusToday(s);
-  if (aiEl.bonus && aiEl.bonus.getAttribute('data-editing') !== '1') {
-    aiEl.bonus.value = bonus ? (bonus / 100).toFixed(2) : '';
-  }
-  aiEl.readout.innerHTML = '';
-  if (!u) {
-    aiEl.readout.textContent = aiState.usageErr ? 'Could not load the spending. Close and reopen the panel.' : 'Loading the spending.';
-    return;
-  }
-  /* Two lines since 0026: what counts against the caps above, and what codes spent from the
-     money loaded on them, which never counts against those caps and is never stopped by them. */
-  aiEl.readout.appendChild(el('span', 'aireadline',
-    'Your caps: today ' + spendDollars(u.today_cents) + ' of ' + dollars((s ? Number(s.daily_cents) || 0 : 0) + bonus) +
-    (bonus ? ' (' + dollars(bonus) + ' extra today)' : '') + ', ' +
-    aiCount(u.today_calls, 'call') + ' · month ' + spendDollars(u.month_cents) + ' of ' +
-    dollars(s && s.monthly_cents) + ', ' + aiCount(u.month_calls, 'call')));
-  if (u.codes_today_cents != null) {
-    aiEl.readout.appendChild(el('span', 'aireadline',
-      'Codes, from their own money: today ' + spendDollars(u.codes_today_cents) + ', ' +
-      aiCount(u.codes_today_calls, 'call') + ' · month ' + spendDollars(u.codes_month_cents) + ', ' +
-      aiCount(u.codes_month_calls, 'call') + '. Not counted in your caps.'));
-  }
-  /* The caps above are not the only ones. A feature at its own ceiling refuses an answer while
-     these numbers still look healthy, and reading only this line that looks like a bug in the
-     hub rather than a limit working. So the nearest feature ceiling is named right here, next
-     to the numbers it contradicts, and it links to the switch that raises it. */
+/* The strip at the top: the two meters, the codes line, and whatever needs the owner. This is
+   what used to be spread over Spend's readout, the closed line of three folds and the inside of
+   Guards. Each thing that needs attention comes with the button that deals with it, because a
+   warning that has to be carried to another screen to be acted on is half a warning. */
+function aiNearestCap() {
   var tight = null, worst = -1, tightCap = 0;
   (aiState.features || []).forEach(function (f) {
     if (!f || !f.enabled || f.id === 'saq') return;
@@ -1975,14 +2277,125 @@ function aiPaintReadout() {
     var share = (Number(f.today_cents) || 0) / cap;
     if (share > worst) { worst = share; tight = f; tightCap = cap; }
   });
-  if (tight && worst >= 0.5) {
-    var line = el('span', 'aireadline aireadtight' + (worst >= 1 ? ' full' : worst >= 0.85 ? ' near' : ''),
-      'Each feature also has its own daily cap inside these. The nearest is ' + tight.id + ', at '
-      + aiCapCents(tight.today_cents) + ' of ' + aiCapCents(tightCap)
-      + (worst >= 1 ? ', which is full: it will refuse until tomorrow whatever is left above.'
-        : ', with ' + aiCapCents(tightCap - Number(tight.today_cents)) + ' left. Raise it in Features.'));
-    aiEl.readout.appendChild(line);
+  return tight ? { f: tight, share: worst, cap: tightCap } : null;
+}
+
+function aiAttnItem(tone, text, actions) {
+  var li = el('li', 'aiattnitem' + (tone ? ' ' + tone : ''));
+  li.appendChild(el('span', 'aiattntext', text));
+  var row = el('span', 'aiattnacts');
+  (actions || []).forEach(function (a) {
+    var b = el('button', 'btn ghost sm', a.label);
+    b.type = 'button';
+    b.addEventListener('click', function () {
+      var p = a.run(b);
+      if (p && p.then) { b.disabled = true; p.then(function () { b.disabled = false; }, function () { b.disabled = false; }); }
+    });
+    row.appendChild(b);
+  });
+  if (row.firstChild) li.appendChild(row);
+  return li;
+}
+
+function aiPaintHead() {
+  if (!aiEl || !aiEl.attn) return;
+  var e = aiEl, u = aiState.usage, s = aiState.settings, g = aiState.guards;
+  var bonus = aiBonusToday(s);
+  var dayCap = (s ? Number(s.daily_cents) || 0 : 0) + bonus;
+  var monthCap = s ? Number(s.monthly_cents) || 0 : 0;
+  if (!u) {
+    var waiting = aiState.usageErr ? 'could not load' : 'loading';
+    aiMeterPaint(e.meterDay, 0, dayCap, waiting);
+    aiMeterPaint(e.meterMonth, 0, monthCap, waiting);
+    e.codesLine.hidden = true;
+  } else {
+    aiMeterPaint(e.meterDay, u.today_cents, dayCap,
+      shortDollars(u.today_cents) + ' of ' + dollars(dayCap) + (bonus ? ' (' + dollars(bonus) + ' extra)' : '') +
+      ' · ' + aiCount(u.today_calls, 'call'));
+    aiMeterPaint(e.meterMonth, u.month_cents, monthCap,
+      shortDollars(u.month_cents) + ' of ' + dollars(monthCap) + ' · ' + aiCount(u.month_calls, 'call'));
+    /* What codes spent comes off the money loaded on them, never counts against the caps above
+       and is never stopped by them (0026), so it is a line of its own and not part of a meter. */
+    var codes = Number(u.codes_month_cents) > 0 || Number(u.codes_today_cents) > 0;
+    e.codesLine.hidden = !codes;
+    if (codes) {
+      e.codesLine.textContent = 'Codes, from their own money: today ' + shortDollars(u.codes_today_cents) +
+        ', month ' + shortDollars(u.codes_month_cents) + '. Not counted above.';
+    }
   }
+
+  var items = [];
+  if (s && !s.enabled) {
+    items.push(aiAttnItem('warn', 'All AI features is off, so nothing can run.'));
+  }
+  if (u && s) {
+    var dayShare = dayCap > 0 ? Number(u.today_cents) / dayCap : 0;
+    if (dayShare >= 0.85) {
+      items.push(aiAttnItem(dayShare >= 1 ? 'bad' : 'warn',
+        dayShare >= 1 ? 'Today\'s cap is reached. Every feature refuses until tomorrow.'
+          : 'Today\'s cap is nearly reached: ' + aiCapCents(dayCap - Number(u.today_cents)) + ' left.',
+        [{ label: 'Add $0.50 today', run: function () { return aiBonusSet(null, bonus + 50, e.masterErr); } },
+         { label: 'Limits', run: function () { aiGo('limits', null, e.cap.daily_cents.input); } }]));
+    }
+    var monthShare = monthCap > 0 ? Number(u.month_cents) / monthCap : 0;
+    if (monthShare >= 0.85) {
+      items.push(aiAttnItem(monthShare >= 1 ? 'bad' : 'warn',
+        monthShare >= 1 ? 'This month\'s cap is reached. Every feature refuses until it is raised or the month turns.'
+          : 'This month\'s cap is nearly reached: ' + aiCapCents(monthCap - Number(u.month_cents)) + ' left.',
+        [{ label: 'Limits', run: function () { aiGo('limits', null, e.cap.monthly_cents.input); } }]));
+    }
+  }
+  /* A feature at its own ceiling refuses an answer while the meters above still look healthy,
+     and read alone that looks like a bug in the hub rather than a limit working. */
+  (aiState.features || []).forEach(function (f) {
+    if (!f || !f.enabled || f.id === 'saq') return;
+    var fb = Number(f.bonus_cents) || 0;
+    var t = aiSpentText(f.today_cents, f.daily_cents, fb);
+    if (t.cap <= 0 || t.share < 0.85) return;
+    var nm = String(f.name || f.id);
+    items.push(aiAttnItem(t.share >= 1 ? 'bad' : 'warn',
+      t.share >= 1 ? nm + ' is at its own daily cap (' + t.text + ') and refuses until tomorrow.'
+        : nm + ' is near its own daily cap: ' + t.text + '.',
+      [{ label: 'Add 25c today', run: function () { return aiBonusSet(f.id, fb + 25, e.masterErr); } },
+       { label: 'Its cap', run: function () { var c = e.capRows[f.id]; aiGo('limits', null, c ? c.cap : null); } }]));
+  });
+  var paused = aiPausedNames(g);
+  if (paused.length) {
+    var why = g && typeof g.note === 'string' ? g.note.trim() : '';
+    items.push(aiAttnItem('warn',
+      'The breaker has paused ' + paused.map(function (id) {
+        var info = aiFeatureInfo(id); return info ? info.label : id;
+      }).join(', ') + (why ? ': ' + why + '.' : '.'),
+      [{ label: 'Clear the pause', run: function () { return aiGuardSet('reset', null, null, e.masterErr, []); } },
+       { label: 'Breaker', run: function () { aiGo('limits', null, e.guardBreaker); } }]));
+  }
+  var fs = aiState.flagStats, ts = aiState.ticketStats;
+  var openFlags = fs ? Number(fs.open) || 0 : 0;
+  var openTickets = ts ? Number(ts.open) || 0 : 0;
+  if (openFlags) {
+    items.push(aiAttnItem('', aiCount(openFlags, 'flagged sentence') + ' to read.',
+      [{ label: 'Review', run: function () { aiGo('activity', e.flagGroup); } }]));
+  }
+  if (openTickets) {
+    items.push(aiAttnItem('', aiCount(openTickets, 'open report') + '.',
+      [{ label: 'Read', run: function () { aiGo('people', e.ticketGroup); } }]));
+  }
+  e.tabs.badge('activity', openFlags);
+  e.tabs.badge('people', openTickets);
+  var near = aiNearestCap();
+  e.tabs.badge('limits', (near && near.share >= 0.85 ? 1 : 0) + (paused.length ? 1 : 0));
+
+  e.attn.innerHTML = '';
+  if (!items.length) items.push(el('li', 'aiattnitem quiet', s && s.enabled ? 'Nothing needs you.' : ''));
+  items.forEach(function (li) { if (li.textContent) e.attn.appendChild(li); });
+}
+
+function aiPaintReadout() {
+  var bonus = aiBonusToday(aiState.settings);
+  if (aiEl.bonus && aiEl.bonus.getAttribute('data-editing') !== '1') {
+    aiEl.bonus.value = bonus ? (bonus / 100).toFixed(2) : '';
+  }
+  aiPaintHead();
 }
 
 function aiPaintCalls() {
@@ -2021,37 +2434,13 @@ function aiPaintCalls() {
   aiEl.calls.appendChild(t);
 }
 
-/* What each closed group says about itself. */
+/* What each closed fold says about itself. */
 function aiPaintSummaries() {
-  var s = aiState.settings, u = aiState.usage;
-  if (s) {
-    aiEl.spend.state.textContent = (s.enabled ? 'On' : 'Off') + ' · ' +
-      (u ? shortDollars(u.today_cents) + ' today of ' : 'daily cap ') + dollars(s.daily_cents) +
-      (u && Number(u.codes_today_cents) > 0 ? ' · codes ' + shortDollars(u.codes_today_cents) : '');
-    var feats = (aiState.features || []).filter(function (f) { return f && f.id !== 'saq'; });
-    var n = 1 + feats.length;
-    var on = 1 + feats.filter(function (f) { return f.enabled; }).length;
-    /* Whichever switched on feature is nearest its own ceiling, named. That one number is the
-       one that refuses an answer while the caps above still look healthy, so it belongs on the
-       closed line rather than three clicks in. */
-    var tight = null, worst = -1, tightCap = 0;
-    feats.forEach(function (f) {
-      if (!f.enabled) return;
-      var cap = (Number(f.daily_cents) || 0) + (Number(f.bonus_cents) || 0);
-      if (!isFinite(cap) || cap <= 0) return;
-      var share = (Number(f.today_cents) || 0) / cap;
-      if (share > worst) { worst = share; tight = f; tightCap = cap; }
-    });
-    /* Only once it is a warning, and short, because this line is one line: on a phone it is
-       clipped with an ellipsis, and the clipped end is the number worth reading. */
-    aiEl.feat.state.textContent = (tight && worst >= 0.85
-      ? tight.id + ' ' + aiCapCents(tight.today_cents) + '/' + aiCapCents(tightCap) + ' · ' : '')
-      + aiCount(n, 'feature') + ' · ' + (s.enabled ? on + ' on' : 'held off');
-  }
-  var ms = aiState.models;
-  aiEl.modelsGroup.state.textContent = ms.length
+  var u = aiState.usage;
+  var ms = aiState.models, s = aiState.settings;
+  aiEl.modelsGroup.state.textContent = (s && s.effort ? 'effort ' + s.effort + ' · ' : '') + (ms.length
     ? ms.length + ' listed · ' + ms.filter(function (m) { return m.enabled !== false; }).length + ' on'
-    : 'none listed';
+    : 'none listed');
   var calls = (u && Array.isArray(u.recent)) ? u.recent : [];
   aiEl.callsGroup.state.textContent = calls.length ? 'last ' + aiWhen(calls[0].created_at) : 'none yet';
 }
@@ -2130,32 +2519,28 @@ function aiBonusSet(feature, cents, errAt, row) {
 }
 
 /* Writes one feature through admin_ai_feature_set. The reply is the stored row, which is
-   merged over the one in hand so today's spend (not part of the reply) stays put. */
-function aiFeatureSet(row, patch) {
+   merged over the one in hand so today's spend (not part of the reply) stays put. ctx says
+   which controls to hold still and where a refusal is printed: a feature's row for its switch,
+   mode and model, its line under Limits for its cap. */
+function aiFeatureSet(id, patch, ctx) {
   if (!aiEl) return Promise.resolve(null);
-  var busy = aiRowControls(row);
-  var body = { id: row.id };
+  var busy = ctx.busy || [];
+  var body = { id: id };
   Object.keys(patch).forEach(function (k) { body[k] = patch[k]; });
-  aiRowClear(row);
+  if (ctx.clear) ctx.clear();
   aiDisable(busy, true);
   return StudyAuth.admin.ai.featureSet(body).then(function (r) {
     aiDisable(busy, false);
     if (r && r.ok && r.feature) { aiMergeFeature(r.feature); paintAi(); return r; }
     if (r && r.ok) return aiLoad().then(function () { return r; });
     var field = r && r.error === 'range' ? r.field : null;
-    var at = field === 'mode' ? row.modeErr
-      : field === 'model' ? row.modelErr
-      : field === 'daily_cents' ? row.capErr
-      : field === 'beyond' ? row.beyondErr
-      : field === 'phone_button' ? row.phoneErr
-      : null;
-    if (at) aiShowAt(at, aiRangeText(field));
-    else aiShowAt(row.msg, field ? aiRangeText(field) : aiRefusal(r));
+    var at = (field && ctx.errs && ctx.errs[field]) || ctx.msg;
+    aiShowAt(at, field ? aiRangeText(field) : aiRefusal(r));
     paintAi();
     return r;
   }, function (err) {
     aiDisable(busy, false);
-    aiShowAt(row.msg, aiErrText(err));
+    aiShowAt(ctx.msg, aiErrText(err));
     paintAi();
     return null;
   });
@@ -2167,7 +2552,10 @@ function aiMergeFeature(f) {
   var cur = null;
   list.forEach(function (x) { if (x && x.id === f.id) cur = x; });
   if (!cur) { list.push(f); return; }
-  ['name', 'enabled', 'mode', 'model', 'daily_cents', 'tag', 'beta', 'beyond', 'phone_button', 'bonus_cents', 'updated_at'].forEach(function (k) {
+  /* Not bonus_cents. The reply is the raw row, and the raw column still holds yesterday's extra
+     until it is next written; only the list call knows whether it counts today. Merging it made
+     any save on a row bring a lapsed extra back onto the screen and into that row's ceiling. */
+  ['name', 'enabled', 'mode', 'model', 'daily_cents', 'tag', 'beta', 'beyond', 'phone_button', 'updated_at'].forEach(function (k) {
     if (Object.prototype.hasOwnProperty.call(f, k)) cur[k] = f[k];
   });
 }
@@ -2263,6 +2651,7 @@ function aiPaintTickets() {
   aiEl.ticketGroup.state.textContent = st
     ? (Number(st.open) || 0) + ' open · ' + (Number(st.total) || 0) + ' all told'
     : 'none yet';
+  aiPaintHead();
 }
 
 function aiLoadTickets() {
@@ -2440,6 +2829,7 @@ function aiPaintFlags() {
   aiEl.flagGroup.state.textContent = aiState.flagErr ? 'unavailable'
     : st ? Number(st.open || 0) + ' open · ' + Number(st.total || 0) + ' all told'
     : 'none yet';
+  aiPaintHead();
 }
 
 function aiLoadFlags() {
@@ -2593,6 +2983,7 @@ function aiPaintGuards() {
     /* Nothing was read, so there is nothing to change: the controls stay out of reach rather
        than offering to write a value nobody has seen. */
     aiDisable([e.guardPlain, e.guardOn, e.guardCeiling, e.guardDeep, e.guardBreaker, e.guardHard, e.guardClear], true);
+    aiPaintHead();
     return;
   }
   aiDisable([e.guardPlain, e.guardOn, e.guardCeiling, e.guardDeep, e.guardBreaker, e.guardHard], false);
@@ -2653,9 +3044,11 @@ function aiPaintGuards() {
   }
   e.guardClear.disabled = !paused.length && !why;
 
-  e.guardGroup.state.textContent = (g.plain ? 'plain mode' : g.breaker_on ? 'breaker on' : 'breaker off') +
-    (ceil == null ? '' : ' · ceiling ' + ceil + '¢') +
+  e.guardGroup.state.textContent = (g.breaker_on ? 'On' : 'Off, so nothing is measured') +
     (paused.length ? ' · ' + paused.length + ' paused' : '');
+  /* What is paused shows on the feature rows and in the strip as well. */
+  if (aiState.settings) aiPaintFeatures();
+  aiPaintHead();
 }
 
 /* Writes one guard. The read keys and the write keys are not the same words: ceiling_cents is
@@ -2689,8 +3082,9 @@ function aiGuardNumChange(inp, key, errAt) {
   if (raw === '') { aiPaintGuards(); return; }
   var n = Number(raw);
   if (!isFinite(n) || n < 0) { aiShowAt(errAt, 'Numbers only, in cents.'); return; }
-  if (n > AI_GUARD_MAX_CENTS) {
-    aiShowAt(errAt, 'The server holds this to ' + AI_GUARD_MAX_CENTS + ' cents.');
+  var max = AI_GUARD_MAX[key] || AI_GUARD_MAX_CENTS;
+  if (n > max) {
+    aiShowAt(errAt, 'The server holds this to ' + max + ' cents.');
     return;
   }
   aiGuardSet(key, n, null, errAt, [inp]);
@@ -3601,34 +3995,22 @@ function wireAi() {
     aiSet({ effort: e.effort.value }, null, [e.effort]);
   });
 
+  /* Each cap saves when its field is left, like every other number in the panel. There was a
+     Save button here and nowhere else, so a cap typed and walked away from was silently lost. */
   AI_FIELDS.forEach(function (f) {
-    var inp = e.cap[f.key].input;
-    inp.addEventListener('input', function () {
-      inp.setAttribute('data-editing', '1');
-      e.saveMsg.textContent = '';
-    });
-  });
-
-  e.save.addEventListener('click', function () {
-    aiNote('');
-    aiClearFieldErrors();
-    e.saveMsg.textContent = '';
-    var patch = {}, bad = false;
-    AI_FIELDS.forEach(function (f) {
-      var raw = e.cap[f.key].input.value.trim();
-      if (raw === '') return;
+    var c = e.cap[f.key], inp = c.input;
+    inp.addEventListener('input', function () { inp.setAttribute('data-editing', '1'); });
+    inp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') inp.blur(); });
+    inp.addEventListener('change', function () {
+      inp.removeAttribute('data-editing');
+      aiClearFieldErrors();
+      var raw = inp.value.trim().replace(/^\$/, '');
+      if (raw === '') { paintAi(); return; }
       var n = Number(raw);
-      if (!isFinite(n)) {
-        aiShowAt(e.cap[f.key].err, 'Numbers only.');
-        bad = true;
-        return;
-      }
+      if (!isFinite(n) || n < 0) { aiShowAt(c.err, 'Numbers only.'); return; }
+      var patch = {};
       patch[f.key] = f.money ? Math.round(n * 100) : Math.round(n);
-    });
-    if (bad) return;
-    AI_FIELDS.forEach(function (f) { e.cap[f.key].input.removeAttribute('data-editing'); });
-    aiSet(patch, null, [e.save]).then(function (r) {
-      if (r && r.ok) e.saveMsg.textContent = 'Saved.';
+      aiSet(patch, null, [inp]).then(function (r) { if (r && r.ok) aiTick(c.tick); });
     });
   });
 

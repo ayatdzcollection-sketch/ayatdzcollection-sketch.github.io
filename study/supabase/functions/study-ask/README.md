@@ -84,7 +84,11 @@ the student, follows notes that state a preference, and ends an answer with a la
 `Remember: <one sentence>` only when the question itself asks to remember or note something.
 
 Passage numbers are the 1 based position in `chunks` as sent, so `Sources: [2]` in an answer
-means `chunks[1]`. A chunk with empty text is skipped without renumbering the others. Keep `map`
+means `chunks[1]`. A chunk with empty text is skipped without renumbering the others. Anything
+the function adds itself (textbook passages, shelf or link passages, and last of all any matching
+corrections) goes AFTER the page's chunks, in that order, and its labels come back in the `done`
+event's `textbook` list in the same order, so the page appends them and every number stays true.
+Nothing is ever put in front: a correction used to be, and it moved every source tag along by one. Keep `map`
 the same for every question in a material: it is the cached part of the prompt.
 
 ## Response
