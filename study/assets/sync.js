@@ -273,7 +273,8 @@ var mergeCardsFsrs  = makeFsrsMerge('cards');    // periodic table, both Fraser 
  * started, when it was last worked and which topics it has taught, all inside its fsrs value. */
 var mergeChemUnitFsrs = makeFsrsMerge('cards', {
   missed: makeNewestFirstLog(40), start: mergeEarliestDay, lastWorked: mergeLatestNumber,
-  taught: mergeMarks                 // topics whose rule card the feed has shown: a union
+  taught: mergeMarks,                // topics whose rule card the feed has shown: a union
+  lessons: mergeMarks                // Learn tab lessons finished (2026-09-21): a union, like taught
 }, 30);
 
 function mergeRegionsDone(aVal, bVal) {
