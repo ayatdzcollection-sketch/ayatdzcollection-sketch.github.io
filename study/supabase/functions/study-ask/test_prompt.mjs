@@ -5,7 +5,7 @@ import {
   FEATURE, MAX_TOKENS, RESERVE_IN, RESERVE_OUT, CHARS_PER_TOKEN, DEFAULT_MODEL, LIMITS, PRICES, THREAD_RE,
   PLAIN_MODELS, EFFORT_MODELS, LIST_RE, modelParams, systemPrompt, buildRequest, MATH_RULE, estimateInputTokens, validateAsk,
   SAQ_RULE, TEXTBOOK_RULE, REFS_RULE, REFS_SHORT, TOOLS_RULE, CHECKED_RULE, FORM_RULE, CHECK_RULE,
-  CORRECTION_RULE, SHELF_RULE, TEST_RULE, ONLY_MATERIAL, PROGRESS_RULE, NOTES_RULE, REMEMBER_RULE, NOTE_RULE
+  CORRECTION_RULE, SHELF_RULE, OTHERS_RULE, TEST_RULE, ONLY_MATERIAL, PROGRESS_RULE, NOTES_RULE, REMEMBER_RULE, NOTE_RULE
 } from './ask_prompt.mjs';
 import { PRICES as GRADER_PRICES } from '../saq-grade/grader_prompt.mjs';
 
@@ -252,7 +252,7 @@ assert.equal(v.turn, 2);
 const minimal = validateAsk({ material: good.material, install: good.install, question: 'x' });
 assert.deepEqual(minimal, {
   material: good.material, install: good.install, adminToken: null, question: 'x', quote: '', focus: '', map: '', chunks: [], history: [],
-  progress: '', notes: '', thread: null, turn: 0, textbook: false, practice: true, widgets: true, math: false, marks: false, effort: 'normal', chapter: null,
+  progress: '', notes: '', thread: null, turn: 0, textbook: false, others: false, practice: true, widgets: true, math: false, marks: false, effort: 'normal', chapter: null,
   facts: [], tools: [], kinds: '', check: false, rules: '', items: 0, checkwork: false, suggestNotes: true, fault: '',
   saq: false, hasFacts: false, mode: 'material', deep: false, withMaterial: true, roomy: false
 });
@@ -980,3 +980,33 @@ import {
   }
 }
 console.log('research modes, deep research and links ok');
+
+/* The student's other materials (migration 0041). The page only asks; OTHERS_RULE rides in the
+   message, never the cached block, and only when a passage from another material went in. */
+{
+  const base = { model: 'x', map: 'A map', question: 'what is a placebo', chunks: [{ label: 'L', text: 'T' }],
+    mode: 'material', withMaterial: true, effort: 'normal' };
+  const sys = (r) => r.system.map((b) => b.text).join('\n');
+  const msg = (r) => JSON.stringify(r.messages);
+  const without = buildRequest({ ...base }), withIt = buildRequest({ ...base, others: true });
+  assert.equal(sys(withIt), sys(without), 'OTHERS_RULE must never touch the cached prefix');
+  assert.ok(msg(withIt).includes('Other material') && !msg(without).includes('Other material'), 'OTHERS_RULE rides with the question that found one');
+  assert.ok(!DASH.test(OTHERS_RULE), 'dash in OTHERS_RULE');
+  const ok = { material: 'chem/unit-measurement', install: '0123456789abcdef0123456789abcdef', question: 'what is a placebo' };
+  assert.equal(validateAsk({ ...ok, others: true }).others, true);
+  assert.equal(validateAsk({ ...ok }).others, false);
+  assert.equal(validateAsk({ ...ok, others: 'yes' }), null, 'others must be a boolean');
+  const src = fs.readFileSync(new URL('./index.ts', import.meta.url), 'utf8');
+  assert.ok(/askedOthers && begun\.textbook === true && !research/.test(src), 'other materials sit behind the textbook grant and never in research');
+  assert.ok(/p_exclude: "mat:" \+ body\.material/.test(src), 'the asking material is left out of its own search');
+  const mig = fs.readFileSync(new URL('../../migrations/0041_ask_other_materials.sql', import.meta.url), 'utf8');
+  assert.ok(/grant execute on function public\.ai_passages_search_hub\(text, text, int\) to service_role;/.test(mig), '0041 is service role only');
+  assert.ok(!DASH.test(mig), 'dash in 0041');
+  /* 0042 replaced the fixed floor after a run against the live index; see its header. */
+  const m42 = fs.readFileSync(new URL('../../migrations/0042_ask_other_materials_floor.sql', import.meta.url), 'utf8');
+  assert.ok(/d\.df \* 10 <= v_n/.test(m42), '0042 drops words in more than a tenth of the hub');
+  assert.ok(/c\.share >= 0\.5 and c\.share >= 0\.8 \* best\.b/.test(m42) && /rn <= 2/.test(m42), '0042 keeps its relative floor and per material cap');
+  assert.ok(/grant execute on function public\.ai_passages_search_hub\(text, text, int\) to service_role;/.test(m42), '0042 is service role only');
+  assert.ok(!DASH.test(m42), 'dash in 0042');
+}
+console.log('other materials ok');

@@ -43,8 +43,16 @@ Rules that always apply:
   This is still not web search: nothing searches, nothing crawls, and nothing follows a link it
   found inside a page. The function fetches the addresses the owner typed and no others.
   Web search itself is still not allowed, and there is no connector to one.
+  From 2026-09-22 (the owner's decision) Ask may also draw on the student's other materials: each
+  material's own Ask passages, loaded under the corpus `mat:<class>/<id>` by
+  `study/src/tools/build_hub_index.mjs` (migration 0041), which is rerun after a material is built.
   Ask conversations are stored in `study_ai_chats` (migration 0012).
-- Do not open the retired "Adaptive Study System" project on the Desktop or anything in it.
+- The school connector (MCP server, Classroom and StudentVue sync, menu bar app) moved out of the
+  retired "Adaptive Study System" into `connector/` on 2026-09-22, and may be read and worked on
+  (the owner's decision). Gitignored, private, never committed or published, with its own local
+  history: it holds grades, school documents, `.env` and a live Google sign in. Read
+  `connector/CLAUDE.md` before working on it. What is left of the old project on the Desktop, if
+  anything, stays closed.
 - Content only from the named course documents, never general knowledge.
 - No em dashes or en dashes anywhere, including commit messages.
 - Commit only as `ayatdzcollection-sketch <283192794+ayatdzcollection-sketch@users.noreply.github.com>`.

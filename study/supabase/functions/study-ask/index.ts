@@ -132,6 +132,9 @@ type AskBody = {
   thread: string | null;
   turn: number;
   textbook: boolean;
+  /* Asked by the page, then set here to whether any passage from another material went in, which
+     is what decides whether OTHERS_RULE rides with the question (migration 0041). */
+  others: boolean;
   practice: boolean;
   widgets: boolean;
   math: boolean;
@@ -212,6 +215,9 @@ function shelfCorpus(material: string): string {
   return /^[a-z0-9-]{1,40}$/.test(cls) ? "shelf-" + cls : "";
 }
 const SHELF_PASSAGES = 3;
+/* The student's other materials (migration 0041): at most this many passages, at most two from any
+   one material (the search enforces that), each cut like a textbook passage. */
+const OTHER_PASSAGES = 3;
 /* The label a private passage travels under: the row's own heading for the review form
    ("Review form, question 22"), and the textbook's chapter and heading for the APUSH book. */
 function passageLabel(corpus: string, p: { chapter?: number; heading?: string }): string {
@@ -1230,6 +1236,34 @@ Deno.serve(async (req: Request): Promise<Response> => {
       }
     } catch {
       console.error("study-ask: textbook search failed");
+    }
+  }
+
+  /* The student's other materials (0041): what another material in the hub teaches, found by the
+     same passages that material sends about itself. Behind the same grant as the textbook and the
+     shelf, only when the page asked (a weak search here, or a question that names another
+     subject), and never in a research answer, which is made of the sources the owner chose. They
+     go after the textbook and before the shelf, and their labels travel back with the rest so the
+     page's numbering holds. */
+  const askedOthers = body.others === true;
+  body.others = false;
+  if (askedOthers && begun.textbook === true && !research && body.chunks.length < 14) {
+    try {
+      const found = (await rpc("ai_passages_search_hub", {
+        p_exclude: "mat:" + body.material,
+        p_query: (body.question + " " + body.quote.slice(0, 300)).slice(0, 1000),
+        p_limit: OTHER_PASSAGES,
+      })) as { ok?: boolean; passages?: Array<{ heading?: string; body?: string }> } | null;
+      for (const p of (found && found.ok && Array.isArray(found.passages)) ? found.passages : []) {
+        if (!p || typeof p.body !== "string" || !p.body) continue;
+        if (body.chunks.length >= 14) break;
+        const label = ("Other material, " + String(p.heading || "")).slice(0, 80);
+        body.chunks.push({ label, text: p.body.slice(0, TEXTBOOK_CHARS) });
+        body.textbookLabels.push(label);
+        body.others = true;
+      }
+    } catch {
+      console.error("study-ask: other materials search failed");
     }
   }
 

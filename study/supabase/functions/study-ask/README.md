@@ -51,6 +51,8 @@ else, or no header, is refused with 403), and a JSON body:
                                                test, so the answer is told what those questions are
   hasFacts:   true                             optional, this material's page can work a number out
                                                exactly, so the answer is told to go by CHECKED
+  others:     true                             optional, ask for passages from the student's other
+                                               materials (migration 0041); granted like the textbook
 }
 ```
 
@@ -117,6 +119,24 @@ data: {"type":"error","error":"refused"}
 Exactly one `done` or `error` event ends every stream, then the stream closes. Deltas may already
 have arrived before an `error`; drop the partial text. An answer cut off by the 700 token cap still
 ends with `done`. The answer's last line is `Sources: [n], [n]` when passages were used.
+
+## Other materials (migration 0041)
+
+`others: true` asks for up to three passages from the student's OTHER materials in the hub. The
+page asks when its own search came back guessing (the share of the question's words it found is
+under the reranker's 0.6 floor), when the question names another class or "my other materials",
+or when the student taps "Look in my other materials" after an answer said the material does not
+cover something; the student can set it to Off, When needed or Always in Ask settings.
+
+The passages are each material's own `docs()`, stored by `study/src/tools/build_hub_index.mjs`
+under the corpus `mat:<class>/<id>` with the heading `<short title>: <label>`. Rerun it after a
+material is built. `ai_passages_search_hub(p_exclude, p_query, p_limit)` weights each word of the
+question by how rare it is across the hub and returns only passages holding 60 per cent of that
+weight, two at most from one material, the asking material left out. They are granted on the same
+terms as the textbook (`begun.textbook`), never in a research answer, go after the textbook and
+before the shelf, travel as `Other material, <short title>: <label>`, and come back in the `done`
+event's `textbook` list like every other passage the function adds. `OTHERS_RULE` rides in the
+message only when one went in, so the cached prefix never changes. About 0.25 cents when used.
 
 ## Error codes
 

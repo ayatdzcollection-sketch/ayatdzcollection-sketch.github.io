@@ -14,3 +14,8 @@ study/supabase/functions/**/.env*
 study/supabase/.temp/
 supabase/.temp/
 study/supabase/supabase/
+
+# The school connector (MCP server, Classroom and StudentVue sync, menu bar app). Private and
+# local only: it holds the student's grades, school documents and live Google sign-in, and has
+# its own git history inside the folder. It must never be committed to this public site.
+connector/

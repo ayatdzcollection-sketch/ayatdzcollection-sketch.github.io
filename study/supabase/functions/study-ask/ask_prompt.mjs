@@ -339,6 +339,11 @@ export const CORRECTION_RULE = 'A passage labelled Correction was written by the
    notes, an openly licensed reference), loaded into the private passages table like the textbook. */
 export const SHELF_RULE = 'Passages labelled with a source name in brackets, such as "[Class notes] ...", come from documents the owner added for this class. Treat them as the material: they are trusted, they are quotable under the same fifteen word limit, and the Sources line names them the same way.';
 
+/* A passage from one of the student's other materials in the hub (migration 0041): exactly the text
+   that material would send about itself. Sent with the question and not cached, because whether
+   the search found one is a property of this question. */
+export const OTHERS_RULE = 'Passages labelled "Other material" come from the student\'s other study materials in this hub, each built from that class\'s own course documents. They are trusted like the material. Where this material covers a point, answer from it; use another material where this one does not cover the point or the question connects the two, and say which material it came from in the sentence that uses it ("your Fraser Ch 5 material says..."). Never present a point from another material as if this one taught it.';
+
 /* Research mode on the class source shelf. Sent with the question and not cached, because the
    student turns the mode on and off inside one conversation. */
 export const RESEARCH_RULE = 'This question is in research mode. The PASSAGES are documents chosen for this class, and they are what the answer is made of. Name the document a fact came from in the sentence that carries it, not only in the Sources line, and where the exact wording matters quote at most fifteen words of it in quotation marks. If the documents do not cover part of the question, say which part and leave it, rather than filling it in. Prefer a specific sentence from a document to a general statement you could have made without one.';
@@ -488,7 +493,7 @@ function clean(v) {
  * HIGHLIGHT, PASSAGES, QUESTION, each left out when empty except QUESTION. Passage numbers are the
  * 1 based index in the chunks array as sent, so the client can map "Sources: [n]" back to its
  * own list; a chunk with no text is skipped without renumbering the rest. */
-export function buildRequest({ noThink, roomy, model, map, question, quote, focus, chunks, history, progress, notes, practice, widgets, math, beyond, marks, effort, facts, tools, kinds, check, rules, items, checkwork, suggestNotes, fault, saq, hasFacts, hasTextbook, form, correction, shelf, mode, deep, withMaterial } = {}) {
+export function buildRequest({ noThink, roomy, model, map, question, quote, focus, chunks, history, progress, notes, practice, widgets, math, beyond, marks, effort, facts, tools, kinds, check, rules, items, checkwork, suggestNotes, fault, saq, hasFacts, hasTextbook, form, correction, shelf, others, mode, deep, withMaterial } = {}) {
   const mapText = clean(map);
   const level = EFFORTS[effort] ? effort : DEFAULT_EFFORT;
   const E = EFFORTS[level];
@@ -553,6 +558,7 @@ export function buildRequest({ noThink, roomy, model, map, question, quote, focu
      questions a little and the rest nothing. */
   if (correction === true) blocks.push(CORRECTION_RULE);
   if (shelf === true) blocks.push(SHELF_RULE);
+  if (others === true) blocks.push(OTHERS_RULE);
   const checked = (Array.isArray(facts) ? facts : []).map(clean).filter(Boolean);
   if (checked.length) blocks.push('CHECKED\n' + checked.map((l) => '- ' + l).join('\n'));
   if (check === true) blocks.push('The student tapped Check my progress.');
@@ -756,12 +762,15 @@ export function validateAsk(raw) {
      prepares an AP style history test, and whether its page can work a number out exactly. They
      pick which instructions the cached block carries, so they must not change between two questions
      in the same material, which is why they come from the adapter and never from the question. */
-  for (const k of ['textbook', 'practice', 'widgets', 'math', 'marks', 'checkwork', 'suggestNotes', 'saq', 'hasFacts']) if (raw[k] !== undefined && typeof raw[k] !== 'boolean') return null;
+  for (const k of ['textbook', 'others', 'practice', 'widgets', 'math', 'marks', 'checkwork', 'suggestNotes', 'saq', 'hasFacts']) if (raw[k] !== undefined && typeof raw[k] !== 'boolean') return null;
   /* How much room and care to give this answer: the student's setting, or auto for the server to
      decide from the question. Anything else is refused rather than quietly defaulted. */
   if (raw.effort !== undefined && (typeof raw.effort !== 'string' || (raw.effort !== 'auto' && EFFORT_NAMES.indexOf(raw.effort) < 0))) return null;
   const effort = raw.effort === undefined ? DEFAULT_EFFORT : raw.effort;
   if (raw.chapter !== undefined && !(Number.isInteger(raw.chapter) && raw.chapter >= 1 && raw.chapter <= L.chapter)) return null;
+  /* others asks for passages from the student's other materials (0041); like textbook it only
+     asks, and the function grants it on the same terms. */
+  const others = raw.others === true;
   const textbook = raw.textbook === true, practice = raw.practice !== false, widgets = raw.widgets !== false, math = raw.math === true;
   const chapter = raw.chapter === undefined ? null : raw.chapter;
 
@@ -799,7 +808,7 @@ export function validateAsk(raw) {
   const items = raw.items === undefined ? 0 : raw.items;
   const marks = raw.marks === true, checkwork = raw.checkwork === true, suggestNotes = raw.suggestNotes !== false;
   const saq = raw.saq === true, hasFacts = raw.hasFacts === true;
-  return { material, install, adminToken: adminToken || null, question, quote, focus, map, chunks, history, progress, notes, thread, turn, textbook, practice, widgets, math, marks, effort, chapter, facts, tools, kinds, check, rules, items, checkwork, suggestNotes, fault, saq, hasFacts, mode, deep, withMaterial, roomy: raw.roomy === true };
+  return { material, install, adminToken: adminToken || null, question, quote, focus, map, chunks, history, progress, notes, thread, turn, textbook, others, practice, widgets, math, marks, effort, chapter, facts, tools, kinds, check, rules, items, checkwork, suggestNotes, fault, saq, hasFacts, mode, deep, withMaterial, roomy: raw.roomy === true };
 }
 
 /* ---------------------------------------------------------------- trap notes
