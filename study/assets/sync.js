@@ -734,14 +734,17 @@ var BUILTIN_MERGES = {
   'fraserall:mcDraft': mergeQuizDraft,
   'fraser5:mcDraft': mergeQuizDraft,
   'acct1:mcDraft': mergeQuizDraft,
-  /* Algebra 2 (retired, still openable and still keeping its data) schedules nothing: its whole
-   * record is these five keys, and not one of them had a rule. */
+  /* Algebra 2 schedules nothing: its whole record is these keys (brought back for the unit test on
+   * 2026-09-22), and not one of them had a rule. */
   'alg2u1:skills': mergeSkillCounts,
   'alg2u1:history': makeEventMerge(40, 'at'),
   'alg2u1:mockHistory': makeEventMerge(40, 'at'),
   'alg2u1:attempt': makeSittingMerge('at'),
   'alg2u1:mock': makeSittingMerge('at'),
   'alg2u1:lastDrill': mergeMax,
+  /* Learn (2026-09-22): which lessons are finished, id -> when; a union keeps a lesson done on
+   * one device done on the other. */
+  'alg2u1:lessons': mergeMarks,
   /* 'alg2u1:draft' is deliberately left at newest write wins: it is { v } with nothing to date it
    * by and it is emptied on submit, so a union would resurrect answers that were just cleared. */
   'periodic:best': mergeMax,                   // sprint best: the higher score, from either device

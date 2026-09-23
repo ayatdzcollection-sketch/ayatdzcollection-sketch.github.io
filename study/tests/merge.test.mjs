@@ -865,7 +865,7 @@ const MATERIAL_KEYS = {
   'la10vocab1':   ['asknotes', 'askprefs', 'askthreads', 'fsrs', 'trapnotes', 'ui'],
   'frchateaux':   ['asknotes', 'askprefs', 'askthreads', 'fsrs', 'trapnotes', 'ui'],
   'psychu0':      ['asknotes', 'askprefs', 'askthreads', 'fsrs', 'trapnotes', 'ui'],
-  'alg2u1':       ['asknotes', 'askprefs', 'askthreads', 'attempt', 'draft', 'history', 'lastDrill', 'mock', 'mockHistory', 'skills', 'trapnotes', 'ui']
+  'alg2u1':       ['asknotes', 'askprefs', 'askthreads', 'attempt', 'draft', 'history', 'lastDrill', 'lessons', 'mock', 'mockHistory', 'skills', 'trapnotes', 'ui']
 };
 
 /* Newest write wins on purpose, with the reason. Anything else without a rule is a bug: two
@@ -1041,3 +1041,9 @@ test('asknotes: a later edit wins, however short, and a pin travels both ways', 
     assert.deepEqual(mergeAskThreads(null, 'junk'), []);
   });
 }
+
+test('alg2u1 lessons: a lesson finished on one device stays finished on the other', () => {
+  assert.equal(REG['alg2u1:lessons'], mergeMarks);
+  const m = REG['alg2u1:lessons']({ a: 1, b: 5 }, { b: 9, c: 2 });
+  assert.deepEqual(m, { a: 1, b: 9, c: 2 });
+});

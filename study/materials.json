@@ -99,12 +99,11 @@
         {
           "id": "u1-sequences",
           "ask": true,
-          "title": "Unit 1 Sequences: checkpoint prep",
-          "blurb": "For you tab with an endless feed of single questions on fresh numbers, picked by weakest skill and stopped when you miss the same one three times running, plus the guide by skill, a focused drill, the 14-problem practice set in the teacher's style, timed mock quizzes, and printable sheets with separate keys.",
+          "title": "Unit 1 Sequences: test prep",
+          "blurb": "Lessons 1 to 11 for the unit test: short Learn lessons that build each idea a step at a time with typed checks, a Tips tab of the errors that cost points on the checkpoints, an endless feed on fresh numbers, the guide by skill, a focused drill, the practice set in the teacher's style, timed mocks, and printable sheets.",
           "tags": ["sequences", "arithmetic", "geometric", "recursive", "practice-test", "mock-quiz", "drill", "checkpoint"],
           "added": "2026-09-02",
-          "sort": 10,
-          "retired": true
+          "sort": 10
         }
       ]
     },
