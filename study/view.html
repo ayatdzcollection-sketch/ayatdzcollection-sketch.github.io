@@ -59,7 +59,22 @@ p{margin:10px 0 0;color:var(--ink2);font-size:15.5px}
   var msg = document.getElementById('msg');
   var acts = document.getElementById('acts');
 
-  function fail(title, detail, showLogin) {
+  /* A material that never opens is invisible to the visit diary, because sync.js arrives with
+     the material. So the failure is written into the diary's queue here, and the next page that
+     loads sync.js (the hub, or this one on a retry) sends it. Same switch as the review log. */
+  function noteFailure(title, why) {
+    try {
+      if (localStorage.getItem('studyhub:hub:telemetry') === 'false') return;
+      var qk = 'studyhub:hub:visitQueue', q = JSON.parse(localStorage.getItem(qk) || '[]');
+      if (!Array.isArray(q) || q.length >= 300) return;
+      q.push({ p: 'v' + Math.random().toString(36).slice(2, 12), k: 'error', t: Date.now(), m: id || null,
+               d: { msg: 'view.html: ' + title + (why ? ' (' + String(why).slice(0, 60) + ')' : ''), file: 'view.html', line: null } });
+      localStorage.setItem(qk, JSON.stringify(q));
+    } catch (e) {}
+  }
+
+  function fail(title, detail, showLogin, why) {
+    noteFailure(title, why);
     h.textContent = title;
     msg.className = 'bad';
     msg.textContent = detail;
@@ -110,7 +125,7 @@ p{margin:10px 0 0;color:var(--ink2);font-size:15.5px}
       return fail('Could not decrypt',
         'The key did not fit this file. It was probably republished with a new key. Reload the hub and try again.');
     }
-    return fail('Could not open it', 'Something went wrong fetching this material. Check your connection and try again.');
+    return fail('Could not open it', 'Something went wrong fetching this material. Check your connection and try again.', false, k);
   });
 })();
 </script>

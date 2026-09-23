@@ -334,6 +334,62 @@ Each event carries the card key, grade, step tag (`mc`, `recall`, `cram`, `learn
 `0009_review_choice.sql`, `chosen`: the index of the wrong option picked on a miss. Until 0009
 is run the ingest ignores that field.
 
+### Visits, devices and errors (2026-09-22)
+
+The review log says what was answered; it cannot say whether someone who stopped after fourteen
+answers had finished, gave up or hit a broken page, and it cannot tell one browser wiped from
+two people. So `sync.js` also keeps a short diary per page load, under the same switch, sent to
+`telemetry_events` (migration `0046_telemetry_events.sql`) into `study_events` and
+`study_devices`, both write only from outside:
+
+| Event | When | Carries |
+|---|---|---|
+| `open` | page load | referrer host only (never a path), navigation type |
+| `hide`, `close` | backgrounded, unloaded | seconds actually in front of the student, answers and right answers this page, last step, the tab it was on |
+| `show` | back in front | nothing |
+| `screen` | the material saves a new tab name in `ui` | the tab name (`tab`, `view`, `mode` ... fields only) |
+| `error` | uncaught error or rejected promise, at most five per page; `view.html` load failures are queued too | message with URLs cut to a file name, file, line |
+| `nudge` | rough start suggestion closed | right of the first eight, where it pointed, what was picked |
+| `checkin` | after the quiz question closed | well, ok, rough, none or dismiss; the quiz date; an optional typed score |
+
+With every send goes a coarse description of the browser: operating system and browser with
+major versions, the app a link was opened inside (Snapchat, Instagram and so on), phone or
+tablet or computer, Home Screen or not, screen size and pixel ratio, time zone, language,
+whether storage is persisted, whether the browser holds the owner's session, and whether the
+page came from a local test server. No IP address is stored.
+
+**Telling devices apart.** The install id is now kept in localStorage, a first party cookie and
+IndexedDB, and read back from whichever survived. The description says how the id was found
+(`ls`, `cookie`, `idb`, or `new`), when it was minted, and whether the browser showed signs of an
+earlier visit at that moment (a service worker already running the page, files in the offline
+cache, hub data in localStorage): a new id with those signs is the same browser wiped, not a new
+person. A random `hub:person` id syncs with the save code, so paired devices share it; it is
+never derived from the code. The owner's report groups devices whose descriptions match exactly
+and never overlap in time (`same_as`) and devices that shared a person id (`person`). Safari
+still wipes every copy after seven days without a visit unless the site is on the Home Screen.
+
+**Rough start suggestion.** Eight answers into a material, on a device that had not studied it
+before, if fewer than half were right and none came from the teaching part, a small sheet points
+at the teaching tab once (`TEACH_ROUTES` in `sync.js`; a material can also call
+`StudyStore.visit.teach({ label, go })`).
+
+**After the quiz.** One to four days after the quiz date a core material keeps in `fsrs`, on a
+device with ten or more answers in it, a sheet asks once how the quiz went.
+
+**Answer times.** Since 2026-09-22 time spent with the page in the background is taken off an
+answer's time, a mode that sends no time gets the gap since the page's previous answer, and each
+review says which (`timing`: `page`, `net`, `gap`, or `hidden` for an answer made while the page
+could not be seen, which only a script does). Quizzes marked in one go stay untimed.
+
+**Local test pages send nothing.** A page served from localhost or a private address records as
+usual but does not send, unless `localStorage['studyhub:hub:telemetryLocal'] = '1'`. Before this,
+scripted verification runs reached the live log and one read as a student answering every card
+in a tenth of a second.
+
+`node study/tools/usage.mjs` (with `STUDY_ADMIN_CODE`) prints the owner's report: devices split
+into owner, test and everyone else, browsers, how visits end, suggestions, check ins, errors,
+and steps with missing or implausible times. `--devices` adds a line per device.
+
 ```sql
 -- how well calibrated is the scheduler?
 select width_bucket(retrievability, 0, 1, 10) as predicted_decile,

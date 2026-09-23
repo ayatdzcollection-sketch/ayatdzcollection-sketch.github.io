@@ -393,6 +393,14 @@ test('the whole auth namespace is excluded, whatever the key', () => {
   assert.equal(isExcluded('hub', 'installId'), true, 'the install id does not');
 });
 
+test('the visit diary stays on the device and the person id travels', () => {
+  const { isExcluded } = require('../assets/sync.js');
+  for (const k of ['installMeta', 'visitQueue', 'seen']) {
+    assert.equal(isExcluded('hub', k), true, `hub:${k} is per device`);
+  }
+  assert.equal(isExcluded('hub', 'person'), false, 'paired devices must end up sharing the person id');
+});
+
 test('building an envelope drops auth keys', () => {
   const e = buildEnvelopeFrom(
     { 'auth:keys': { 'chem/periodic-table': 'c2VjcmV0' }, 'auth:catalog': [], 'periodic:fsrs': { cards: {} } },

@@ -55,10 +55,13 @@ var SYNC_EXCLUDE = {
   'frchateaux': ['ui'],
   /* 'telemetryQueue' and 'installId' are per device by definition: copying a queue between
    * devices would send the same reviews twice, and the install id is what keeps one
-   * device's stream separable from another's without naming anybody. The 'telemetry'
+   * device's stream separable from another's without naming anybody. 'installMeta' (how the
+   * id was found), 'visitQueue' (the visit diary) and 'seen' (per material counts for the
+   * rough start suggestion and the quiz check in) are the same kind of thing. 'person' is
+   * NOT listed: it is meant to travel, so paired devices share it. The 'telemetry'
    * preference itself DOES sync, because a decision about your own data should hold
    * everywhere you study rather than needing to be made again on each device. */
-  'hub': ['recent', 'telemetryQueue', 'installId']
+  'hub': ['recent', 'telemetryQueue', 'installId', 'installMeta', 'visitQueue', 'seen', 'telemetryLocal']
 };
 
 /* Whole namespaces that never leave the device, whatever the key. 'auth' holds the session
@@ -1707,24 +1710,134 @@ function telemetrySetEnabled(on) {
 }
 
 /* A random per-device id, so one device's reviews can be told apart from another's without
- * anyone having to be identified. It is not tied to a person, a code or a session, and
- * clearing site data throws it away for good. */
-function installId() {
-  var id = rawGet(TEL_ID_KEY);
-  if (id) return id;
-  var bytes;
+ * anyone having to be identified. It is not tied to a person, a code or a session.
+ *
+ * It used to live in localStorage alone, so anything that cleared localStorage made the same
+ * browser look like a new visitor. Since 2026-09-22 it is also kept in a first party cookie
+ * and in IndexedDB, and read back from whichever survived. How it was found, when it was
+ * minted and whether the browser showed signs of an earlier visit at that moment go out with
+ * the device description (see deviceProfile), so a wiped browser reads as the same browser
+ * wiped, not as a new person. Clearing all site data still throws every copy away. */
+var TEL_ID_META_KEY = STORE_PREFIX + 'hub:installMeta';
+var ID_COOKIE = 'studyhub_id';
+var ID_RE = /^[0-9a-fx][0-9a-z]{15,63}$/;
+
+function randomHex(n) {
   try {
-    bytes = new Uint8Array(16);
+    var bytes = new Uint8Array(n);
     crypto.getRandomValues(bytes);
-    id = Array.prototype.map.call(bytes, function (b) {
+    return Array.prototype.map.call(bytes, function (b) {
       return ('0' + b.toString(16)).slice(-2);
     }).join('');
   } catch (e) {
-    id = 'x' + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+    var s = 'x';
+    while (s.length < n * 2) s += Math.random().toString(36).slice(2);
+    return s.slice(0, n * 2);
   }
+}
+
+/* What the browser looked like before this page wrote anything: taken while this script is
+ * parsed, which is before the material's own script runs. A service worker already in charge
+ * of the page, or hub data already in localStorage, means this browser has been here before. */
+var BOOT_PRIOR = (function () {
+  var out = [];
+  try { if (navigator.serviceWorker && navigator.serviceWorker.controller) out.push('sw'); } catch (e) {}
+  try {
+    var ks = rawKeys(), n = 0;
+    for (var i = 0; i < ks.length; i++) {
+      var k = ks[i] || '';
+      if (k.indexOf(STORE_PREFIX) === 0 && k !== TEL_ID_KEY && k !== TEL_ID_META_KEY &&
+          k.indexOf(STORE_PREFIX + 'auth:') !== 0 && k !== 'studyhub:probe') n++;
+    }
+    if (n) out.push('store');
+  } catch (e) {}
+  return out;
+})();
+/* The offline cache answers asynchronously, so it is checked now and read when needed. */
+try {
+  if (typeof caches !== 'undefined' && caches.keys) {
+    caches.keys().then(function (names) { if (names && names.length) BOOT_PRIOR.push('cache'); }, function () {});
+  }
+} catch (e) {}
+
+function readIdCookie() {
+  try {
+    var m = document.cookie.match(new RegExp('(?:^|; )' + ID_COOKIE + '=([^;]+)'));
+    var v = m ? decodeURIComponent(m[1]) : null;
+    return v && ID_RE.test(v) ? v : null;
+  } catch (e) { return null; }
+}
+function writeIdCookie(id) {
+  try {
+    document.cookie = ID_COOKIE + '=' + encodeURIComponent(id) +
+      '; max-age=' + (400 * 24 * 3600) + '; path=/; samesite=lax' +
+      (location.protocol === 'https:' ? '; secure' : '');
+  } catch (e) {}
+}
+function idbOpen() {
+  return new Promise(function (resolve, reject) {
+    try {
+      var req = indexedDB.open('studyhub-id', 1);
+      req.onupgradeneeded = function () { try { req.result.createObjectStore('kv'); } catch (e) {} };
+      req.onsuccess = function () { resolve(req.result); };
+      req.onerror = function () { reject(req.error); };
+    } catch (e) { reject(e); }
+  });
+}
+function idbGetId() {
+  return idbOpen().then(function (db) {
+    return new Promise(function (resolve) {
+      try {
+        var r = db.transaction('kv', 'readonly').objectStore('kv').get('install');
+        r.onsuccess = function () { var v = r.result; resolve(typeof v === 'string' && ID_RE.test(v) ? v : null); };
+        r.onerror = function () { resolve(null); };
+      } catch (e) { resolve(null); }
+    });
+  }).catch(function () { return null; });
+}
+function idbPutId(id) {
+  idbOpen().then(function (db) {
+    try { db.transaction('kv', 'readwrite').objectStore('kv').put(id, 'install'); } catch (e) {}
+  }).catch(function () {});
+}
+
+function readIdMeta() {
+  try { var m = JSON.parse(rawGet(TEL_ID_META_KEY) || 'null'); return m && typeof m === 'object' ? m : null; }
+  catch (e) { return null; }
+}
+
+var idMirrored = false;
+function adoptId(id, how) {
   rawSet(TEL_ID_KEY, id);
+  var meta = readIdMeta();
+  if (!meta || how === 'new') {
+    meta = { born: Date.now(), how: how, prior: how === 'new' ? BOOT_PRIOR.slice() : [] };
+  } else {
+    meta.how = how;   // recovered: keep when it was born, note how it came back
+  }
+  rawSet(TEL_ID_META_KEY, JSON.stringify(meta));
+}
+
+function installId() {
+  var id = rawGet(TEL_ID_KEY);
+  if (!id) {
+    var fromCookie = readIdCookie();
+    if (fromCookie) { id = fromCookie; adoptId(id, 'cookie'); }
+    else { id = randomHex(16); adoptId(id, 'new'); }
+  }
+  if (!idMirrored) { idMirrored = true; writeIdCookie(id); idbPutId(id); }
   return id;
 }
+
+/* IndexedDB can only be read asynchronously, so a browser whose localStorage and cookie are
+ * both gone gets one chance to find the id there before anything is sent. Every send waits
+ * for this; it settles in milliseconds and never throws. */
+var idReady = (function () {
+  try {
+    if (rawGet(TEL_ID_KEY) || readIdCookie() || typeof indexedDB === 'undefined') return Promise.resolve();
+    return idbGetId().then(function (id) { if (id && !rawGet(TEL_ID_KEY)) adoptId(id, 'idb'); });
+  } catch (e) { return Promise.resolve(); }
+})();
 
 function telemetryRead() {
   var raw = rawGet(TEL_QUEUE_KEY), q = [];
@@ -1756,10 +1869,63 @@ function telemetryPersist() {
   telemetryWriteT = setTimeout(telemetryPersistNow, 2000);
 }
 
+/* Answer time, corrected for the page being in the background (2026-09-22). The materials
+ * time an answer from when the question appeared, and none of them pauses that clock while
+ * the phone is locked or another app is in front, so a question left on screen overnight read
+ * as an eight hour answer (and then as none, past the 30 minute cap). This page knows when it
+ * was hidden, so that time is taken off here, for every material at once. Where a mode sends
+ * no time at all (a speed round, a match, a practice card), the gap since this page's previous
+ * answer stands in, minus the same hidden time. Quizzes and tests marked in one go are left
+ * alone: their answers arrive together and a gap would say nothing. 'mt' says which it was:
+ * 'page' as measured, 'net' measured less time away, 'gap' estimated, 'hidden' answered while
+ * the page could not be seen (so not by a person). */
+var hiddenSpans = [];
+var hiddenSince = 0;
+var lastAnswerT = 0;
+try { if (document.visibilityState === 'hidden') hiddenSince = Date.now(); } catch (e) {}
+try {
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'hidden') { if (!hiddenSince) hiddenSince = Date.now(); }
+    else if (hiddenSince) {
+      hiddenSpans.push([hiddenSince, Date.now()]);
+      if (hiddenSpans.length > 200) hiddenSpans.shift();
+      hiddenSince = 0;
+    }
+  });
+} catch (e) {}
+function hiddenWithin(a, b) {
+  var t = 0, spans = hiddenSpans.concat(hiddenSince ? [[hiddenSince, Date.now()]] : []);
+  for (var i = 0; i < spans.length; i++) {
+    var lo = Math.max(a, spans[i][0]), hi = Math.min(b, spans[i][1]);
+    if (hi > lo) t += hi - lo;
+  }
+  return t;
+}
+function adjustTiming(ev) {
+  try {
+    var t = +ev.t || Date.now();
+    /* Nobody taps a page they cannot see: an answer that arrives while the page is hidden came
+       from a script (a test run, an automation), and is labelled so rather than corrected. */
+    if (document.visibilityState === 'hidden') { ev.mt = 'hidden'; if (t > lastAnswerT) lastAnswerT = t; return; }
+    if (typeof ev.ms === 'number' && ev.ms > 0) {
+      var away = hiddenWithin(t - ev.ms, t);
+      if (away > 0) { ev.ms = Math.max(1, Math.round(ev.ms - away)); ev.mt = 'net'; }
+      else ev.mt = 'page';
+    } else if (lastAnswerT && !/^(quiz|test)/.test(String(ev.k || '')) &&
+               t - lastAnswerT >= 300 && t - lastAnswerT < 18e5) {
+      ev.ms = Math.max(1, Math.round(t - lastAnswerT - hiddenWithin(lastAnswerT, t)));
+      ev.mt = 'gap';
+    }
+    if (t > lastAnswerT) lastAnswerT = t;
+  } catch (e) {}
+}
+
 function telemetryRecord(ev) {
   if (!telemetryEnabled() || !ev || typeof ev !== 'object') return;
+  adjustTiming(ev);
   telemetryPending.push(ev);
   telemetryPersist();
+  visitOnReview(ev);
 }
 
 function telemetryPendingCount() {
@@ -1772,8 +1938,22 @@ function telemetryPendingCount() {
  * away at worst. A device that built up a backlog while the server had no ingest function
  * would then have drained 200 events per five minutes: a full queue of a thousand needed
  * the best part of an hour with the tab open. Now it keeps going while it is working. */
+/* A page served from a local test server records like any other but sends nothing, unless the
+ * tester opts in with localStorage 'studyhub:hub:telemetryLocal' = '1'. Until 2026-09-22 local
+ * test runs sent their scripted answers to the live log, where one showed up as a "student"
+ * answering every card in a tenth of a second. */
+function isLocalTest() {
+  try {
+    if (!(/^(localhost|127\.|0\.0\.0\.0|\[::1\]|192\.168\.|10\.)/.test(location.hostname) || location.protocol === 'file:')) return false;
+    return rawGet(STORE_PREFIX + 'hub:telemetryLocal') !== '1';
+  } catch (e) { return false; }
+}
+
 function telemetryFlush(useKeepalive) {
-  if (telemetryBusy || telemetryUnavailable || !telemetryEnabled()) return Promise.resolve(0);
+  /* Written to storage before anything can bail out: a page going away while a send is in
+     flight, or on a local test server, used to lose the answers of its last two seconds. */
+  telemetryPersistNow();
+  if (telemetryBusy || telemetryUnavailable || !telemetryEnabled() || isLocalTest()) return Promise.resolve(0);
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return Promise.resolve(0);
   if (isOffline()) return Promise.resolve(0);
   telemetryPersistNow();
@@ -1814,7 +1994,7 @@ function telemetryFlush(useKeepalive) {
     return n;
   }
 
-  return round(0, 0).then(finish).catch(function (err) {
+  return idReady.then(function () { return round(0, 0); }).then(finish).catch(function (err) {
     if (err && (err.status === 404 || err.status === 400)) telemetryUnavailable = true;
     finish(0);
     return 0;   // whatever is left is left alone, so nothing is lost by a failed send
@@ -1835,6 +2015,590 @@ function telemetryStart() {
     setInterval(function () { telemetryFlush(); }, TELEMETRY_FLUSH_MS);
   } catch (e) {}
   setTimeout(function () { telemetryFlush(); }, 8000);
+}
+
+/* -------------------------------------------------- visits */
+/* What happens around the answers (2026-09-22). The review log says what was answered; it
+ * cannot say whether a student who stopped after fourteen answers had finished, gave up, or
+ * hit a broken page, and it cannot tell one browser wiped from two people. So each page load
+ * also keeps a short diary, under the same switch as the review log:
+ *
+ *   open     the page loaded: where the link came from (a host name only, never a path) and
+ *            whether it was a reload
+ *   hide     the page went to the background: time actually in front of the student so far,
+ *            answers so far, the screen it was on. On a phone this is usually the last thing a
+ *            page ever says, so it carries everything a close would.
+ *   show     it came back
+ *   close    the page is going away, with the same figures
+ *   screen   the material switched tab (read from the tab name the material already saves)
+ *   error    a script error or a rejected promise: the message, the file name and line
+ *   nudge    the rough start suggestion was shown, and what was chosen
+ *   checkin  the after the quiz question, and the answer
+ *
+ * Plus, with every send, a coarse description of the browser (deviceProfile). Nothing here
+ * names anybody or carries anything typed, except the optional quiz score, which the student
+ * types into a box that says what it is for. */
+var VISIT_Q_KEY   = STORE_PREFIX + 'hub:visitQueue';
+var SEEN_KEY      = STORE_PREFIX + 'hub:seen';
+var PERSON_KEY_NS = 'hub', PERSON_KEY = 'person';
+var VISIT_MAX = 300;
+var PAGE_ID = randomHex(8);
+var PAGE_T0 = Date.now();
+var visitPending = [];
+var visitWriteT = 0;
+var visitBusy = false;
+var visitUnavailable = false;
+var visit = {
+  material: null,        // 'apush/fraser-ch5' once known
+  answers: 0, right: 0,
+  lastStep: null, screen: null,
+  shownAt: (typeof document !== 'undefined' && document.visibilityState === 'hidden') ? 0 : Date.now(),
+  active: 0,             // ms in front of the student before the current stretch
+  errors: 0, errKeys: {},
+  screens: 0,
+  closed: false
+};
+
+function visitActive() { return visit.active + (visit.shownAt ? Date.now() - visit.shownAt : 0); }
+
+/* Which material this page is. A material page knows it from its own path or from the review
+ * log's first answer; the hub is 'hub'. view.html hands the material its ?m= address. */
+function pageMaterial() {
+  if (visit.material) return visit.material;
+  var found = null;
+  try { var q = new URLSearchParams(location.search).get('m'); if (q && /^[\w-]+\/[\w-]+$/.test(q)) found = q; } catch (e) {}
+  if (!found) { try { var p = location.pathname.match(/\/m\/([\w-]+)\/([\w-]+)\.html$/); if (p) found = p[1] + '/' + p[2]; } catch (e) {} }
+  if (!found) {
+    try {
+      if (window.parent && window.parent !== window) {
+        var pq = new URLSearchParams(window.parent.location.search).get('m');
+        if (pq && /^[\w-]+\/[\w-]+$/.test(pq)) found = pq;
+      }
+    } catch (e) {}
+  }
+  if (!found && defaultNamespace === 'hub') found = 'hub';
+  if (!found) { try { if (/\/study\/(index\.html)?$/.test(location.pathname)) found = 'hub'; } catch (e) {} }
+  if (found) visit.material = found;
+  return found;
+}
+
+function visitRead() {
+  var raw = rawGet(VISIT_Q_KEY), q = [];
+  try { q = raw ? JSON.parse(raw) : []; } catch (e) { q = []; }
+  return Array.isArray(q) ? q : [];
+}
+function visitWrite(q) { try { rawSet(VISIT_Q_KEY, JSON.stringify(q)); } catch (e) {} }
+function visitKey(e) { return e.p + '|' + e.k + '|' + e.t; }
+function visitPersistNow() {
+  clearTimeout(visitWriteT);
+  if (!visitPending.length) return;
+  var q = visitRead().concat(visitPending);
+  visitPending = [];
+  if (q.length > VISIT_MAX) q.splice(0, q.length - VISIT_MAX);
+  visitWrite(q);
+}
+var lastVisitT = 0;
+function visitLog(kind, data, now) {
+  if (!telemetryEnabled()) return;
+  var t = now || Date.now();
+  if (t <= lastVisitT) t = lastVisitT + 1;   // two events of one kind never share a millisecond
+  lastVisitT = t;
+  var ev = { p: PAGE_ID, k: kind, t: t, m: pageMaterial() };
+  if (data) ev.d = data;
+  visitPending.push(ev);
+  clearTimeout(visitWriteT);
+  /* A page going away has no two seconds to spare. */
+  if (kind === 'hide' || kind === 'close' || kind === 'error') visitPersistNow();
+  else visitWriteT = setTimeout(visitPersistNow, 2000);
+}
+
+function visitFigures() {
+  var d = { act: Math.round(visitActive() / 1000), dur: Math.round((Date.now() - PAGE_T0) / 1000), n: visit.answers };
+  if (visit.answers) d.ok = visit.right;
+  if (visit.lastStep) d.step = visit.lastStep;
+  if (visit.screen) d.scr = visit.screen;
+  return d;
+}
+
+/* The browser, described coarsely enough that it names nobody: operating system and browser
+ * with their major versions, the app a link was opened inside, phone or tablet or computer,
+ * Home Screen or not, screen size, time zone and language. Two installs that match on all of
+ * it and never overlap in time are probably one browser that was wiped. */
+var PROFILE_CACHE = null;
+var persistedFlag = null;
+try {
+  if (navigator.storage && navigator.storage.persisted) {
+    navigator.storage.persisted().then(function (v) { persistedFlag = !!v; }, function () {});
+  }
+} catch (e) {}
+
+function parseAgent(ua, touch) {
+  var o = { os: 'other', osv: null, br: 'other', brv: null, app: null, kind: 'desktop' };
+  var m;
+  var ipad = /iPad/.test(ua) || (/Macintosh/.test(ua) && touch > 1);
+  if (/iPhone|iPod/.test(ua) || ipad) {
+    o.os = ipad ? 'ipados' : 'ios';
+    m = ua.match(/OS (\d+)[_.]/); if (m) o.osv = +m[1];
+    o.kind = ipad ? 'tablet' : 'phone';
+  } else if (/Android/.test(ua)) {
+    o.os = 'android';
+    m = ua.match(/Android (\d+)/); if (m) o.osv = +m[1];
+    o.kind = /Mobile/.test(ua) ? 'phone' : 'tablet';
+  } else if (/CrOS/.test(ua)) { o.os = 'chromeos'; }
+  else if (/Windows/.test(ua)) { o.os = 'windows'; }
+  else if (/Macintosh|Mac OS X/.test(ua)) { o.os = 'mac'; }
+  else if (/Linux/.test(ua)) { o.os = 'linux'; }
+
+  var apps = [
+    ['snapchat', /Snapchat/i], ['instagram', /Instagram/], ['tiktok', /musical_ly|BytedanceWebview|TikTok/i],
+    ['messenger', /FBAN\/Messenger|FB_IAB\/MESSENGER/], ['facebook', /FBAN|FBAV|FB_IAB/], ['discord', /Discord/],
+    ['google', /\bGSA\//], ['line', /\bLine\//], ['twitter', /Twitter/i], ['linkedin', /LinkedInApp/],
+    ['classroom', /Classroom/i], ['teams', /Teams\//]
+  ];
+  for (var i = 0; i < apps.length; i++) if (apps[i][1].test(ua)) { o.app = apps[i][0]; break; }
+
+  if ((m = ua.match(/EdgiOS\/(\d+)|Edg(?:A)?\/(\d+)/))) { o.br = 'edge'; o.brv = +(m[1] || m[2]); }
+  else if ((m = ua.match(/SamsungBrowser\/(\d+)/))) { o.br = 'samsung'; o.brv = +m[1]; }
+  else if ((m = ua.match(/OPR\/(\d+)|OPiOS\/(\d+)/))) { o.br = 'opera'; o.brv = +(m[1] || m[2]); }
+  else if ((m = ua.match(/CriOS\/(\d+)/))) { o.br = 'chrome'; o.brv = +m[1]; }
+  else if ((m = ua.match(/FxiOS\/(\d+)|Firefox\/(\d+)/))) { o.br = 'firefox'; o.brv = +(m[1] || m[2]); }
+  else if ((m = ua.match(/Chrome\/(\d+)/))) { o.br = 'chrome'; o.brv = +m[1]; }
+  else if ((m = ua.match(/Version\/(\d+)[\d.]* (?:Mobile\/\S+ )?Safari/))) { o.br = 'safari'; o.brv = +m[1]; }
+  else if ((o.os === 'ios' || o.os === 'ipados') && !/Safari\//.test(ua)) { o.br = 'webview'; }
+  if (o.app && o.br === 'other') o.br = 'webview';
+  return o;
+}
+
+function deviceProfile() {
+  var p = PROFILE_CACHE;
+  if (!p) {
+    p = {};
+    try {
+      var a = parseAgent(navigator.userAgent || '', navigator.maxTouchPoints || 0);
+      for (var k in a) if (a[k] !== null) p[k] = a[k];
+    } catch (e) {}
+    try {
+      var w = Math.round(screen.width), h = Math.round(screen.height);
+      p.scr = Math.min(w, h) + 'x' + Math.max(w, h);
+      p.dpr = Math.round((window.devicePixelRatio || 1) * 10) / 10;
+    } catch (e) {}
+    try { p.tz = Intl.DateTimeFormat().resolvedOptions().timeZone || null; } catch (e) {}
+    try { p.lang = (navigator.language || '').slice(0, 12) || null; } catch (e) {}
+    try { p.local = /^(localhost|127\.|0\.0\.0\.0|\[::1\]|192\.168\.|10\.)/.test(location.hostname) || location.protocol === 'file:'; } catch (e) {}
+    PROFILE_CACHE = p;
+  }
+  var out = {};
+  for (var k2 in p) if (p[k2] !== null && p[k2] !== undefined) out[k2] = p[k2];
+  try {
+    out.standalone = !!((window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone);
+  } catch (e) {}
+  if (persistedFlag !== null) out.persisted = persistedFlag;
+  /* The owner's own browsers say so, which is how the owner's devices label themselves. */
+  try { out.owner = !!rawGet(STORE_PREFIX + 'auth:token') && rawGet(STORE_PREFIX + 'auth:role') === 'admin'; } catch (e) {}
+  var im = readIdMeta();
+  if (im) {
+    out.id = im.how || 'ls';
+    if (im.born) out.born = im.born;
+    if (im.prior && im.prior.length) out.prior = im.prior.slice(0, 3);
+  }
+  var person = personId();
+  if (person) out.person = person;
+  return out;
+}
+
+/* A random id that syncs with the save code, so two paired devices end up sharing it. It is
+ * minted on the device, never derived from the code, and written through the store like any
+ * synced key, so a paired device picks it up on its next merge (the later write wins, and
+ * both then agree). */
+function personId() {
+  var raw = rawGet(storageKey(PERSON_KEY_NS, PERSON_KEY)), v = null;
+  try { v = raw ? JSON.parse(raw) : null; } catch (e) { v = null; }
+  if (typeof v === 'string' && /^[0-9a-z]{12,40}$/.test(v)) return v;
+  v = randomHex(10);
+  try {
+    rawSet(storageKey(PERSON_KEY_NS, PERSON_KEY), JSON.stringify(v));
+    var meta = readMeta();
+    meta.mtimes[PERSON_KEY_NS + ':' + PERSON_KEY] = Date.now();
+    writeMeta(meta);
+    if (meta.pairCode) { markDirty(); schedulePush(); }
+  } catch (e) {}
+  return v;
+}
+
+function visitFlush(useKeepalive) {
+  visitPersistNow();
+  if (visitBusy || visitUnavailable || !telemetryEnabled() || isLocalTest()) return Promise.resolve(0);
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY || isOffline()) return Promise.resolve(0);
+  visitBusy = true;
+  return idReady.then(function () {
+    var batch = visitRead().slice(0, 150);
+    return rpc('telemetry_events', { p_install: installId(), p_device: deviceProfile(), p_events: batch }, !!useKeepalive)
+      .then(function (r) {
+        if (r && r.ok === false && r.error === 'rejected') return 0;
+        var done = {};
+        for (var i = 0; i < batch.length; i++) done[visitKey(batch[i])] = true;
+        visitWrite(visitRead().filter(function (e) { return !done[visitKey(e)]; }));
+        return batch.length;
+      });
+  }).then(function (n) { visitBusy = false; return n; }, function (err) {
+    visitBusy = false;
+    if (err && (err.status === 404 || err.status === 400)) visitUnavailable = true;
+    return 0;
+  });
+}
+
+/* ---- per material counts on this device: what the nudge and the check in need ---- */
+function seenRead() {
+  var v = null;
+  try { v = JSON.parse(rawGet(SEEN_KEY) || 'null'); } catch (e) { v = null; }
+  return v && typeof v === 'object' ? v : {};
+}
+function seenWrite(v) { try { rawSet(SEEN_KEY, JSON.stringify(v)); } catch (e) {} }
+
+/* Steps that teach rather than test. A student who has touched any of these has found the
+ * teaching part, so the rough start suggestion has nothing to offer them. */
+var TEACH_STEP = /^(learn|lesson|teach|lad|worked|rule|concept|guide|read|skill)/;
+var NUDGE_AFTER = 8;
+
+function visitOnReview(ev) {
+  try {
+    if (!ev || !ev.m) return;
+    if (!visit.material || visit.material === 'hub') visit.material = String(ev.m);
+    var ok = typeof ev.ok === 'boolean' ? ev.ok : (+ev.g > 1);
+    visit.answers++;
+    if (ok) visit.right++;
+    visit.lastStep = String(ev.k || '').slice(0, 20) || null;
+
+    var all = seenRead(), s = all[ev.m];
+    if (!s) {
+      /* A device that studied this material before these counts existed is not starting out:
+         it gets no rough start suggestion. */
+      s = all[ev.m] = { n: 0, first: [], teach: studiedCards(defaultNamespace) > 1 };
+    }
+    s.n++;
+    if (TEACH_STEP.test(String(ev.k || ''))) s.teach = true;
+    else if (s.first.length < NUDGE_AFTER) s.first.push(ok ? 1 : 0);
+    seenWrite(all);
+
+    if (!s.teach && !s.nudged && !NO_NUDGE[ev.m] && s.first.length === NUDGE_AFTER) {
+      var right = s.first.reduce(function (a, b) { return a + b; }, 0);
+      if (right < NUDGE_AFTER / 2) { s.nudged = Date.now(); seenWrite(all); showNudge(String(ev.m), right); }
+    }
+  } catch (e) {}
+}
+
+/* ---- the screen a material is on ----
+ * Materials already save which tab is open in their 'ui' key. The short text fields that name
+ * a tab are read from it as the screen; nothing else in 'ui' is looked at. */
+var SCREEN_FIELDS = ['tab', 'view', 'mode', 'screen', 'page', 'route', 'pane'];
+function visitOnUi(value) {
+  try {
+    if (!value || typeof value !== 'object') return;
+    var name = null;
+    for (var i = 0; i < SCREEN_FIELDS.length; i++) {
+      var v = value[SCREEN_FIELDS[i]];
+      if (typeof v === 'string' && v && v.length <= 24) { name = v; break; }
+    }
+    if (!name || name === visit.screen) return;
+    visit.screen = name;
+    if (visit.screens++ < 60) visitLog('screen', { scr: name });
+  } catch (e) {}
+}
+
+/* ---- errors ---- */
+function cleanText(s, n) {
+  return String(s || '').replace(/https?:\/\/[^\s)'"]+/g, function (u) {
+    try { var x = new URL(u); return x.pathname.split('/').pop() || x.host; } catch (e) { return 'url'; }
+  }).replace(/\s+/g, ' ').slice(0, n || 200);
+}
+function visitError(msg, file, line, col) {
+  try {
+    var key = cleanText(msg, 120) + '|' + line;
+    if (visit.errKeys[key] || visit.errors >= 5) return;
+    visit.errKeys[key] = 1;
+    visit.errors++;
+    var f = '';
+    try { f = file ? (String(file).indexOf('blob:') === 0 ? 'blob' : new URL(file, location.href).pathname.split('/').pop()) : ''; } catch (e) { f = ''; }
+    visitLog('error', { msg: cleanText(msg), file: f.slice(0, 60), line: line || null, col: col || null, scr: visit.screen || null, n: visit.answers });
+  } catch (e) {}
+}
+
+/* ---- a small sheet for the nudge and the check in ----
+ * Drawn in a shadow root so no material's styles reach it, in the material's own colours
+ * (read from the page at the moment it is shown), and keyboard friendly: 1 to 4 pick, Escape
+ * closes. While it is open those keys belong to it and do not reach the material. */
+var sheetOpen = null;
+function pageColors() {
+  var bg = '#ffffff', fg = '#111111';
+  try {
+    var cs = getComputedStyle(document.body);
+    var b = cs.backgroundColor, c = cs.color;
+    if (b && !/rgba\(0, 0, 0, 0\)|transparent/.test(b)) bg = b;
+    else { var ch = getComputedStyle(document.documentElement).backgroundColor; if (ch && !/rgba\(0, 0, 0, 0\)|transparent/.test(ch)) bg = ch; }
+    if (c) fg = c;
+  } catch (e) {}
+  return { bg: bg, fg: fg };
+}
+function showSheet(opts) {
+  if (sheetOpen || typeof document === 'undefined' || !document.body) return null;
+  var host = document.createElement('div');
+  host.setAttribute('data-studyhub-sheet', '');
+  var root = host.attachShadow ? host.attachShadow({ mode: 'open' }) : host;
+  var col = pageColors();
+  var css =
+    ':host{all:initial}' +
+    '.wrap{position:fixed;left:0;right:0;bottom:0;display:flex;justify-content:center;padding:0 16px calc(16px + env(safe-area-inset-bottom));z-index:2147483000;pointer-events:none}' +
+    '.card{pointer-events:auto;box-sizing:border-box;width:100%;max-width:440px;background:' + col.bg + ';color:' + col.fg + ';' +
+      'border:1px solid color-mix(in srgb,' + col.fg + ' 18%,transparent);border-radius:16px;padding:16px 16px 14px;' +
+      'box-shadow:0 10px 30px rgba(0,0,0,.18);font:15px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}' +
+    '.t{font-weight:600;font-size:16px;margin:0 32px 4px 0}' +
+    '.b{margin:0 0 12px;opacity:.78}' +
+    '.row{display:flex;flex-wrap:wrap;gap:8px}' +
+    'button{font:inherit;color:inherit;background:transparent;border:1px solid color-mix(in srgb,' + col.fg + ' 26%,transparent);' +
+      'border-radius:12px;min-height:44px;padding:0 14px;cursor:pointer;display:inline-flex;align-items:center;gap:8px}' +
+    'button.main{background:' + col.fg + ';color:' + col.bg + ';border-color:' + col.fg + '}' +
+    'button kbd{font:600 12px/1 inherit;opacity:.6}' +
+    '.x{position:absolute;top:8px;right:8px;border:0;min-height:40px;width:40px;padding:0;justify-content:center;font-size:20px;opacity:.6}' +
+    '.in{display:flex;gap:8px;align-items:center;margin-top:10px}' +
+    'input{font:inherit;color:inherit;background:transparent;border:1px solid color-mix(in srgb,' + col.fg + ' 26%,transparent);' +
+      'border-radius:10px;min-height:40px;padding:0 10px;width:8.5em;box-sizing:border-box}' +
+    '.card{position:relative}' +
+    '@media (hover:hover){button:hover{border-color:' + col.fg + '}}' +
+    'button:focus-visible,input:focus-visible{outline:2px solid ' + col.fg + ';outline-offset:2px}';
+  var style = document.createElement('style');
+  style.textContent = css;
+  var wrap = document.createElement('div'); wrap.className = 'wrap';
+  var card = document.createElement('div'); card.className = 'card';
+  card.setAttribute('role', 'dialog'); card.setAttribute('aria-label', opts.title);
+  var t = document.createElement('p'); t.className = 't'; t.textContent = opts.title;
+  var b = document.createElement('p'); b.className = 'b'; b.textContent = opts.body;
+  var x = document.createElement('button'); x.className = 'x'; x.type = 'button';
+  x.setAttribute('aria-label', 'Close'); x.textContent = '×';
+  var row = document.createElement('div'); row.className = 'row';
+  card.appendChild(x); card.appendChild(t); card.appendChild(b); card.appendChild(row);
+  var input = null;
+  if (opts.input) {
+    var inRow = document.createElement('label'); inRow.className = 'in';
+    var lab = document.createElement('span'); lab.textContent = opts.input; lab.style.opacity = '.78';
+    input = document.createElement('input'); input.type = 'text'; input.maxLength = 12;
+    input.inputMode = 'text'; input.autocomplete = 'off'; input.placeholder = opts.placeholder || '';
+    inRow.appendChild(lab); inRow.appendChild(input);
+    card.appendChild(inRow);
+  }
+  wrap.appendChild(card);
+  root.appendChild(style); root.appendChild(wrap);
+
+  var done = false;
+  function close(choice) {
+    if (done) return;
+    done = true;
+    sheetOpen = null;
+    window.removeEventListener('keydown', onKey, true);
+    try { host.remove(); } catch (e) {}
+    try { opts.onClose(choice, input ? input.value.trim().slice(0, 12) : ''); } catch (e) {}
+  }
+  opts.choices.forEach(function (c, i) {
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    if (c.main) btn.className = 'main';
+    var k = document.createElement('kbd'); k.textContent = String(i + 1);
+    btn.appendChild(k); btn.appendChild(document.createTextNode(c.label));
+    btn.addEventListener('click', function () { close(c.id); });
+    row.appendChild(btn);
+  });
+  x.addEventListener('click', function () { close('dismiss'); });
+  function onKey(e) {
+    if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); close('dismiss'); return; }
+    var inInput = input && (root.activeElement === input);
+    if (inInput) { if (e.key === 'Enter') { e.preventDefault(); e.stopImmediatePropagation(); } return; }
+    var n = parseInt(e.key, 10);
+    if (n >= 1 && n <= opts.choices.length && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      e.preventDefault(); e.stopImmediatePropagation(); close(opts.choices[n - 1].id);
+    }
+  }
+  window.addEventListener('keydown', onKey, true);
+  document.body.appendChild(host);
+  sheetOpen = host;
+  return host;
+}
+
+/* ---- the rough start suggestion ----
+ * Eight answers in, if fewer than half were right and none of them came from the teaching
+ * part, point at the teaching part once. A material can say where that is with
+ * StudyStore.visit.teach({ label, go }); otherwise a tab whose text is one of TEACH_LABELS is
+ * looked for and clicked. With neither, the sheet only says it. */
+var teachRoute = null;
+/* Where each live material teaches, by its tab id (every core material has a global
+ * selectTab) and the label on that tab. Searching labels alone was wrong for materials whose
+ * "For you" is the practice feed: Crucible 1 and 2 and psychology teach in their Guide.
+ * Vocabulary and the periodic table are left out: vocabulary's feed already teaches each word
+ * before testing it, and the periodic table has no teaching part to point at. */
+var TEACH_ROUTES = {
+  'apush/period1-2-test': ['Learn', 'learn'],
+  'apush/ch5-saq': ['Lessons', 'lessons'],
+  'la10/crucible-3-4': ['For you', 'home'],
+  'la10/crucible-1-2': ['Guide', 'guide'],
+  'other/psych-unit0': ['Guide', 'guide'],
+  'fr/chateaux': ['Les mots', 'mots']
+};
+var NO_NUDGE = { 'la10/vocab-ch1': true, 'chem/periodic-table': true };
+var TEACH_LABELS = ['Learn', 'Lessons', 'Lesson', 'Guide', 'Teach', 'Study guide'];
+function clickLabel(label) {
+  try {
+    var els = document.querySelectorAll('button, a, [role="tab"]');
+    for (var i = 0; i < els.length; i++) {
+      var txt = (els[i].textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
+      if (txt === label.toLowerCase() && els[i].offsetParent !== null) { els[i].click(); return true; }
+    }
+  } catch (e) {}
+  return false;
+}
+function findTeachTab(material) {
+  var r = TEACH_ROUTES[material];
+  if (r) {
+    return { label: r[0], go: function () {
+      if (typeof window.selectTab === 'function') { try { window.selectTab(r[1]); return; } catch (e) {} }
+      clickLabel(r[0]);
+    } };
+  }
+  try {
+    var els = document.querySelectorAll('button, a, [role="tab"]');
+    for (var j = 0; j < TEACH_LABELS.length; j++) {
+      for (var i = 0; i < els.length; i++) {
+        var txt = (els[i].textContent || '').replace(/\s+/g, ' ').trim();
+        if (txt.toLowerCase() === TEACH_LABELS[j].toLowerCase() && els[i].offsetParent !== null) {
+          return { label: TEACH_LABELS[j], go: (function (el) { return function () { el.click(); }; })(els[i]) };
+        }
+      }
+    }
+  } catch (e) {}
+  return null;
+}
+function showNudge(material, right) {
+  var route = teachRoute || findTeachTab(material);
+  var place = route ? 'the ' + route.label + ' tab' : 'the teaching part of this material';
+  var choices = route
+    ? [{ id: 'go', label: 'Open ' + route.label, main: true }, { id: 'stay', label: 'Keep going' }]
+    : [{ id: 'stay', label: 'Got it', main: true }];
+  setTimeout(function () {
+    var shown = showSheet({
+      title: right + ' of your first ' + NUDGE_AFTER + ' right',
+      body: 'That is a hard way to start. ' + (route ? 'Try ' + place + ' first: it' : 'This material has a part that') +
+        ' goes through each idea before it tests you, and the practice will make more sense after it.',
+      choices: choices,
+      onClose: function (choice) {
+        visitLog('nudge', { right: right, of: NUDGE_AFTER, to: route ? route.label : null, pick: choice });
+        if (choice === 'go' && route) { try { route.go(); } catch (e) {} }
+      }
+    });
+    if (!shown) visitLog('nudge', { right: right, of: NUDGE_AFTER, pick: 'blocked' });
+  }, 1200);
+}
+
+/* ---- the after the quiz check in ----
+ * The only number that says whether the hub helps is how the quiz went. A material that keeps
+ * its quiz date (the core engine's 'fsrs' record) asks once, one to four days after it, on a
+ * device that answered at least ten questions in it. One tap, an optional score, or skip. */
+function quizDateOf(ns) {
+  try {
+    var v = JSON.parse(rawGet(storageKey(ns, 'fsrs')) || 'null');
+    var d = v && typeof v.quizDate === 'string' ? v.quizDate : null;
+    return d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null;
+  } catch (e) { return null; }
+}
+/* Cards this device has answered at least once in a core material, from its own record. */
+function studiedCards(ns) {
+  try {
+    var v = JSON.parse(rawGet(storageKey(ns, 'fsrs')) || 'null'), n = 0;
+    var cards = v && v.cards && typeof v.cards === 'object' ? v.cards : {};
+    for (var k in cards) if (cards[k] && cards[k].reps > 0) n++;
+    return n;
+  } catch (e) { return 0; }
+}
+function daysSince(isoDay) {
+  var p = isoDay.split('-');
+  var q = new Date(+p[0], +p[1] - 1, +p[2]).getTime();
+  var n = new Date(); n = new Date(n.getFullYear(), n.getMonth(), n.getDate()).getTime();
+  return Math.round((n - q) / 864e5);
+}
+function maybeCheckin() {
+  try {
+    var ns = defaultNamespace, m = pageMaterial();
+    if (!ns || !m || m === 'hub' || !telemetryEnabled()) return;
+    var qd = quizDateOf(ns);
+    if (!qd) return;
+    var ago = daysSince(qd);
+    if (ago < 1 || ago > 4) return;
+    var all = seenRead(), s = all[m] || {};
+    if (Math.max(s.n || 0, studiedCards(ns)) < 10 || (s.checkin && s.checkin[qd])) return;
+    var title = (document.title || '').split(/\s[|·:]\s/)[0].trim().slice(0, 60);
+    showSheet({
+      title: 'How did the quiz go?',
+      body: (title ? title + ', ' : '') + (ago === 1 ? 'yesterday' : ago + ' days ago') +
+        '. One tap helps work out what actually helps. It is anonymous.',
+      choices: [
+        { id: 'well', label: 'Well' }, { id: 'ok', label: 'Okay' },
+        { id: 'rough', label: 'Rough' }, { id: 'none', label: 'Did not take it' }
+      ],
+      input: 'Score, if you know it', placeholder: 'like 8/10',
+      onClose: function (choice, score) {
+        var again = seenRead(), s2 = again[m] || (again[m] = { n: 0, first: [], teach: false });
+        s2.checkin = s2.checkin || {};
+        s2.checkin[qd] = choice;
+        seenWrite(again);
+        var d = { r: choice, qd: qd, ago: ago, n: s2.n };
+        if (score && /^[\d\s./%a-zA-Z+-]{1,12}$/.test(score)) d.score = score;
+        visitLog('checkin', d);
+        visitFlush();
+      }
+    });
+  } catch (e) {}
+}
+
+function visitStart() {
+  if (!telemetryEnabled()) return;
+  var ref = null;
+  try {
+    if (document.referrer) {
+      var r = new URL(document.referrer);
+      ref = r.host === location.host ? 'self' : r.host.replace(/^www\./, '').slice(0, 60);
+    }
+  } catch (e) {}
+  var nav = null;
+  try { var ne = performance.getEntriesByType('navigation')[0]; nav = ne ? ne.type : null; } catch (e) {}
+  visitLog('open', { ref: ref, nav: nav }, PAGE_T0);
+
+  try {
+    window.addEventListener('error', function (e) {
+      if (e && e.message) visitError(e.message, e.filename, e.lineno, e.colno);
+    });
+    window.addEventListener('unhandledrejection', function (e) {
+      var r = e && e.reason;
+      visitError('unhandled rejection: ' + (r && r.message ? r.message : String(r)), r && r.fileName, r && r.lineNumber);
+    });
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'hidden') {
+        if (visit.shownAt) { visit.active += Date.now() - visit.shownAt; visit.shownAt = 0; }
+        visitLog('hide', visitFigures());
+        visitFlush(true);
+      } else {
+        visit.shownAt = Date.now();
+        visitLog('show', null);
+        visitFlush();
+      }
+    });
+    window.addEventListener('pagehide', function () {
+      if (visit.closed) return;
+      visit.closed = true;
+      if (visit.shownAt) { visit.active += Date.now() - visit.shownAt; visit.shownAt = 0; }
+      visitLog('close', visitFigures());
+      visitFlush(true);
+    });
+    window.addEventListener('online', function () { visitFlush(); });
+    setInterval(function () { visitFlush(); }, TELEMETRY_FLUSH_MS);
+  } catch (e) {}
+  setTimeout(function () { visitFlush(); }, 9000);
+  setTimeout(maybeCheckin, 2500);
 }
 
 /* -------------------------------------------------- other tabs */
@@ -1874,6 +2638,7 @@ var StudyStore = {
     adoptOrphanMtimes();
     registerServiceWorker();
     telemetryStart();
+    visitStart();
     watchOtherTabs();
 
     try {
@@ -1914,6 +2679,7 @@ var StudyStore = {
         marksMoved = partialOf(ns, before) !== partialOf(ns, value);
       }
       rawSet(storageKey(ns, key), JSON.stringify(value));
+      if (key === 'ui') visitOnUi(value);
       var meta = readMeta();
       meta.mtimes[ns + ':' + key] = Date.now();
       if (marksMoved) meta.mtimes[ns + ':' + SYNC_PARTIAL_KEY] = Date.now();
@@ -1997,6 +2763,21 @@ var StudyStore = {
        waiting for a connection, and the owner is the one who can fix it. */
     unavailable: function () { return telemetryUnavailable; },
     installId: installId
+  },
+
+  /* The visit diary (see "visits" above). teach() tells the rough start suggestion where the
+     material's teaching part is: { label: 'Learn', go: function () { ... } }. screen() names
+     the screen when a material does not keep a tab name in 'ui'. */
+  visit: {
+    teach: function (route) {
+      if (route && typeof route.go === 'function') teachRoute = { label: String(route.label || 'Learn').slice(0, 24), go: route.go };
+      return StudyStore;
+    },
+    screen: function (name) { visitOnUi({ screen: String(name || '').slice(0, 24) }); return StudyStore; },
+    flush: visitFlush,
+    pending: function () { return visitRead().length + visitPending.length; },
+    profile: deviceProfile,
+    checkin: maybeCheckin
   },
   exportCode: exportCode,
   previewImport: previewImport,
