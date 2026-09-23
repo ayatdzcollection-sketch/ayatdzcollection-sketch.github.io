@@ -527,7 +527,7 @@ test('acct1: the open tab and a Learn session stay on the device', () => {
 /* ---------- la10crucible and apushp12: the materials on the shared core ----------
    Same { cards, quizDate, exams } shape, same per card rule; ui (tab, pace, open stretch)
    is per device. */
-for (const ns of ['la10crucible', 'apushp12', 'psychu0', 'la10vocab1', 'frchateaux']) {
+for (const ns of ['la10crucible', 'apushp12', 'apush5saq', 'psychu0', 'la10vocab1', 'frchateaux']) {
   test(ns + ' fsrs merges per card', () => {
     const a = env({ [ns + ':fsrs']: [{ cards: { 't1abc': rec(2, 5, 2200, 3, 0) }, quizDate: '2026-09-15', exams: [] }, 100] });
     const b = env({ [ns + ':fsrs']: [{ cards: { 'q9xyz': rec(4, 4, 3300, 2, 0) }, quizDate: '2026-09-15', exams: [] }, 900] });
@@ -544,6 +544,21 @@ for (const ns of ['la10crucible', 'apushp12', 'psychu0', 'la10vocab1', 'frchatea
     assert.ok(built.ns[ns].fsrs, 'the schedule does sync');
   });
 }
+
+/* ---------- apush5saq: lessons done travel inside ui ----------
+   The chapter 5 lessons keep { f, done } per lesson in ui.les. The tab stays on the device;
+   a lesson finished on the phone must still read as finished on the laptop. */
+test('apush5saq: lessons and must knows travel, the tab does not', () => {
+  const built = buildEnvelopeFrom({
+    'apush5saq:ui': { tab: 'lessons', les: { 'l-saq': { f: 9, done: 1790000000000 } }, mk: { acts: { 0: 1 } } },
+    'apush5saq:fsrs': { cards: {}, quizDate: '2026-09-24', exams: [] }
+  }, { 'apush5saq:ui': 5, 'apush5saq:fsrs': 5 });
+  assert.equal(built.ns.apush5saq.ui, undefined, 'the tab is per device');
+  assert.deepEqual(SYNC_PARTIAL.apush5saq, ['mk', 'les'], 'must knows and lessons are the partial fields');
+  const m = mergeMarks({ les: { a: { f: 3 } } }, { les: { a: { f: 9, done: 1790000000000 }, b: { f: 2 } } }, 1, 2);
+  assert.equal(m.les.a.done, 1790000000000, 'done survives a merge with a copy that had not finished');
+  assert.ok(m.les.b, 'a lesson started only on the other device survives');
+});
 
 /* ---------- periodic:best ----------
    The sprint best is a maximum. It had no rule, so the device that saved last won even with
@@ -830,7 +845,7 @@ test('uimarks: progress kept in the device-only ui key is a union', () => {
 });
 
 test('every material that writes trap notes or ask notes has a rule for them', () => {
-  for (const ns of ['periodic', 'fraserall', 'fraser5', 'acct1', 'chemunit', 'la10crucible', 'apushp12', 'psychu0', 'la10vocab1', 'frchateaux']) {
+  for (const ns of ['periodic', 'fraserall', 'fraser5', 'acct1', 'chemunit', 'la10crucible', 'apushp12', 'apush5saq', 'psychu0', 'la10vocab1', 'frchateaux']) {
     assert.equal(typeof REG[ns + ':trapnotes'], 'function', ns + ' trapnotes');
     assert.equal(typeof REG[ns + ':asknotes'], 'function', ns + ' asknotes');
     assert.equal(typeof REG[ns + ':fsrs'], 'function', ns + ' fsrs');
@@ -859,6 +874,7 @@ const MATERIAL_KEYS = {
   'fraser5':      ['asknotes', 'askprefs', 'askthreads', 'fsrs', 'mcAttempt', 'mcDraft', 'trapnotes', 'ui'],
   'acct1':        ['asknotes', 'askprefs', 'askthreads', 'fsrs', 'mcAttempt', 'mcDraft', 'trapnotes', 'ui'],
   'apushp12':     ['asknotes', 'askprefs', 'askthreads', 'fsrs', 'trapnotes', 'ui'],
+  'apush5saq':    ['asknotes', 'askprefs', 'askthreads', 'fsrs', 'trapnotes', 'ui'],
   'chemunit':     ['asknotes', 'askprefs', 'askthreads', 'fsrs', 'trapnotes', 'ui'],
   'la10crucible': ['asknotes', 'askprefs', 'askthreads', 'fsrs', 'trapnotes', 'ui'],
   'la10crucible34': ['asknotes', 'askprefs', 'askthreads', 'fsrs', 'trapnotes', 'ui'],

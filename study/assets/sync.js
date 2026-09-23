@@ -49,6 +49,7 @@ var SYNC_EXCLUDE = {
   'la10crucible': ['ui'],
   'la10crucible34': ['ui'],
   'apushp12': ['ui'],
+  'apush5saq': ['ui'],
   'psychu0': ['ui'],
   'la10vocab1': ['ui'],
   'frchateaux': ['ui'],
@@ -80,6 +81,8 @@ var SYNC_PARTIAL = {
    * read is progress, and it lives in ui beside which stretches have been walked. */
   'la10crucible34': ['walked', 'read'],
   'apushp12': ['mk'],
+  /* the chapter 5 short answer material keeps its must knows and the lessons done ({ f, done }) */
+  'apush5saq': ['mk', 'les'],
   'la10vocab1': ['intro', 'ready'],
   'fraser5': ['mk', 'tfb']
 };
@@ -661,6 +664,11 @@ var BUILTIN_MERGES = {
   'la10crucible:fsrs': mergeCardsFsrs,         // The Crucible, acts 1 and 2: same record shape
   'la10crucible34:fsrs': mergeCardsFsrs,       // The Crucible, acts 3 and 4: the same shape again
   'apushp12:fsrs': mergeCardsFsrs,             // APUSH period 1 and 2 test: same record shape
+  'apush5saq:fsrs': mergeCardsFsrs,            // APUSH chapter 5 short answer quiz: same record shape
+  'apush5saq:asknotes': mergeAskNotes,
+  'apush5saq:trapnotes': mergeTrapNotes,
+  'apush5saq:uimarks': mergeMarks,             // must knows and lessons, kept inside ui
+  'apush5saq:askprefs': mergeSettings,
   'apushp12:asknotes': mergeAskNotes,          // notes kept beside Ask: union, deletes stick
   'fraser12:asknotes': mergeAskNotes,
   'fraser34:asknotes': mergeAskNotes,

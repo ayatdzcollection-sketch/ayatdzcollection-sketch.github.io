@@ -56,6 +56,25 @@
           "sort": 40
         },
         {
+          "id": "ch5-saq",
+          "ask": true,
+          "ai": true,
+          "title": "Chapter 5: short answer quiz prep",
+          "blurb": "For the Chapter 5 SA quiz on Thursday 24 September, built to the teacher’s SAQ deck: every question on a source, three parts, TEA on each, labelled, whole sentences, never quoting the source. Ten lessons, the short answer itself first and then a section each: drag a year slider from 1763 to 1775 and watch what Britain did and what the colonists did back pile up on a tension gauge, see one event through three to five pairs of eyes, put causes in the order they ran, call what happens next before the book says, and finish every lesson by building one short answer part a move at a time, each wrong move named for the way it loses the point. A guide in nine sections written for the short answer: the claim, five must knows, the evidence you can cite by name with what each piece proves, who saw it how, and one part answered in its three moves. Twenty one prompts in the exam’s three forms, secondary source, primary source and non-text (Table 5-1, the 1763 map redrawn, the costs of 1775, troop strength), plus two with no source, each with models and what earns the point, and a grader the owner can switch on. A timed mock quiz of three at thirteen minutes each, every event and person in the chapter, Tips, and a printable quiz with the models on their own page.",
+          "tags": [
+            "saq",
+            "short-answer",
+            "tea",
+            "chapter-5",
+            "fraser",
+            "lessons",
+            "sourcing",
+            "quiz"
+          ],
+          "added": "2026-09-22",
+          "sort": 4
+        },
+        {
           "id": "fraser-ch5",
           "ask": true,
           "title": "Fraser Ch 5: reading quiz prep",

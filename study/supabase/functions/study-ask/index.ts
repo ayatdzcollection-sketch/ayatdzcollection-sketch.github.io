@@ -196,6 +196,8 @@ const CORPUS: Record<string, string> = {
   /* Fraser chapter 5 from the student's photos (load_ch5_sources.mjs), one chapter, cited by
      part and book page. */
   "apush/fraser-ch5": "fraser-5",
+  /* The chapter 5 short answer quiz material (2026-09-22) reads the same chapter. */
+  "apush/ch5-saq": "fraser-5",
   /* The chemistry teacher's review form (migration 0029): one row per question with the key. */
   "chem/unit-measurement": "chem-unit-form",
 };
