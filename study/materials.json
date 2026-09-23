@@ -122,6 +122,7 @@
           "blurb": "Lessons 1 to 11 for the unit test: short Learn lessons that build each idea a step at a time with typed checks, a Tips tab of the errors that cost points on the checkpoints, an endless feed on fresh numbers, the guide by skill, a focused drill, the practice set in the teacher's style, timed mocks, and printable sheets.",
           "tags": ["sequences", "arithmetic", "geometric", "recursive", "practice-test", "mock-quiz", "drill", "checkpoint"],
           "added": "2026-09-02",
+          "retired": false,
           "sort": 10
         }
       ]
