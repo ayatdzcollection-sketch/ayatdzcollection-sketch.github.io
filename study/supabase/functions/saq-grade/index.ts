@@ -245,7 +245,10 @@ function readPart(p: unknown): Part | null {
     accuracy: line(q.accuracy, 500),
     fix: line(q.fix),
     rewrite: line(q.rewrite, 800),
-    teacher: line(q.teacher, 400),
+    /* The teacher line is for a rule that is broken. Asked to leave it empty otherwise, the model
+       sometimes wrote "All of the teacher's rules are met" instead, which the page shows under
+       YOUR TEACHER ALSO WANTS (seen 2026-09-22). */
+    teacher: q.teacher_earned === true && /\b(all|every)\b[^.]*\b(met|followed|satisf)/i.test(line(q.teacher, 400)) ? "" : line(q.teacher, 400),
   };
 }
 
@@ -270,7 +273,7 @@ function readVerdicts(v: unknown): Verdict[] | null {
    The parts are authoritative. Fewer than three is no grade; more than three (it happened once)
    keeps the first three, which are a, b and c. Where the verdicts disagree with the parts, the
    parts win. */
-function readGrade(msg: { parsed_output?: unknown; content?: unknown }): Part[] | null {
+function gradeObject(msg: { parsed_output?: unknown; content?: unknown }): unknown {
   let obj: unknown = msg.parsed_output ?? null;
   if (obj === null || obj === undefined) {
     const blocks = Array.isArray(msg.content) ? msg.content : [];
@@ -282,7 +285,24 @@ function readGrade(msg: { parsed_output?: unknown; content?: unknown }): Part[] 
       return null;
     }
   }
-  if (!obj || typeof obj !== "object") return null;
+  return obj && typeof obj === "object" ? obj : null;
+}
+
+/* What the three parts show together (2026-09-22): the habit that cost the most and the one
+   thing to do next time. Optional to the client: an older page simply never shows it, and a
+   grade without it is still a grade. */
+type Coach = { pattern: string; next: string };
+function readCoach(msg: { parsed_output?: unknown; content?: unknown }): Coach | null {
+  const obj = gradeObject(msg) as { coach?: unknown } | null;
+  const c = obj && obj.coach && typeof obj.coach === "object" ? obj.coach as Record<string, unknown> : null;
+  if (!c) return null;
+  const coach = { pattern: line(c.pattern, 300), next: line(c.next, 240) };
+  return coach.pattern || coach.next ? coach : null;
+}
+
+function readGrade(msg: { parsed_output?: unknown; content?: unknown }): Part[] | null {
+  const obj = gradeObject(msg);
+  if (!obj) return null;
   const parts = (obj as { parts?: unknown }).parts;
   if (!Array.isArray(parts) || parts.length < 3) return null;
   if (parts.length > 3) console.error("saq-grade: the grade had more than three parts, the first three were used");
@@ -555,7 +575,8 @@ function streamGrade(body: Body, callId: unknown, model: string, effort: string,
 
       /* ok only when done actually went out; a client gone by now is recorded as error, with
          the tokens it cost all the same. */
-      const done = { type: "done", parts, model, cost_cents: costCents(model, effectiveIn(usage), num(usage.output_tokens)) };
+      const coach = readCoach(msg as unknown as { parsed_output?: unknown; content?: unknown });
+      const done = { type: "done", parts, ...(coach ? { coach } : {}), model, cost_cents: costCents(model, effectiveIn(usage), num(usage.output_tokens)) };
       status = send(done) ? "ok" : "error";
     } catch (e) {
       /* Most specific first. The abort, connection and rate limit classes are all subclasses of
@@ -746,7 +767,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }
 
     endStatus = "ok";
-    return reply({ ok: true, parts, model, cost_cents: costCents(model, inTok, outTok) }, 200, origin);
+    const coach = readCoach(msg as { parsed_output?: unknown; content?: unknown });
+    return reply({ ok: true, parts, ...(coach ? { coach } : {}), model, cost_cents: costCents(model, inTok, outTok) }, 200, origin);
   } catch (e) {
     console.error("saq-grade: unexpected failure", e instanceof Error ? e.message : "unknown");
     return reply({ ok: false, error: "grader_error" }, 200, origin);

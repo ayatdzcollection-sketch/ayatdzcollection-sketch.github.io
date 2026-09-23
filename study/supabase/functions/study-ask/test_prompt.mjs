@@ -77,12 +77,18 @@ for (const beyond of [false, true]) assert.ok(systemPrompt({ beyond }).includes(
    sitting pays 1.25 times for every character of this. Raise a budget deliberately, with a reason,
    never to make the test pass. */
 const ALWAYS = systemPrompt({ beyond: true, marks: true });
-assert.ok(ALWAYS.length < 11200, 'the always on instructions grew to ' + ALWAYS.length + ' characters');
+/* Raised from 11200 on 2026-09-22 for VOICE_RULE, which the owner asked for (more personality):
+   about 430 characters net after STYLE_RULE gave up the words the voice rule now carries. The
+   last 70 are "say a limit once": a live replay opened four answers running with the same
+   disclaimer about web search. */
+assert.ok(ALWAYS.length < 11440, 'the always on instructions grew to ' + ALWAYS.length + ' characters');
 /* The APUSH period test, the heaviest material: history, tools, a textbook and inline marks. */
 const HEAVIEST = systemPrompt({ beyond: true, marks: true, saq: true, tools: true, textbook: true, refs: true });
-assert.ok(HEAVIEST.length < 13600, 'the heaviest material grew to ' + HEAVIEST.length + ' characters');
+/* 13600 until VOICE_RULE (2026-09-22), the same 430 characters as above. */
+assert.ok(HEAVIEST.length < 13700, 'the heaviest material grew to ' + HEAVIEST.length + ' characters');
 /* A material with none of it: vocabulary, the Crucible, the French chateaux. */
-assert.ok(systemPrompt({ beyond: true, marks: true, refs: true }).length < 12100, 'the lightest material grew');
+/* 12100 until VOICE_RULE (2026-09-22), the same 430 characters as above. */
+assert.ok(systemPrompt({ beyond: true, marks: true, refs: true }).length < 12540, 'the lightest material grew');
 
 /* ---- the cached block must not move between two questions in one material ----
    This is the whole bet of the shrink. Everything a question can carry is varied here at once, and

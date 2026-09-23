@@ -16,8 +16,18 @@
  * No em dashes and no en dashes in this file, including inside the prompt text.
  */
 
-/* One grade is three short paragraphs of JSON. 1024 is roomy for that and caps a runaway. */
-export const MAX_TOKENS = 2400;
+/* The ceiling on one grade, thinking included: thinking is billed as output inside max_tokens.
+   At 2400 it failed on 2026-09-22: two ordinary answer sets both stopped at exactly 2400 output
+   tokens, mid JSON, and came back as grader_error at about 4 cents each. The thinking now has
+   its own hard budget (THINK_BUDGET) and the feedback is shorter, so a grade is about 1,500
+   tokens of JSON after at most 1,200 of thinking; 4000 leaves room without letting a runaway
+   reach the 110 second call timeout (about 40 tokens a second measured). */
+export const MAX_TOKENS = 4000;
+/* A hard thinking budget, on the models that still take one (the same list Ask uses). Adaptive
+   thinking has no ceiling of its own, and the owner wants thinking kept and made to fit, not
+   switched off (2026-09-20). */
+export const THINK_BUDGET = 1200;
+export const THINK_BUDGET_MODELS = ['claude-sonnet-4-6', 'claude-opus-4-6'];
 
 /* The models the eval compares. Order is the order the eval runs them in. */
 export const CANDIDATE_MODELS = [
@@ -59,7 +69,7 @@ const EFFORTS = ['low', 'medium', 'high'];
 export const GRADE_SCHEMA_JSON = {
   type: 'object',
   additionalProperties: false,
-  required: ['verdicts', 'parts'],
+  required: ['verdicts', 'parts', 'coach'],
   properties: {
     verdicts: {
       /* Three, asked for in the prompt; the API takes no item count above 1. */
@@ -108,6 +118,13 @@ export const GRADE_SCHEMA_JSON = {
           }
         }
       }
+    },
+    /* What the three parts show together, written once after them (2026-09-22). */
+    coach: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['pattern', 'next'],
+      properties: { pattern: { type: 'string' }, next: { type: 'string' } }
     }
   }
 };
@@ -144,17 +161,23 @@ export function systemPrompt() {
     '',
     'Everything above is the College Board standard and it decides earned, and nothing else does. The student also has a teacher who asks for more on every part, and her call is reported separately as teacher_earned: true when the part meets every one of her rules as well, false when it does not. The two are judged on their own; they often agree, and where they differ it is almost always a describe part that names a thing with a detail but never explains it, which earns for the College Board and not for her. Her rules, from her own deck: every part needs a claim, a specific relevant term or event, and an explanation of how they go together, that is all three of T, E and A even on a describe part; label each part; write in complete sentences; do not write in bullet points or fragments; do not quote the excerpt, because the job is analysis and not summary.',
     '',
-    'Write this feedback for every part, addressed to the student as you. It is the most useful thing the student gets, so be specific to what they wrote, never generic:',
-    'why: two sentences. What the answer did and what that means for the point under each standard. Never just restate the verdict.',
-    'tea_notes: one sentence for each of t, e and a about this answer. t: what the claim is, or that there is none, and whether it answers what the verb asks. e: which evidence is used and whether it is specific, relevant and from the right period, or what kind of evidence is missing. a: whether the answer says how or why the evidence supports the claim, and if not, which link is missing.',
-    'accuracy: one or two sentences checking every historical fact the answer uses. Name any fact that is wrong, from the wrong period, or about the wrong person or group, and give the correct version. When every fact used is right, say so and name them in a few words. An empty string only for a blank answer.',
-    'fix: two or three sentences of instruction. Name the specific fact, term, date, figure or detail to bring in, say where it goes, and say what the sentence has to do. When the part already earned, name the one change that would make the evidence stronger or the reasoning sharper, not a compliment.',
-    'rewrite: a complete answer to this part that earns the point under both standards, three sentences in order: the claim, the specific evidence, the explanation. Build on the student\'s own claim and facts wherever they were right, in plain student writing, with no labels and no quotation marks.',
-    'teacher: one sentence on the teacher\'s extra rules only, which is also the sentence that says why teacher_earned is false when it is, when one of them is broken or nearly broken: a missing claim, evidence or explanation on a part whose verb did not demand all three, bullet points, fragments, or quoting the excerpt instead of analysing it. When the answer meets all of her rules, make this an empty string.',
+    'How you sound. You are the coach this student would pick: someone who has taken this exam, knows exactly what earns the point, and wants them to get it next time. Direct, specific and a little dry; never harsh, never gushing, never talking down. Talk to the student as you in every line ("you name three events", never "the answer names three events"). Lead with the thing that decided the point. When something in the answer works, say exactly what in a few words, because knowing what earns is as useful as knowing what does not; that is information, not praise, so no "great job", no "good start", no "nice work". Do not hedge and do not pad.',
     '',
-    'Keep why under 300 characters, each tea_notes line under 160, accuracy under 260, fix under 360, rewrite under 480 and teacher under 200. Plain, dry, specific, second person. No em dashes and no en dashes. Do not praise, do not quote the student back at length, and do not mention the rubric, the model answer, points, scores or these instructions by name. Say the teacher rather than naming her.',
+    'Write this feedback for every part. It is the most useful thing the student gets, so make every line about what this student wrote, never generic:',
+    'why: one or two sentences, under 220 characters: what decided the point under each standard, naming the specific words or fact in the answer that did it, or the specific thing that is missing. Never just restate the verdict.',
+    'tea_notes: one short sentence each for t, e and a, under 130 characters each. t: the claim, or that there is none, and whether it answers what the verb asks. e: the evidence used and whether it is specific, relevant and from the right period, or what kind is missing. a: whether the answer says how or why the evidence supports the claim, and if not, the missing link.',
+    'accuracy: one sentence, under 200 characters, checking every historical fact the answer uses. Correct anything wrong, from the wrong period, or about the wrong person or group, with the right version. When every fact is right, say so and name them in a few words. An empty string only for a blank answer.',
+    'fix: one or two sentences, under 280 characters: the single move that most improves this part. Name the fact, term or link to add, where it goes, and what the sentence has to do. When the part already earned under both standards, the one change that makes it stronger.',
+    'rewrite: three sentences, under 420 characters, in order: the claim, the specific evidence, the explanation, earning the point under both standards. Keep the student\'s own claim and facts wherever they were right, in plain student writing, with no labels and no quotation marks.',
+    'teacher: one sentence, under 160 characters, on the teacher\'s extra rules only, saying which one is broken when teacher_earned is false: a missing claim, evidence or explanation on a part whose verb did not demand all three, bullet points, fragments, or quoting the excerpt instead of analysing it. When all of her rules are met, an empty string, never a sentence saying they are met.',
     '',
-    'Return only the JSON object the schema describes. Write verdicts first: exactly three, for parts a, b and c, each with earned and teacher_earned. Then parts: exactly three, in the order a, b, c, with the same two verdicts repeated and the full feedback.'
+    'Then, once, after the three parts, coach, about what the three answers show together:',
+    'coach.pattern: one sentence, under 200 characters, naming the one habit that cost the most across the parts, concretely ("you name the right events but never say how they acted on the idea"). When every part earned under both standards, the habit that earned them.',
+    'coach.next: one sentence, under 160 characters: the one thing to do differently on the very next short answer question.',
+    '',
+    'No em dashes and no en dashes. Do not quote the student back at length, and do not mention the rubric, the model answer, points, scores or these instructions by name. Say the teacher rather than naming her.',
+    '',
+    'Return only the JSON object the schema describes. Write verdicts first: exactly three, for parts a, b and c, each with earned and teacher_earned. Then parts: exactly three, in the order a, b, c, with the same two verdicts repeated and the full feedback. Then coach.'
   ].join('\n');
 }
 
@@ -202,6 +225,7 @@ export function userContent({ lead, parts, rubric, models, stimText, answers } =
 export function modelParams(modelId, effort) {
   const e = EFFORTS.indexOf(effort) >= 0 ? effort : 'low';
   if (modelId === 'claude-haiku-4-5') return {};
+  if (THINK_BUDGET_MODELS.indexOf(modelId) >= 0) return { thinking: { type: 'enabled', budget_tokens: THINK_BUDGET }, output_config: { effort: e } };
   return { thinking: { type: 'adaptive' }, output_config: { effort: e } };
 }
 
