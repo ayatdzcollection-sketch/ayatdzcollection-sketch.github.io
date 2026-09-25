@@ -81,11 +81,19 @@ const ALWAYS = systemPrompt({ beyond: true, marks: true });
    about 430 characters net after STYLE_RULE gave up the words the voice rule now carries. The
    last 70 are "say a limit once": a live replay opened four answers running with the same
    disclaimer about web search. */
-assert.ok(ALWAYS.length < 11440, 'the always on instructions grew to ' + ALWAYS.length + ' characters');
+/* Raised from 11440 on 2026-09-25, about 95 characters net, after the owner said Ask could not read
+   the screen: the page now fills FOCUS for every question, and VAGUE_RULE says that "this", "it"
+   and "my answer" point at it (chats 36, 62 and 63 guessed which colony "this colony" was).
+   CAPABILITY_RULE lost its claim that Ask cannot see the other materials, untrue since 0041. */
+assert.ok(ALWAYS.length < 11540, 'the always on instructions grew to ' + ALWAYS.length + ' characters');
+/* The capability rule may never again deny what the page sends. */
+assert.ok(!/cannot see their other materials/.test(ALWAYS), 'the capability rule must not deny the other materials');
+assert.ok(/what is on their screen/.test(CAPABILITY_RULE), 'the capability rule must say Ask sees the screen');
 /* The APUSH period test, the heaviest material: history, tools, a textbook and inline marks. */
 const HEAVIEST = systemPrompt({ beyond: true, marks: true, saq: true, tools: true, textbook: true, refs: true });
-/* 13600 until VOICE_RULE (2026-09-22), the same 430 characters as above. */
-assert.ok(HEAVIEST.length < 13700, 'the heaviest material grew to ' + HEAVIEST.length + ' characters');
+/* 13600 until VOICE_RULE (2026-09-22), the same 430 characters as above; 13700 until the screen
+   (2026-09-25), the same 95 as above. */
+assert.ok(HEAVIEST.length < 13800, 'the heaviest material grew to ' + HEAVIEST.length + ' characters');
 /* A material with none of it: vocabulary, the Crucible, the French chateaux. */
 /* 12100 until VOICE_RULE (2026-09-22), the same 430 characters as above. */
 assert.ok(systemPrompt({ beyond: true, marks: true, refs: true }).length < 12540, 'the lightest material grew');

@@ -26,7 +26,11 @@ else, or no header, is refused with 403), and a JSON body:
   adminToken: '<owner session token>',         optional, at most 128, needed in owner mode
   question:   'explain',                       required, 1 to 4000 (a pasted worksheet fits)
   quote:      'the highlighted text',          optional, 0 to 1200
-  focus:      'what is on the screen',         optional, 0 to 2500
+  focus:      'what is on the screen',         optional, 0 to 2500; since 2026-09-25 the page
+                                               reads it for every question (the card on screen
+                                               and whether it is answered, else the visible
+                                               words, and anything typed in a box), not only
+                                               from a selection
   map:        'outline of the material',       optional, 0 to 9000
   chunks:     [{ label, text }],               optional, at most 14; label 0 to 80, text 0 to 2000,
                                                all text together at most 16000
