@@ -56,6 +56,16 @@
           "sort": 40
         },
         {
+          "id": "ch6",
+          "ask": true,
+          "ai": true,
+          "title": "Chapter 6: reading quiz and SA quiz",
+          "blurb": "For both Chapter 6 quizzes, Creating a Nation, 1783 to 1788: the reading quiz on Monday 28 September and the SA quiz on Friday 2 October. Home leads with whichever quiz is next. Two crams walk the chapter, and every screen asks you to do something before it explains: the Monday cram (64 screens) goes group by group, from the Newburgh officers and Shays's farmers to settlers, American Indians, slaves and free blacks, women, the failing Articles, the convention, slavery in the Constitution and ratification, with EXCEPT questions you answer by judging each statement against the book, the habit behind every reading quiz question missed so far. The Friday cram (28 screens) trains source questions by their link (what the source shows, what it led to, who agrees, why, what it argues) and short answers built to a 3 on the teacher's own scale, where right but general is a 2 and an ending that restates is a 2. A check you miss comes back at the end of its stretch. A reading quiz bank of 119 questions in the teacher's test bank wording, 56 of them EXCEPT, with a mock of ten, a Seven EXCEPT form and an EXCEPT drill. 22 sources (primary texts, the textbook's own arguments, Table 6-1, charts and a redrawn map of the Northwest Territory) with 66 stimulus questions and 22 short answer prompts, each part marked out of 3, and a grader that now marks on her scale. A mock SA quiz out of 14, a chapter guide with the evidence to cite, every event and person, Tips written from your own graded papers, and printable quizzes.",
+          "tags": ["chapter-6", "fraser", "reading-quiz", "except-questions", "saq", "short-answer", "sbmcq", "cram", "tips"],
+          "added": "2026-09-25",
+          "sort": 3
+        },
+        {
           "id": "ch5-saq",
           "ask": true,
           "ai": true,

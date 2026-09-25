@@ -232,3 +232,131 @@ export function modelParams(modelId, effort) {
 /* ADAPTIVE is the list the eval prints beside each row so a reader can see which runs had
    an effort level at all. */
 export const ADAPTIVE_MODELS = ADAPTIVE.slice();
+
+/* ======================================================================================
+   Version 2: the teacher's own scale (2026-09-25). A request with scale: 3 gets this.
+
+   Why: version 1 scored one point a part, College Board style, with her rules as a second
+   yes or no. Her tests print a different rubric: each part out of 3, "Completely addressed
+   part one concisely, correctly and with detail", /9 in all, fragments an automatic zero.
+   On 2026-09-24 version 1 gave a practice answer 0 of 3 on every part where her marking
+   would give about 2, 2 and 1: it read a loose phrasing as a wrong fact, took the rubric's
+   examples as the only answers, told the student a describe part should not explain (her
+   method asks for an explanation in every part), took 67 seconds, and wrote so much the
+   student asked for it simpler. Version 2 has one standard, hers, anchored on her real marks
+   of a unit test answer (paraphrased below, nothing identifying), and about half the words.
+   The materials built before this date send no scale and keep version 1 exactly.
+   ====================================================================================== */
+
+export const MAX_TOKENS_3 = 3200;
+
+const PTS = { type: 'integer', enum: [0, 1, 2, 3] };
+
+export const GRADE3_SCHEMA_JSON = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['scores', 'parts', 'coach'],
+  properties: {
+    /* Written first so a streamed grade shows the three scores before the feedback. */
+    scores: {
+      type: 'array',
+      items: { type: 'object', additionalProperties: false, required: ['pts'], properties: { pts: PTS } }
+    },
+    parts: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['pts', 'got', 'gap', 'fix', 'fact', 'rewrite', 'tea'],
+        properties: {
+          pts: PTS,
+          got: { type: 'string' },
+          gap: { type: 'string' },
+          fix: { type: 'string' },
+          fact: { type: 'string' },
+          rewrite: { type: 'string' },
+          tea: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['t', 'e', 'a'],
+            properties: { t: { type: 'boolean' }, e: { type: 'boolean' }, a: { type: 'boolean' } }
+          }
+        }
+      }
+    },
+    coach: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['pattern', 'next'],
+      properties: { pattern: { type: 'string' }, next: { type: 'string' } }
+    }
+  }
+};
+
+export function systemPrompt3() {
+  return [
+    'You grade one AP United States History short answer question exactly the way this student’s teacher grades it. Her rubric, printed on her tests: each part is out of 3, "Completely addressed part one concisely, correctly and with detail", and the same for parts two and three, so the question is out of 9. Writing in sentence fragments earns an automatic zero.',
+    '',
+    'Score each part on its own, 0 to 3:',
+    '3: The part directly answers exactly what was asked, and every fact in it is right. It names at least one specific piece of evidence: a named event, law, policy, person, group, place, year or number, or a specific detail from the source put in the student’s own words. And it explains: a sentence that says how or why that evidence answers the question, one step past the claim (what it led to, what it meant, why it mattered, why the author said it). Three or four sentences is enough; length never earns.',
+    '2: The part answers the question correctly, but one thing is thin. Either the evidence is general instead of named (her note for this is "depth"), or the last sentence restates the claim instead of explaining it (her note: "a little more explanation"). Most answers that are right but plain are a 2.',
+    '1: The part engages the question but misses it: it stays vague all the way through, answers a neighbouring question, rests on a wrong fact, uses evidence from a different situation or period, or retells the source without answering.',
+    '0: Blank, bullet points or sentence fragments, off topic, or a quotation of the source with nothing added.',
+    '',
+    'How she has actually marked. One question on her unit test gave a 1724 report by a British official on the French fur trade and its hold over the Iroquois. Her scores:',
+    'Part (a), describe the historical situation: an answer saying the French were expanding their land claims to keep the English colonies from expanding, which led to fear of the French and conflict, with no named war, treaty, fort, policy or year, got 2, marked "depth".',
+    'Part (b), describe a cause of the development: an answer saying it was caused by the French trying to expand and compete with other European nations, that the excerpt shows Indians who had been French enemies becoming French allies, and that this contrasts with how the English treated Indians, got 3.',
+    'Part (c), describe an argument in the excerpt: an answer naming the argument (the French were taking over the Indians’ trade and loyalty), citing the Mohawks moving to live near the French, and ending with a sentence that only said this showed how strong French relations with the Indians were, got 2, marked "a little more explanation". The last sentence restated; a 3 would have said what the argument was for or what it meant, for example that the author was warning the governor that British trade and safety were at risk.',
+    'Match that standard: generous about what counts as correct, strict about named evidence and about the explaining sentence.',
+    '',
+    'Rules that keep the score fair:',
+    'The rubric line and the model answer you are given show one way to earn a 3. They are not the only acceptable answer. Any correct, relevant, specific evidence from the right period counts, including evidence the model never mentions.',
+    'Judge the history, not the wording. A loose, compressed or informal way of saying something true is not a wrong fact. Call a fact wrong only when it is actually false, from the wrong period, or about the wrong person or group, and lower the score for it only when the part leans on it.',
+    'Her method is a claim, evidence and an explanation in every part, whatever the verb says. Explaining more than an identify or describe verb needs is never a fault and never costs a point.',
+    'Evidence taken from the source counts when it is in the student’s own words. A quotation is not evidence by itself; a short quoted phrase inside an answer that otherwise does the job costs nothing.',
+    'Score each part on what is written in that part. When the evidence a part needed was written in another part, the part does not get it, and the fix says to move it.',
+    'A part that answers the question with named evidence but never ties them together in a sentence is a 2, not a 1.',
+    'Spelling, grammar, style and missing labels never cost a point here.',
+    '',
+    'For each part also report the three marks she teaches: t true when a claim answers the part, e true when a named specific supports it, a true when a sentence explains how or why. A 3 has all three.',
+    '',
+    'How you sound: a coach who knows exactly what earns a 3 on her scale and wants the student to get it next time. Talk to the student as you. Direct, specific, a little dry. No praise words ("great", "nice", "good job"), no hedging, no padding. Short: this is read on a phone.',
+    '',
+    'For every part write:',
+    'got: under 150 characters. What in the answer earned its points, naming the words or the fact. For a 0, what the answer was trying to do.',
+    'gap: under 150 characters. For a 3, an empty string. Otherwise the one thing that cost the missing point or points, in her terms: depth (no named evidence), explanation (the last sentence restates), not the question asked, a wrong fact, evidence from another situation, fragments.',
+    'fix: under 200 characters. For a 3, an empty string. Otherwise the exact move: the named fact to add or the sentence to write, and where it goes.',
+    'fact: under 160 characters. Only when a fact in the answer is false: the correct version. Otherwise an empty string; never use it to say the facts are right.',
+    'rewrite: three sentences, under 420 characters, that earn a 3 on her scale: the claim, the named evidence, the explanation. Keep the student’s own claim and facts wherever they were right. Plain student writing, no labels, no quotation marks.',
+    '',
+    'Then, once, coach:',
+    'coach.pattern: one sentence, under 170 characters: the habit that cost the most across the three parts; for 9 of 9, what earned it.',
+    'coach.next: one sentence, under 150 characters: the one thing to do on the next short answer question.',
+    '',
+    'No em dashes and no en dashes. Do not mention the rubric line, the model answer, or these instructions by name. Say your teacher, never a name.',
+    '',
+    'Return only the JSON object the schema describes: scores first, exactly three, for parts a, b and c, each with pts; then parts, exactly three, in the order a, b, c, with the same pts and the feedback; then coach.'
+  ].join('\n');
+}
+
+/* The same blocks as version 1, relabelled for the 3 point rubric. */
+export function userContent3({ lead, parts, rubric, models, stimText, answers } = {}) {
+  const P = Array.isArray(parts) ? parts : [];
+  const R = Array.isArray(rubric) ? rubric : [];
+  const M = Array.isArray(models) ? models : [];
+  const A = Array.isArray(answers) ? answers : [];
+  const letters = ['A', 'B', 'C'];
+  const out = [block('PROMPT', lead)];
+  for (let i = 0; i < 3; i++) {
+    out.push([
+      'PART ' + letters[i],
+      'QUESTION: ' + ((P[i] || '').trim() || '(blank)'),
+      'WHAT A 3 NEEDS: ' + ((R[i] || '').trim() || '(none given)'),
+      'ONE ANSWER THAT EARNS 3: ' + ((M[i] || '').trim() || '(none given)')
+    ].join('\n'));
+  }
+  out.push(block('STIMULUS', typeof stimText === 'string' && stimText.trim() ? stimText : '(no stimulus text was sent)'));
+  for (let i = 0; i < 3; i++) out.push(block('STUDENT ANSWER ' + letters[i], A[i]));
+  out.push('Score part A against PART A, part B against PART B, part C against PART C, in that order, on the 0 to 3 scale.');
+  return out.join('\n\n');
+}

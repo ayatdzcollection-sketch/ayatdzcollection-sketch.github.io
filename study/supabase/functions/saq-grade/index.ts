@@ -1,7 +1,9 @@
 /* saq-grade: grades one APUSH short answer question with the Claude API.
  *
- * Deno, deployed as a Supabase Edge Function. The only caller is the material
- * study/src/m/apush/period1-2-test.html, and only when the owner has turned AI grading on.
+ * Deno, deployed as a Supabase Edge Function. Callers are the APUSH
+ * materials with the ai tag, and only when the owner has turned AI grading on. A request with
+ * scale: 3 is graded on the teacher's own 0 to 3 scale (version 2, from 2026-09-25); without it,
+ * version 1, one point a part.
  *
  * What this file is responsible for:
  *   validating the request before it costs anything,
@@ -29,11 +31,15 @@ import Anthropic, { RateLimitError, APIConnectionError, APIError, APIUserAbortEr
 import {
   CANDIDATE_MODELS,
   GRADE_SCHEMA_JSON,
+  GRADE3_SCHEMA_JSON,
   MAX_TOKENS,
+  MAX_TOKENS_3,
   PRICES,
   modelParams,
   systemPrompt,
+  systemPrompt3,
   userContent,
+  userContent3,
 } from "./grader_prompt.mjs";
 
 /* ---------------------------------------------------------------- configuration */
@@ -181,6 +187,8 @@ type Body = {
   answers: string[];
   adminToken?: string;
   stream: boolean;
+  /* 3: the teacher's own scale, 0 to 3 a part (grader_prompt.mjs, version 2). Absent: version 1. */
+  scale: 1 | 3;
 };
 
 /* Everything is checked here, before a single row or token is spent. Anything that fails
@@ -202,6 +210,7 @@ function validate(raw: unknown): Body | null {
   if ((b.answers as string[]).join("").trim().length === 0) return null;
   if (b.adminToken !== undefined && !isStr(b.adminToken, 127)) return null;
   if (b.stream !== undefined && typeof b.stream !== "boolean") return null;
+  if (b.scale !== undefined && b.scale !== 3) return null;
 
   return {
     material: b.material as string,
@@ -215,6 +224,7 @@ function validate(raw: unknown): Body | null {
     answers: b.answers as string[],
     adminToken: b.adminToken as string | undefined,
     stream: b.stream === true,
+    scale: b.scale === 3 ? 3 : 1,
   };
 }
 
@@ -262,6 +272,44 @@ function readVerdicts(v: unknown): Verdict[] | null {
     const q = x as Record<string, unknown>;
     if (typeof q.earned !== "boolean" || typeof q.teacher_earned !== "boolean") return null;
     out.push({ earned: q.earned, teacher_earned: q.teacher_earned });
+  }
+  return out;
+}
+
+/* Version 2, the teacher's scale. A part is its points, 0 to 3, and five short lines. */
+type Part3 = { pts: number; got: string; gap: string; fix: string; fact: string; rewrite: string; tea: { t: boolean; e: boolean; a: boolean } };
+
+function readPts(v: unknown): number | null {
+  return typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= 3 ? v : null;
+}
+
+function readPart3(p: unknown): Part3 | null {
+  if (!p || typeof p !== "object" || Array.isArray(p)) return null;
+  const q = p as Record<string, unknown>;
+  const pts = readPts(q.pts);
+  if (pts === null) return null;
+  const tea = (q.tea ?? {}) as Record<string, unknown>;
+  /* A 3 has nothing missing, so a gap or fix written anyway is dropped rather than shown as a
+     reason the student lost a point they did not lose. */
+  const full = pts === 3;
+  return {
+    pts,
+    got: line(q.got, 300),
+    gap: full ? "" : line(q.gap, 300),
+    fix: full ? "" : line(q.fix, 400),
+    fact: line(q.fact, 320),
+    rewrite: line(q.rewrite, 800),
+    tea: { t: tea.t === true, e: tea.e === true, a: tea.a === true },
+  };
+}
+
+function readScores(v: unknown): number[] | null {
+  if (!Array.isArray(v) || v.length !== 3) return null;
+  const out: number[] = [];
+  for (const x of v) {
+    const pts = x && typeof x === "object" && !Array.isArray(x) ? readPts((x as Record<string, unknown>).pts) : null;
+    if (pts === null) return null;
+    out.push(pts);
   }
   return out;
 }
@@ -321,6 +369,23 @@ function readGrade(msg: { parsed_output?: unknown; content?: unknown }): Part[] 
   return out;
 }
 
+function readGrade3(msg: { parsed_output?: unknown; content?: unknown }): Part3[] | null {
+  const obj = gradeObject(msg);
+  if (!obj) return null;
+  const parts = (obj as { parts?: unknown }).parts;
+  if (!Array.isArray(parts) || parts.length < 3) return null;
+  if (parts.length > 3) console.error("saq-grade: the grade had more than three parts, the first three were used");
+  const out: Part3[] = [];
+  for (const p of parts.slice(0, 3)) {
+    const part = readPart3(p);
+    if (!part) return null;
+    out.push(part);
+  }
+  const scores = readScores((obj as { scores?: unknown }).scores);
+  if (scores && scores.some((v, i) => v !== out[i].pts)) console.error("saq-grade: the scores and the parts disagree, the parts were used");
+  return out;
+}
+
 function costCents(model: string, inTok: number, outTok: number): number {
   /* An unknown model is priced at the dearest candidate so the number shown can never be
      lower than what was actually billed. Postgres computes the ledger's own figure. */
@@ -332,30 +397,27 @@ function costCents(model: string, inTok: number, outTok: number): number {
 /* The request body for messages.parse and messages.stream alike. */
 function gradeRequest(body: Body, model: string, effort: string): Record<string, unknown> {
   const params = modelParams(model, effort) as Record<string, unknown>;
+  const v2 = body.scale === 3;
   const outputConfig = {
     ...((params.output_config as Record<string, unknown>) ?? {}),
-    format: { type: "json_schema", schema: GRADE_SCHEMA_JSON },
+    format: { type: "json_schema", schema: v2 ? GRADE3_SCHEMA_JSON : GRADE_SCHEMA_JSON },
   };
+  const content = (v2 ? userContent3 : userContent)({
+    lead: body.lead,
+    parts: body.parts,
+    rubric: body.rubric,
+    models: body.models,
+    stimText: body.stimText,
+    answers: body.answers,
+  });
   return {
     model,
-    max_tokens: MAX_TOKENS,
+    max_tokens: v2 ? MAX_TOKENS_3 : MAX_TOKENS,
     /* The system prompt is identical on every call and over Sonnet's 1024 token cache
        minimum, so a student grading several parts in a sitting pays a tenth of its
        input price after the first call. */
-    system: [{ type: "text", text: systemPrompt(), cache_control: { type: "ephemeral" } }],
-    messages: [
-      {
-        role: "user",
-        content: userContent({
-          lead: body.lead,
-          parts: body.parts,
-          rubric: body.rubric,
-          models: body.models,
-          stimText: body.stimText,
-          answers: body.answers,
-        }),
-      },
-    ],
+    system: [{ type: "text", text: v2 ? systemPrompt3() : systemPrompt(), cache_control: { type: "ephemeral" } }],
+    messages: [{ role: "user", content }],
     ...params,
     output_config: outputConfig,
   };
@@ -430,7 +492,7 @@ class GradeScanner {
         if (!top) {
           role = "root";
         } else if (top.role === "root" && top.open === "{" && !top.expectKey && ch === "[") {
-          if (top.key === "verdicts") role = "verdicts";
+          if (top.key === "verdicts" || top.key === "scores") role = "verdicts";
           else if (top.key === "parts") role = "parts";
         } else if (top.role === "parts" && ch === "{") {
           role = "part";
@@ -469,6 +531,7 @@ const encoder = new TextEncoder();
    throws. */
 function streamGrade(body: Body, callId: unknown, model: string, effort: string, origin: string): Response {
   const started = Date.now();
+  const v2 = body.scale === 3;
   let status: EndStatus = "error";
   let usage: Usage = {};
   let ended = false;
@@ -538,13 +601,18 @@ function streamGrade(body: Body, callId: unknown, model: string, effort: string,
         } else if (ev.type === "content_block_delta" && ev.delta.type === "text_delta" && ev.delta.text) {
           for (const hit of scanner.push(ev.delta.text)) {
             if (hit.kind === "verdicts") {
-              /* Only the first verdicts array counts, and only a clean one is shown. */
+              /* Only the first verdicts (or scores) array counts, and only a clean one is shown. */
               if (sawVerdicts) continue;
               sawVerdicts = true;
-              const verdicts = readVerdicts(hit.value);
-              if (verdicts) send({ type: "verdicts", verdicts });
+              if (v2) {
+                const scores = readScores(hit.value);
+                if (scores) send({ type: "scores", scores });
+              } else {
+                const verdicts = readVerdicts(hit.value);
+                if (verdicts) send({ type: "verdicts", verdicts });
+              }
             } else if (hit.index >= 0 && hit.index <= 2 && !sentParts.has(hit.index)) {
-              const part = readPart(hit.value);
+              const part = v2 ? readPart3(hit.value) : readPart(hit.value);
               if (part) {
                 sentParts.add(hit.index);
                 send({ type: "part", index: hit.index, part });
@@ -566,7 +634,9 @@ function streamGrade(body: Body, callId: unknown, model: string, effort: string,
         return;
       }
 
-      const parts = readGrade(msg as unknown as { parsed_output?: unknown; content?: unknown });
+      const parts = v2
+        ? readGrade3(msg as unknown as { parsed_output?: unknown; content?: unknown })
+        : readGrade(msg as unknown as { parsed_output?: unknown; content?: unknown });
       if (!parts) {
         console.error("saq-grade: the model returned no usable grade");
         send({ type: "error", error: "grader_error" });
@@ -576,7 +646,7 @@ function streamGrade(body: Body, callId: unknown, model: string, effort: string,
       /* ok only when done actually went out; a client gone by now is recorded as error, with
          the tokens it cost all the same. */
       const coach = readCoach(msg as unknown as { parsed_output?: unknown; content?: unknown });
-      const done = { type: "done", parts, ...(coach ? { coach } : {}), model, cost_cents: costCents(model, effectiveIn(usage), num(usage.output_tokens)) };
+      const done = { type: "done", parts, ...(coach ? { coach } : {}), ...(v2 ? { scale: 3 } : {}), model, cost_cents: costCents(model, effectiveIn(usage), num(usage.output_tokens)) };
       status = send(done) ? "ok" : "error";
     } catch (e) {
       /* Most specific first. The abort, connection and rate limit classes are all subclasses of
@@ -760,7 +830,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
       return reply({ ok: false, error: "refused" }, 200, origin);
     }
 
-    const parts = readGrade(msg as { parsed_output?: unknown; content?: unknown });
+    const v2 = body.scale === 3;
+    const parts = v2
+      ? readGrade3(msg as { parsed_output?: unknown; content?: unknown })
+      : readGrade(msg as { parsed_output?: unknown; content?: unknown });
     if (!parts) {
       console.error("saq-grade: the model returned no usable grade");
       return reply({ ok: false, error: "grader_error" }, 200, origin);
@@ -768,7 +841,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     endStatus = "ok";
     const coach = readCoach(msg as { parsed_output?: unknown; content?: unknown });
-    return reply({ ok: true, parts, ...(coach ? { coach } : {}), model, cost_cents: costCents(model, inTok, outTok) }, 200, origin);
+    return reply({ ok: true, parts, ...(coach ? { coach } : {}), ...(v2 ? { scale: 3 } : {}), model, cost_cents: costCents(model, inTok, outTok) }, 200, origin);
   } catch (e) {
     console.error("saq-grade: unexpected failure", e instanceof Error ? e.message : "unknown");
     return reply({ ok: false, error: "grader_error" }, 200, origin);

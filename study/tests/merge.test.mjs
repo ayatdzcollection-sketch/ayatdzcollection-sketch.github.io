@@ -535,7 +535,7 @@ test('acct1: the open tab and a Learn session stay on the device', () => {
 /* ---------- la10crucible and apushp12: the materials on the shared core ----------
    Same { cards, quizDate, exams } shape, same per card rule; ui (tab, pace, open stretch)
    is per device. */
-for (const ns of ['la10crucible', 'apushp12', 'apush5saq', 'psychu0', 'la10vocab1', 'frchateaux']) {
+for (const ns of ['la10crucible', 'apushp12', 'apush5saq', 'apush6', 'psychu0', 'la10vocab1', 'frchateaux']) {
   test(ns + ' fsrs merges per card', () => {
     const a = env({ [ns + ':fsrs']: [{ cards: { 't1abc': rec(2, 5, 2200, 3, 0) }, quizDate: '2026-09-15', exams: [] }, 100] });
     const b = env({ [ns + ':fsrs']: [{ cards: { 'q9xyz': rec(4, 4, 3300, 2, 0) }, quizDate: '2026-09-15', exams: [] }, 900] });
@@ -552,6 +552,21 @@ for (const ns of ['la10crucible', 'apushp12', 'apush5saq', 'psychu0', 'la10vocab
     assert.ok(built.ns[ns].fsrs, 'the schedule does sync');
   });
 }
+
+/* ---------- apush6: the crams walked travel inside ui, and the 0 to 3 marks inside fsrs ----------
+   Chapter 6 keeps { f, done } per cram in ui.les like chapter 5, and the mock quiz rows in
+   fsrs.exams carry fmt 'rq' or 'real'. */
+test('apush6: crams walked travel, the tab does not, exams survive a merge', () => {
+  const built = buildEnvelopeFrom({
+    'apush6:ui': { tab: 'cram', les: { 'l-cram-rq': { f: 12, done: 1790500000000 } }, mk: {} },
+    'apush6:fsrs': { cards: {}, quizDate: '2026-09-28', exams: [{ ts: 1790500000000, pts: 9, of: 10, fmt: 'rq' }] }
+  }, { 'apush6:ui': 5, 'apush6:fsrs': 5 });
+  assert.equal(built.ns.apush6.ui, undefined, 'the tab is per device');
+  assert.deepEqual(SYNC_PARTIAL.apush6, ['mk', 'les']);
+  const m = mergeMarks({ les: { 'l-cram-rq': { f: 3 } } }, { les: { 'l-cram-rq': { f: 30, done: 1790500000000 }, 'l-cram-sa': { f: 2 } } }, 1, 2);
+  assert.equal(m.les['l-cram-rq'].done, 1790500000000);
+  assert.ok(m.les['l-cram-sa']);
+});
 
 /* ---------- apush5saq: lessons done travel inside ui ----------
    The chapter 5 lessons keep { f, done } per lesson in ui.les. The tab stays on the device;
@@ -853,7 +868,7 @@ test('uimarks: progress kept in the device-only ui key is a union', () => {
 });
 
 test('every material that writes trap notes or ask notes has a rule for them', () => {
-  for (const ns of ['periodic', 'fraserall', 'fraser5', 'acct1', 'chemunit', 'la10crucible', 'apushp12', 'apush5saq', 'psychu0', 'la10vocab1', 'frchateaux']) {
+  for (const ns of ['periodic', 'fraserall', 'fraser5', 'acct1', 'chemunit', 'la10crucible', 'apushp12', 'apush5saq', 'apush6', 'psychu0', 'la10vocab1', 'frchateaux']) {
     assert.equal(typeof REG[ns + ':trapnotes'], 'function', ns + ' trapnotes');
     assert.equal(typeof REG[ns + ':asknotes'], 'function', ns + ' asknotes');
     assert.equal(typeof REG[ns + ':fsrs'], 'function', ns + ' fsrs');
@@ -883,6 +898,7 @@ const MATERIAL_KEYS = {
   'acct1':        ['asknotes', 'askprefs', 'askthreads', 'fsrs', 'mcAttempt', 'mcDraft', 'trapnotes', 'ui'],
   'apushp12':     ['asknotes', 'askprefs', 'askthreads', 'fsrs', 'trapnotes', 'ui'],
   'apush5saq':    ['asknotes', 'askprefs', 'askthreads', 'fsrs', 'trapnotes', 'ui'],
+  'apush6':       ['asknotes', 'askprefs', 'askthreads', 'fsrs', 'trapnotes', 'ui'],
   'chemunit':     ['asknotes', 'askprefs', 'askthreads', 'fsrs', 'trapnotes', 'ui'],
   'la10crucible': ['asknotes', 'askprefs', 'askthreads', 'fsrs', 'trapnotes', 'ui'],
   'la10crucible34': ['asknotes', 'askprefs', 'askthreads', 'fsrs', 'trapnotes', 'ui'],

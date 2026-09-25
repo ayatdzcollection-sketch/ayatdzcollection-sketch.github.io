@@ -1,6 +1,6 @@
 // Local check of the grader prompt module. No API call. Run: node test_prompt.mjs
 import assert from 'node:assert/strict';
-import { GRADE_SCHEMA_JSON, systemPrompt, userContent, modelParams, CANDIDATE_MODELS, PRICES, MAX_TOKENS, THINK_BUDGET, THINK_BUDGET_MODELS } from './grader_prompt.mjs';
+import { GRADE_SCHEMA_JSON, systemPrompt, userContent, modelParams, CANDIDATE_MODELS, PRICES, MAX_TOKENS, THINK_BUDGET, THINK_BUDGET_MODELS, GRADE3_SCHEMA_JSON, systemPrompt3, userContent3, MAX_TOKENS_3 } from './grader_prompt.mjs';
 const schema = GRADE_SCHEMA_JSON;
 assert.equal(schema.type, 'object'); assert.deepEqual(schema.required, ['verdicts', 'parts', 'coach']);
 /* verdicts is written first, so a streamed grade can show the scores before the feedback. */
@@ -31,4 +31,21 @@ assert.ok(THINK_BUDGET_MODELS.indexOf('claude-sonnet-5') < 0);
 /* The voice: coach, not cheerleader, and the feedback lines are bounded. */
 assert.ok(/no "great job"/.test(sys) && /coach\.pattern/.test(sys) && /coach\.next/.test(sys));
 for (const s of [sys, u, JSON.stringify(schema)]) assert.ok(!/[\u2014\u2013]/.test(s), 'dash in prompt');
+/* Version 2, the teacher's 0 to 3 scale (2026-09-25). */
+const s3 = GRADE3_SCHEMA_JSON, sys3 = systemPrompt3();
+assert.deepEqual(Object.keys(s3.properties), ['scores', 'parts', 'coach'], 'scores are written first');
+assert.deepEqual(s3.properties.scores.items.required, ['pts']);
+assert.deepEqual(s3.properties.parts.items.required, ['pts', 'got', 'gap', 'fix', 'fact', 'rewrite', 'tea']);
+assert.deepEqual(s3.properties.parts.items.properties.pts.enum, [0, 1, 2, 3]);
+assert.equal(s3.properties.parts.minItems, undefined); assert.equal(s3.properties.scores.minItems, undefined);
+assert.ok(/out of 3/.test(sys3) && /automatic zero/.test(sys3), 'her rubric');
+assert.ok(/"depth"/.test(sys3) && /a little more explanation/.test(sys3), 'her two notes are the anchors');
+assert.ok(/not the only acceptable answer/.test(sys3), 'the model is one way, not the only way');
+assert.ok(/never a fault/.test(sys3), 'explaining on a describe part never costs');
+assert.ok(!/College Board standard/.test(sys3), 'one standard only');
+assert.ok(sys3.endsWith('then coach.'));
+const u3 = userContent3({ lead: 'L', parts: ['pa', 'pb', 'pc'], rubric: ['ra', 'rb', 'rc'], models: ['ma', 'mb', 'mc'], stimText: 'S', answers: ['x', 'y', 'z'] });
+for (const label of ['PROMPT', 'PART A', 'WHAT A 3 NEEDS', 'ONE ANSWER THAT EARNS 3', 'STIMULUS', 'STUDENT ANSWER C']) assert.ok(u3.includes(label), 'missing block ' + label);
+assert.ok(MAX_TOKENS_3 - THINK_BUDGET >= 1800, 'the shorter JSON still has room after the thinking');
+for (const s of [sys3, u3, JSON.stringify(s3)]) assert.ok(!/[\u2014\u2013]/.test(s), 'dash in prompt v2');
 console.log('grader prompt module ok');
