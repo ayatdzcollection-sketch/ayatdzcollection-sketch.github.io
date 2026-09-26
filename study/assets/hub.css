@@ -51,7 +51,7 @@
 .ui .preview { background: var(--fill); border-radius: 14px; padding: 12px 14px; font-size: 15px; line-height: 21px; color: var(--text); }
 .ui .qr-box canvas, .ui .qr-box svg, .ui .qr-box img { display: block; width: 184px; height: 184px; }
 .ui .rolepick { max-width: 280px; }
-.ui .rolepick .tog { min-height: 40px; border: 0; background: none; border-radius: 9px; font: 500 15px var(--font-ui); color: var(--text); cursor: pointer; }
+.ui .rolepick .tog { min-height: 44px; border: 0; background: none; border-radius: 9px; font: 500 15px var(--font-ui); color: var(--text); cursor: pointer; }
 .ui .rolepick .tog[aria-pressed="true"] { background: var(--surface); box-shadow: 0 1px 3px rgba(0,0,0,.12); font-weight: 600; }
 .dark .ui .rolepick .tog[aria-pressed="true"], .ui.dark .rolepick .tog[aria-pressed="true"] { background: var(--line-strong); }
 @media (prefers-color-scheme: dark) { :root:not(.light) .ui .rolepick .tog[aria-pressed="true"] { background: var(--line-strong); } }
@@ -65,7 +65,7 @@
 .ui .legacy .btn.ghost:not(.btn-primary):not(.btn-secondary) { background: var(--fill); color: var(--text); }
 .ui .legacy .btn.danger:not(.btn-outline-danger) { background: none; border: 1.5px solid color-mix(in oklab, var(--miss) 45%, var(--line)); color: var(--miss); }
 .ui .legacy .btn.sm:not(.btn-primary):not(.btn-secondary) { min-height: 36px; padding: 0 12px; font-size: 14px; border-radius: 10px; }
-.ui .legacy .tog:not(.rolepick .tog) { min-height: 36px; padding: 0 12px; border: 1.5px solid var(--field); border-radius: 10px; background: none;
+.ui .legacy .tog:not(.rolepick .tog) { min-height: 44px; padding: 0 12px; border: 1.5px solid var(--field); border-radius: 10px; background: none;
   font: 600 13px var(--font-ui); color: var(--text); cursor: pointer; }
 .ui .legacy .tog[aria-pressed="true"]:not(.rolepick .tog) { background: var(--text); color: var(--bg); border-color: transparent; }
 .ui .legacy input[type=text]:not(.input), .ui .legacy input[type=password]:not(.input), .ui .legacy input[type=number]:not(.input),
@@ -161,7 +161,7 @@ input[type=text],input[type=password],textarea{font-family:var(--font-ui);color:
 .adminrow .an{min-width:0;flex:1 1 auto}
 .adminrow .an small{display:block;font-family:var(--font-ui);font-size:12px;color:var(--text-3);letter-spacing:normal;margin-top:2px}
 .toggles{display:flex;gap:6px;flex:0 0 auto}
-.tog{min-height:38px;padding:0 10px;border:1px solid var(--line-strong);background:transparent;color:var(--text-2);font-family:var(--font-ui);font-size:12px;letter-spacing:normal;text-transform:none;border-radius:12px;cursor:pointer}
+.tog{min-height:44px;padding:0 10px;border:1px solid var(--line-strong);background:transparent;color:var(--text-2);font-family:var(--font-ui);font-size:12px;letter-spacing:normal;text-transform:none;border-radius:12px;cursor:pointer}
 .tog[aria-pressed="true"]{background:var(--text);color:var(--bg);border-color:var(--text)}
 .warnbox{margin:12px 0;padding:12px 14px;border:1px solid var(--acct);background:var(--bg);border-radius:12px;font-size:14.5px;color:var(--accent)}
 .foot{margin:30px 0 10px;padding-top:14px;border-top:1px solid var(--line)}
@@ -260,7 +260,7 @@ textarea.askinput{min-height:80px;padding:10px 12px}
 .aimetertop{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:2px 10px;font-family:var(--font-ui);font-size:12px;letter-spacing:normal;color:var(--text-2)}
 .aimetername{font-family:var(--font-ui);font-size:12px;font-weight:700;letter-spacing:normal;text-transform:none;color:var(--text-3)}
 .aimetertrack{display:block;height:4px;margin-top:5px;background:var(--line);border-radius:12px;overflow:hidden}
-.aimeterfill{display:block;height:100%;width:0;background:var(--text-2);border-radius:12px;transition:width .25s}
+.aimeterfill{display:block;height:100%;width:0;background:var(--text-2);border-radius:12px;transition:width var(--dur)}
 .near .aimeterfill{background:var(--acct)}
 .full .aimeterfill{background:var(--miss)}
 .aimeter.near .aimeterval{color:var(--acct)}

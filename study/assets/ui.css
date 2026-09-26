@@ -570,3 +570,6 @@ body.ui { margin: 0; min-height: 100vh; min-height: 100dvh; background: var(--bg
   html, body.ui { background: #fff !important; color: #000 !important; }
   .ui .tabbar, .ui .rail, .ui .nav, .ui .dock, .ui .banner, .ui .corner-ask { display: none !important; }
 }
+
+/* Segmented buttons: the export draws them at 40px; on the real pages they are tap targets, so 44. */
+.ui .seg button { min-height: 44px; }
