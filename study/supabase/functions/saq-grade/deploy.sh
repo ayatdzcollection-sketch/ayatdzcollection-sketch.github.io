@@ -1,5 +1,5 @@
 #!/bin/sh
-# Deploys the AI Edge Functions (saq-grade and study-ask) and sets the Anthropic key they share.
+# Deploys the AI Edge Functions (saq-grade, study-ask and study-gen) and sets the Anthropic key they share.
 # Nothing is written to disk by this script and neither secret belongs in the repo: both are read
 # from the environment for this one command.
 #
@@ -10,7 +10,7 @@
 # Then turn each feature on in the hub owner panel: AI grading, master switch, and the ask row.
 set -e
 REF=gyfqhkhgosjpyvatffbi
-FUNCTIONS="saq-grade study-ask"
+FUNCTIONS="saq-grade study-ask study-gen"
 if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then echo "SUPABASE_ACCESS_TOKEN is not set"; exit 1; fi
 if [ -z "$ANTHROPIC_API_KEY" ]; then echo "ANTHROPIC_API_KEY is not set"; exit 1; fi
 # The CLI wants the directory that holds supabase/, which here is study/.
