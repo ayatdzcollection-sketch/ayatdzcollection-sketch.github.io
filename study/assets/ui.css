@@ -119,8 +119,8 @@
 .ui .row-x { display: flex; align-items: center; gap: 12px; }
 .ui .spacer { flex: 1; }
 .ui .num { font-variant-numeric: tabular-nums; }
-.ui /* ---------- Type scale ---------- */
-.t-display { font-family: var(--font-display); font-size: 34px; line-height: 40px; font-weight: 600; letter-spacing: -.01em; font-variation-settings: "opsz" 48; }
+/* ---------- Type scale ---------- */
+.ui .t-display { font-family: var(--font-display); font-size: 34px; line-height: 40px; font-weight: 600; letter-spacing: -.01em; font-variation-settings: "opsz" 48; }
 .ui .t-count { font-family: var(--font-display); font-size: 56px; line-height: 56px; font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; font-variation-settings: "opsz" 96; }
 .ui .t-title { font-family: var(--font-display); font-size: 24px; line-height: 30px; font-weight: 600; letter-spacing: -.005em; font-variation-settings: "opsz" 24; }
 .ui .t-head { font-size: 17px; line-height: 24px; font-weight: 600; }
@@ -135,8 +135,8 @@
 .ui .c-miss { color: var(--miss); }
 .ui .w6 { font-weight: 600; }
 .ui .w5 { font-weight: 500; }
-.ui /* ---------- Nav bar ---------- */
-.nav { height: 44px; flex: none; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding: 0 8px; }
+/* ---------- Nav bar ---------- */
+.ui .nav { height: 44px; flex: none; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding: 0 8px; }
 .ui .nav-title { font-size: 17px; font-weight: 600; text-align: center; }
 .ui .nav-left { display: flex; justify-content: flex-start; }
 .ui .nav-right { display: flex; justify-content: flex-end; gap: 4px; }
@@ -144,8 +144,8 @@
 .ui .icon-btn svg { width: 24px; height: 24px; }
 .ui .icon-btn.neutral { color: var(--text-2); }
 .ui.m-hub .icon-btn, .ui .m-hub .icon-btn { color: var(--text); }
-.ui /* ---------- Buttons ---------- */
-.btn { min-height: 52px; border-radius: 14px; border: 0; font: inherit; font-size: 17px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 0 20px; cursor: pointer; text-decoration: none; transition: transform var(--dur) var(--ease), background var(--dur) var(--ease); width: 100%; }
+/* ---------- Buttons ---------- */
+.ui .btn { min-height: 52px; border-radius: 14px; border: 0; font: inherit; font-size: 17px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 0 20px; cursor: pointer; text-decoration: none; transition: transform var(--dur) var(--ease), background var(--dur) var(--ease); width: 100%; }
 .ui .btn:active { transform: scale(.98); }
 .ui .btn-primary { background: var(--accent); color: var(--on-accent); }
 .ui.m-hub .btn-primary, .ui .m-hub .btn-primary { background: var(--text); color: var(--bg); }
@@ -155,14 +155,14 @@
 .ui .btn .sub { font-weight: 400; opacity: .8; }
 .ui .btn-inline { width: auto; min-height: 44px; padding: 0 16px; font-size: 15px; border-radius: 12px; }
 .ui .dock { flex: none; padding: 12px 20px 12px; display: flex; flex-direction: column; gap: 4px; background: var(--bg); }
-.ui /* ---------- Tab bar ---------- */
-.tabbar { flex: none; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); padding: 0 4px var(--safe-bottom); border-top: 1px solid var(--line); background: color-mix(in oklab, var(--bg) 92%, transparent); }
+/* ---------- Tab bar ---------- */
+.ui .tabbar { flex: none; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); padding: 0 4px var(--safe-bottom); border-top: 1px solid var(--line); background: color-mix(in oklab, var(--bg) 92%, transparent); }
 .ui .tab { height: 49px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: var(--text-3); font-size: 11px; line-height: 13px; font-weight: 500; text-decoration: none; border: 0; background: none; font-family: inherit; }
 .ui .tab svg { width: 24px; height: 24px; }
 .ui .tab.on { color: var(--accent); }
 .ui .tab .dotcount { position: absolute; }
-.ui /* ---------- Grouped list ---------- */
-.group { background: var(--surface); border-radius: 16px; overflow: hidden; }
+/* ---------- Grouped list ---------- */
+.ui .group { background: var(--surface); border-radius: 16px; overflow: hidden; }
 .ui .group-label { font-size: 15px; line-height: 20px; color: var(--text-2); padding: 0 4px 8px; font-weight: 500; }
 .ui .lrow { min-height: 52px; display: flex; align-items: center; gap: 12px; padding: 12px 16px; position: relative; color: inherit; text-decoration: none; }
 .ui .lrow + .lrow::before { content: ""; position: absolute; top: 0; left: 16px; right: 0; height: 1px; background: var(--line); }
@@ -171,17 +171,17 @@
 .ui .lrow .trail { color: var(--text-2); font-size: 15px; text-align: right; flex: none; display: flex; align-items: center; gap: 6px; }
 .ui .lrow .chev { width: 16px; height: 16px; color: var(--text-3); }
 .ui .lrow.current { background: var(--accent-soft); }
-.ui /* ---------- Plan step (Today) ---------- */
-.step { display: grid; grid-template-columns: 28px 1fr auto; gap: 12px; align-items: start; padding: 14px 16px; position: relative; }
+/* ---------- Plan step (Today) ---------- */
+.ui .step { display: grid; grid-template-columns: 28px 1fr auto; gap: 12px; align-items: start; padding: 14px 16px; position: relative; }
 .ui .step + .step::before { content: ""; position: absolute; top: 0; left: 56px; right: 0; height: 1px; background: var(--line); }
 .ui .step .n { width: 28px; height: 28px; border-radius: 50%; border: 1.5px solid var(--line-strong); display: inline-flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; color: var(--text-2); }
 .ui .step.done .n { background: var(--text-3); border-color: transparent; color: var(--surface); }
 .ui .step.now .n { background: var(--accent); border-color: transparent; color: var(--on-accent); }
-.ui /* ---------- Meter: only for real counts ---------- */
-.meter { height: 4px; border-radius: 2px; background: var(--fill); overflow: hidden; }
+/* ---------- Meter: only for real counts ---------- */
+.ui .meter { height: 4px; border-radius: 2px; background: var(--fill); overflow: hidden; }
 .ui .meter > i { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
-.ui /* ---------- Study card ---------- */
-.card { background: var(--raised); border: 1px solid var(--line); border-radius: var(--r-card); padding: 20px; display: flex; flex-direction: column; gap: 16px; box-shadow: var(--shadow); }
+/* ---------- Study card ---------- */
+.ui .card { background: var(--raised); border: 1px solid var(--line); border-radius: var(--r-card); padding: 20px; display: flex; flex-direction: column; gap: 16px; box-shadow: var(--shadow); }
 .ui .why { display: flex; align-items: center; gap: 8px; font-size: 13px; line-height: 18px; color: var(--text-2); }
 .ui .why svg { width: 14px; height: 14px; color: var(--accent); flex: none; }
 .ui .card-kind { font-size: 13px; line-height: 18px; color: var(--text-3); }
@@ -194,11 +194,11 @@
 .ui .card.muted { box-shadow: none; background: var(--surface); }
 .ui .mark { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 15px; }
 .ui .mark svg { width: 18px; height: 18px; }
-.ui /* grade buttons after recall */
-.grade { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+/* grade buttons after recall */
+.ui .grade { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .ui .grade .btn { min-height: 52px; }
-.ui /* ---------- Option row ---------- */
-.opts { display: flex; flex-direction: column; gap: 8px; }
+/* ---------- Option row ---------- */
+.ui .opts { display: flex; flex-direction: column; gap: 8px; }
 .ui .opt { min-height: 56px; width: 100%; text-align: left; font: inherit; font-size: 16px; line-height: 22px; color: var(--text); background: var(--surface); border: 1.5px solid var(--field); border-radius: 14px; padding: 12px 14px; display: grid; grid-template-columns: 28px 1fr 22px; gap: 12px; align-items: start; cursor: pointer; transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease); }
 .ui .opt .let { width: 28px; height: 28px; border-radius: 8px; background: var(--fill); display: inline-flex; align-items: center; justify-content: center; font-weight: 600; font-size: 15px; color: var(--text-2); }
 .ui .opt .key { display: none; }
@@ -214,20 +214,20 @@
 .ui .opt .tag { display: block; font-size: 13px; font-weight: 600; margin-top: 2px; }
 .ui .opt.right .tag { color: var(--ok); }
 .ui .opt.wrong .tag { color: var(--miss); }
-.ui /* keycap, .ui laptop only */
-.kbd { display: inline-flex; min-width: 22px; height: 22px; padding: 0 6px; align-items: center; justify-content: center; border-radius: 6px; border: 1px solid var(--line-strong); border-bottom-width: 2px; font-size: 12px; font-weight: 600; color: var(--text-2); background: var(--surface); }
+/* keycap, laptop only */
+.ui .kbd { display: inline-flex; min-width: 22px; height: 22px; padding: 0 6px; align-items: center; justify-content: center; border-radius: 6px; border: 1px solid var(--line-strong); border-bottom-width: 2px; font-size: 12px; font-weight: 600; color: var(--text-2); background: var(--surface); }
 .ui .keys { display: flex; gap: 20px; align-items: center; justify-content: center; font-size: 13px; color: var(--text-3); padding: 10px 0; }
 .ui .keys span { display: inline-flex; gap: 6px; align-items: center; }
-.ui /* ---------- Answer box ---------- */
-.field-label { font-size: 15px; font-weight: 600; display: flex; justify-content: space-between; gap: 8px; }
+/* ---------- Answer box ---------- */
+.ui .field-label { font-size: 15px; font-weight: 600; display: flex; justify-content: space-between; gap: 8px; }
 .ui .answer { width: 100%; min-height: 96px; font: inherit; font-size: 16px; line-height: 24px; color: var(--text); background: var(--surface); border: 1.5px solid var(--field); border-radius: 14px; padding: 12px 14px; resize: none; display: block; }
 .ui .answer:focus, .ui .answer.focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .ui .answer.filled { border-color: var(--field); }
 .ui .answer::placeholder { color: var(--text-3); }
 .ui .input { width: 100%; min-height: 52px; font: inherit; font-size: 16px; color: var(--text); background: var(--surface); border: 1.5px solid var(--field); border-radius: 14px; padding: 0 14px; }
 .ui .hint { font-size: 13px; line-height: 18px; color: var(--text-3); }
-.ui /* ---------- Source ---------- */
-.source { background: var(--surface); border-radius: var(--r-card); padding: 20px; display: flex; flex-direction: column; gap: 12px; border: 1px solid var(--line); }
+/* ---------- Source ---------- */
+.ui .source { background: var(--surface); border-radius: var(--r-card); padding: 20px; display: flex; flex-direction: column; gap: 12px; border: 1px solid var(--line); }
 .ui .source .text { font-family: var(--font-source); font-size: 18px; line-height: 28px; font-variation-settings: "opsz" 16; }
 .ui .source .text p + p { margin-top: 12px; }
 .ui .attr { font-size: 13px; line-height: 18px; color: var(--text-2); }
@@ -237,18 +237,18 @@
 .ui .source td { padding: 8px 8px 8px 0; border-bottom: 1px solid var(--line); }
 .ui .source td.r, .ui .source th.r { text-align: right; }
 .ui .figure { border-radius: 12px; background: var(--bg); border: 1px solid var(--line); overflow: hidden; }
-.ui /* ---------- Sheet ---------- */
-.scrim { position: absolute; inset: 0; background: var(--scrim); }
+/* ---------- Sheet ---------- */
+.ui .scrim { position: absolute; inset: 0; background: var(--scrim); }
 .ui .sheet { position: absolute; left: 0; right: 0; bottom: 0; background: var(--surface); border-radius: var(--r-sheet) var(--r-sheet) 0 0; padding: 8px 20px calc(var(--safe-bottom) + 12px); display: flex; flex-direction: column; gap: 16px; box-shadow: 0 -8px 40px rgba(0,0,0,.25); }
 .dark .ui .sheet, .ui.dark .sheet, .ui .dark .sheet { background: var(--raised); }
 .ui .grabber { width: 36px; height: 5px; border-radius: 3px; background: var(--line-strong); margin: 0 auto 4px; }
-.ui /* ---------- Banner ---------- */
-.banner { flex: none; margin: 0 20px; min-height: 44px; border-radius: 12px; background: var(--accent-soft); display: flex; align-items: center; gap: 10px; padding: 0 4px 0 14px; font-size: 15px; }
+/* ---------- Banner ---------- */
+.ui .banner { flex: none; margin: 0 20px; min-height: 44px; border-radius: 12px; background: var(--accent-soft); display: flex; align-items: center; gap: 10px; padding: 0 4px 0 14px; font-size: 15px; }
 .ui .banner .x { width: 44px; height: 44px; border: 0; background: none; color: var(--text-2); display: inline-flex; align-items: center; justify-content: center; }
 .ui .banner.neutral { background: var(--fill); }
 .ui .banner svg { width: 18px; height: 18px; flex: none; }
-.ui /* ---------- Toggle, .ui segmented ---------- */
-.toggle { width: 51px; height: 31px; border-radius: 16px; background: var(--fill); position: relative; flex: none; border: 1px solid var(--field); }
+/* ---------- Toggle, segmented ---------- */
+.ui .toggle { width: 51px; height: 31px; border-radius: 16px; background: var(--fill); position: relative; flex: none; border: 1px solid var(--field); }
 .ui .toggle::after { content: ""; position: absolute; width: 27px; height: 27px; border-radius: 50%; background: #fff; top: 1px; left: 1px; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
 .ui .toggle.on { background: var(--accent); border-color: transparent; }
 .ui .toggle.on::after { left: 21px; }
@@ -256,25 +256,24 @@
 .ui .seg button { min-height: 38px; border: 0; background: none; font: inherit; font-size: 15px; font-weight: 500; color: var(--text); border-radius: 9px; }
 .ui .seg button.on { background: var(--surface); box-shadow: 0 1px 3px rgba(0,0,0,.12); font-weight: 600; }
 .dark .ui .seg button.on, .ui.dark .seg button.on, .ui .dark .seg button.on { background: var(--line-strong); }
-.ui /* ---------- Ask ---------- */
-.ask-pill { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 14px; border-radius: 999px; background: var(--text); color: var(--bg); font-size: 15px; font-weight: 600; box-shadow: 0 6px 20px rgba(0,0,0,.25); border: 0; }
+/* ---------- Ask ---------- */
+.ui .ask-pill { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 14px; border-radius: 999px; background: var(--text); color: var(--bg); font-size: 15px; font-weight: 600; box-shadow: 0 6px 20px rgba(0,0,0,.25); border: 0; }
 .ui .ask-pill svg { width: 16px; height: 16px; }
 .ui .sel { background: color-mix(in oklab, var(--accent) 28%, transparent); border-radius: 3px; }
 .ui .cite { font-size: 11px; font-weight: 600; vertical-align: super; line-height: 0; color: var(--accent); margin-left: 1px; }
 .ui .added { text-decoration: underline dotted var(--text-3); text-underline-offset: 4px; text-decoration-thickness: 1.5px; }
 .ui .corner-ask { position: absolute; right: 16px; width: 44px; height: 44px; border-radius: 50%; background: var(--raised); border: 1px solid var(--line); color: var(--text-2); display: flex; align-items: center; justify-content: center; box-shadow: var(--shadow); }
-.ui /* ---------- Wide (laptop) ---------- */
-.wide { flex-direction: row; }
+/* ---------- Wide (laptop) ---------- */
+.ui .wide { flex-direction: row; }
 .ui .rail { width: 232px; flex: none; border-right: 1px solid var(--line); padding: 20px 12px; display: flex; flex-direction: column; gap: 2px; }
 .ui .rail .tab { flex-direction: row; justify-content: flex-start; height: 44px; gap: 12px; padding: 0 12px; font-size: 15px; border-radius: 10px; color: var(--text-2); }
 .ui .rail .tab.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 .ui .rail .brand { padding: 4px 12px 20px; display: flex; flex-direction: column; gap: 2px; }
-.ui /* ---------- Class swatch (hub) ---------- */
-.swatch { width: 12px; height: 12px; border-radius: 4px; background: var(--accent); flex: none; }
-.ui /* ---------- Canvas-only annotations (never in the app) ---------- */
-.note { font-family: var(--font-ui); font-size: 13px; color: var(--text-3); }
-.ui /* ---------- Polish pass: settings ---------- */
-.seg button { white-space: nowrap; padding: 0 10px; }
+/* ---------- Class swatch (hub) ---------- */
+.ui .swatch { width: 12px; height: 12px; border-radius: 4px; background: var(--accent); flex: none; }
+/* ---------- Canvas-only annotations (never in the app) ---------- */
+/* ---------- Polish pass: settings ---------- */
+.ui .seg button { white-space: nowrap; padding: 0 10px; }
 .ui .ico { width: 30px; height: 30px; border-radius: 9px; flex: none; display: inline-flex; align-items: center; justify-content: center; background: var(--accent-soft); color: var(--accent); }
 .ui .ico svg { width: 18px; height: 18px; }
 .ui .ico.neutral { background: var(--fill); color: var(--text-2); }
@@ -288,8 +287,8 @@
 .ui .owner-rule { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text-3); }
 .ui .owner-rule::before, .ui .owner-rule::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 .ui .pill-val { display: inline-flex; align-items: center; height: 32px; padding: 0 12px; border-radius: 10px; background: var(--fill); color: var(--text); font-size: 15px; font-weight: 500; font-variant-numeric: tabular-nums; }
-.ui /* ---------- Polish pass: Ask ---------- */
-.ask-pill { position: relative; z-index: 2; border: 1px solid color-mix(in oklab, var(--bg) 20%, transparent); }
+/* ---------- Polish pass: Ask ---------- */
+.ui .ask-pill { position: relative; z-index: 2; border: 1px solid color-mix(in oklab, var(--bg) 20%, transparent); }
 .ui .ask-pill::after { content: ""; position: absolute; left: 50%; bottom: -6px; width: 12px; height: 12px; background: var(--text); transform: translateX(-50%) rotate(45deg); border-radius: 2px; z-index: -1; }
 .ui .ask-head { display: flex; align-items: center; gap: 10px; }
 .ui .ask-mark { width: 28px; height: 28px; border-radius: 9px; background: var(--accent); color: var(--on-accent); display: inline-flex; align-items: center; justify-content: center; flex: none; }
@@ -315,8 +314,8 @@
 .ui .send svg { width: 18px; height: 18px; }
 .ui .chip-row { display: flex; gap: 8px; flex-wrap: wrap; }
 .ui .chip-btn { height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--field); background: none; color: var(--text); font: inherit; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; }
-.ui /* ---------- Owner console ---------- */
-.oc-nav { width: 248px; flex: none; border-right: 1px solid var(--line); padding: 24px 12px; display: flex; flex-direction: column; gap: 2px; background: var(--bg); }
+/* ---------- Owner console ---------- */
+.ui .oc-nav { width: 248px; flex: none; border-right: 1px solid var(--line); padding: 24px 12px; display: flex; flex-direction: column; gap: 2px; background: var(--bg); }
 .ui .oc-nav .tab { flex-direction: row; justify-content: flex-start; height: 40px; gap: 12px; padding: 0 12px; font-size: 15px; border-radius: 10px; color: var(--text-2); }
 .ui .oc-nav .tab.on { background: var(--surface); color: var(--text); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
 .ui .oc-nav .tab .n { margin-left: auto; font-size: 12px; font-weight: 600; min-width: 22px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--fill); color: var(--text-2); display: inline-flex; align-items: center; justify-content: center; }
@@ -362,8 +361,8 @@
 .ui .btn-sm { min-height: 36px; padding: 0 14px; border-radius: 10px; font-size: 14px; width: auto; }
 .ui .btn-outline-danger { background: none; border: 1.5px solid color-mix(in oklab, var(--miss) 45%, var(--line)); color: var(--miss); }
 .ui .swatch-lg { width: 10px; height: 36px; border-radius: 5px; background: var(--accent); flex: none; }
-.ui /* ---------- Final pass: contrast and tap areas ---------- */
-.ask-quote .from { color: var(--text-2); }
+/* ---------- Final pass: contrast and tap areas ---------- */
+.ui .ask-quote .from { color: var(--text-2); }
 .ui .ask-pill::before, .ui .send::before, .ui .chip-btn::before { content: ""; position: absolute; inset: -4px; }
 .ui .send, .ui .chip-btn { position: relative; }
 .ui .seg { padding: 2px; }
