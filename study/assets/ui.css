@@ -573,3 +573,6 @@ body.ui { margin: 0; min-height: 100vh; min-height: 100dvh; background: var(--bg
 
 /* Segmented buttons: the export draws them at 40px; on the real pages they are tap targets, so 44. */
 .ui .seg button { min-height: 44px; }
+
+/* An icon inside a button is 20px; an unsized inline svg would otherwise fill the button. */
+.ui .btn > svg { width: 20px; height: 20px; }
