@@ -19,7 +19,12 @@ function paintOwner() {
   $('adminpanel').hidden = !admin;
   $('ownerform').hidden = admin;
   $('ownerout').hidden = !admin;
-  $('ownersum').textContent = admin ? 'signed in' : 'signed out';
+  $('ownersum').textContent = admin ? 'Signed in' : 'Signed out';
+  var rowState = $('ownerrowstate');
+  if (rowState) rowState.textContent = admin ? 'Signed in' : 'Sign in to manage materials';
+  var rule = $('ownerrule');
+  if (rule) rule.textContent = admin ? 'Only you see these' : 'Only the owner';
+  if (!admin && /^owner\//.test(currentScreen())) go('settings/owner');
   $('ownerdot').className = 'dot' + (admin ? ' ok' : ' off');
   $('ownernote').textContent = admin
     ? 'Signed in on this browser. Locked and hidden materials open for you here.'
@@ -123,41 +128,43 @@ var withTag = function (m, tag, on) {
 
 function makeRow(m) {
   var lockedForMe = m.locked && role !== 'admin';
-  var li = document.createElement('li');
   var a = document.createElement('button');
   a.type = 'button';
-  a.className = 'mrow' + (lockedForMe ? ' islocked' : '') + (isRetired(m) ? ' isretired' : '');
+  a.className = 'mat' + (lockedForMe ? ' locked' : '') + (isRetired(m) ? ' retired' : '');
 
-  var left = document.createElement('span');
-  left.className = 'mleft';
   var title = document.createElement('span');
-  title.className = 'mtitle';
+  title.className = 't';
   title.textContent = m.title;
-  if (m.locked) title.appendChild(flag('locked', 'Locked'));
-  if (m.hidden) title.appendChild(flag('hidden', 'Hidden'));
-  if (isRetired(m)) title.appendChild(flag('retired', 'Retired'));
-  /* The owner's reminder of which materials offer an AI feature. Nothing AI related is drawn
-     for anyone else. */
-  if (StudyAuth.isAdmin() && aiHasAnyTag(m)) title.appendChild(flag('ai', 'AI'));
-  left.appendChild(title);
+  a.appendChild(title);
   if (m.blurb) {
     var b = document.createElement('span');
-    b.className = 'mblurb'; b.textContent = m.blurb;
-    left.appendChild(b);
+    b.className = 'd'; b.textContent = m.blurb;
+    a.appendChild(b);
   }
-
-  var right = document.createElement('span');
-  right.className = 'mright';
+  var meta = document.createElement('span');
+  meta.className = 'm';
+  if (m.locked) meta.appendChild(flag('warn', 'Locked'));
+  if (m.hidden) meta.appendChild(flag('', 'Hidden'));
+  if (isRetired(m)) meta.appendChild(flag('', 'Retired'));
+  /* The owner's reminder of which materials offer Ask or grading. Nothing of it is drawn
+     for anyone else, and the word AI never appears on screen (export README). */
+  if (StudyAuth.isAdmin() && aiHasAnyTag(m)) meta.appendChild(flag('ask', 'Ask'));
   if (m.added) {
     var ad = document.createElement('span');
-    ad.className = 'madded'; ad.textContent = m.added;
-    right.appendChild(ad);
+    ad.className = 'dt'; ad.textContent = niceDate(m.added);
+    meta.appendChild(ad);
   }
-
-  a.appendChild(left); a.appendChild(right);
+  if (meta.children.length) a.appendChild(meta);
   a.addEventListener('click', function () { open(m); });
-  li.appendChild(a);
-  return li;
+  return a;
+}
+
+/* "2026-09-25" as "25 Sep", the way the export writes dates. */
+function niceDate(iso) {
+  var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''));
+  if (!m) return String(iso || '');
+  var mon = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Number(m[2]) - 1];
+  return Number(m[3]) + ' ' + mon;
 }
 
 function renderAll(needle) {
@@ -176,20 +183,20 @@ function renderAll(needle) {
     sec.setAttribute('data-subject', klass.id);
 
     var head = document.createElement('div');
-    head.className = 'khead';
+    head.className = 'cls';
+    var sw = document.createElement('span');
+    sw.className = 'swatch';
+    head.appendChild(sw);
     var h2 = document.createElement('h2');
-    h2.className = 'kname';
     h2.textContent = klass.name;
     head.appendChild(h2);
-    if (klass.term) {
-      var t = document.createElement('span');
-      t.className = 'kterm'; t.textContent = klass.term;
-      head.appendChild(t);
-    }
+    var t = document.createElement('span');
+    t.className = 'meta';
+    head.appendChild(t);
     sec.appendChild(head);
 
-    var ul = document.createElement('ul');
-    ul.className = 'rows';
+    var ul = document.createElement('div');
+    ul.className = 'group';
 
     mats.forEach(function (m) {
       if (isRetired(m)) { retired.push(m); shown++; return; }
@@ -197,6 +204,7 @@ function renderAll(needle) {
       shown++;
     });
 
+    t.textContent = String(ul.children.length);
     if (ul.children.length) { sec.appendChild(ul); wrap.appendChild(sec); }
   });
 
@@ -204,14 +212,15 @@ function renderAll(needle) {
      under one collapsed heading at the bottom, out of the way of what is current. */
   if (retired.length) {
     var det = document.createElement('details');
-    det.className = 'retiredwrap';
+    det.className = 'retiredwrap group';
     det.open = !!needle;
     var sum = document.createElement('summary');
-    sum.innerHTML = '<span class="kname">Retired</span><span class="kterm"></span>';
-    sum.lastChild.textContent = retired.length + ' from earlier quizzes and assignments';
+    sum.className = 'lrow';
+    sum.innerHTML = '<span class="ico neutral"><svg><use href="#i-box"/></svg></span><span class="main"><span>Retired</span><span class="desc"></span></span><svg class="chev"><use href="#i-chev"/></svg>';
+    sum.querySelector('.desc').textContent = retired.length + ' from earlier quizzes and assignments';
     det.appendChild(sum);
-    var rul = document.createElement('ul');
-    rul.className = 'rows';
+    var rul = document.createElement('div');
+    rul.className = 'retiredrows';
     retired.forEach(function (m) { rul.appendChild(makeRow(m)); });
     det.appendChild(rul);
     wrap.appendChild(det);
@@ -220,22 +229,24 @@ function renderAll(needle) {
   $('noresults').hidden = shown > 0;
   var n = items.length;
   var classes = groupByClass(items).length;
-  $('subline').textContent = n
-    ? n + ' material' + (n === 1 ? '' : 's') + ' across ' + classes + ' class' + (classes === 1 ? '' : 'es') + '.'
-    : 'No materials yet.';
+  var now = new Date();
+  var day = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][now.getDay()] + ' ' + now.getDate() + ' ' +
+    ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][now.getMonth()] + '. ';
+  $('subline').textContent = day + (n
+    ? n + ' material' + (n === 1 ? '' : 's') + (classes > 1 ? ' in ' + classes + ' classes' : '') + '.'
+    : 'No materials yet.');
 }
 
 function flag(cls, text) {
   var s = document.createElement('span');
-  s.className = 'flag ' + cls;
+  s.className = 'tg' + (cls ? ' ' + cls : '');
   s.textContent = text;
   return s;
 }
 
 function open(m) {
   if (m.locked && !StudyAuth.isAdmin()) {
-    $('ownerpanel').open = true;
-    $('ownerpanel').scrollIntoView({ block: 'center' });
+    go('settings/owner');
     $('ownermsg').textContent = '"' + m.title + '" is locked. Sign in as the owner to open it.';
     $('ownermsg').hidden = false;
     return;
@@ -266,9 +277,13 @@ function renderRecents() {
     box.innerHTML = '';
     list.forEach(function (r) {
       if (!r || !known[r.id]) return;         // drop anything hidden from this role
+      var m = known[r.id];
       var b = document.createElement('button');
-      b.type = 'button'; b.className = 'chip';
-      b.textContent = r.title || r.id;
+      b.type = 'button'; b.className = 'rc';
+      b.innerHTML = '<span class="t"></span><span class="c"><span class="swatch"></span><span></span></span>';
+      b.querySelector('.t').textContent = r.title || r.id;
+      b.querySelector('.c').setAttribute('data-subject', m.class_id || 'other');
+      b.querySelector('.c span:last-child').textContent = m.class_name || '';
       b.addEventListener('click', function () { open(known[r.id]); });
       box.appendChild(b);
     });
@@ -278,15 +293,39 @@ function renderRecents() {
 
 /* ============================================================ hash route */
 
+/* Screens: home, settings (settings/owner scrolls to the owner part) and the owner's four
+   sub screens. One document, one scroll per screen; the home keeps its place when you come
+   back to it. The export: Hub, HubSettings, OwnerHome390. */
+var SCREENS = { '': 'scr-home', 'settings': 'scr-settings', 'owner/materials': 'scr-owner-materials',
+                'owner/access': 'scr-owner-access', 'owner/inbox': 'scr-owner-inbox', 'owner/ask': 'scr-owner-ask' };
+var homeScroll = 0, shownScreen = '';
+function currentScreen() { return shownScreen; }
+function go(route) { if (('#' + route) !== location.hash) location.hash = route; else showRoute(route); }
+function showRoute(route) {
+  var anchor = null;
+  if (route === 'settings/owner' || route === 'owner') { anchor = 'ownerpanel'; route = 'settings'; }
+  if (route === 'settings/sync') { anchor = 'syncpanel'; route = 'settings'; }
+  if (/^owner\//.test(route) && !(window.StudyAuth && StudyAuth.isAdmin())) { anchor = 'ownerpanel'; route = 'settings'; }
+  if (!SCREENS.hasOwnProperty(route)) route = '';
+  if (shownScreen === '' && route !== '') homeScroll = window.scrollY;
+  Object.keys(SCREENS).forEach(function (k) { var e = $(SCREENS[k]); if (e) e.hidden = k !== route; });
+  var was = shownScreen;
+  shownScreen = route;
+  if (anchor) { var a = $(anchor); if (a) a.scrollIntoView({ block: 'start' }); }
+  else if (route === '' && was !== '') window.scrollTo(0, homeScroll);
+  else if (route !== was) window.scrollTo(0, 0);
+  if (route === 'owner/ask' && typeof initAi === 'function') initAi();
+}
+
 function handleHash() {
   var h = (location.hash || '').replace(/^#/, '');
-  if (!h) return;
+  if (!h || SCREENS.hasOwnProperty(h) || h === 'settings/owner' || h === 'owner' || h === 'settings/sync') { showRoute(h); return; }
 
   if (h.indexOf('pair=') === 0) {
     var code = decodeURIComponent(h.slice(5));
-    $('syncpanel').open = true;
+    showRoute('settings');
     $('paircode').value = code;
-    $('syncpanel').scrollIntoView({ block: 'start' });
+    $('pairblock').scrollIntoView({ block: 'start' });
     if (window.confirm('Pair this device with code ' + code + '?')) doPair();
     history.replaceState(null, '', location.pathname + location.search);
     return;
@@ -294,6 +333,8 @@ function handleHash() {
 
   var el = document.getElementById(h);
   if (el) {
+    var scr = el.closest ? el.closest('[data-screen]') : null;
+    if (scr) showRoute(scr.getAttribute('data-screen') === 'home' ? '' : scr.getAttribute('data-screen'));
     el.scrollIntoView({ block: 'start' });
     el.classList.add('flash');
     setTimeout(function () { el.classList.remove('flash'); }, 1600);
@@ -466,7 +507,7 @@ function doPair() {
       return asCode.then(function (role) {
         if (role) {
           window.alert('Paired with ' + r.code + ', and signed in with it. ' +
-            'The AI features this code carries are on: highlight text in a material and tap Ask, or press Alt and A.');
+            'The Ask features this code carries are on: highlight text in a material and tap Ask, or press Alt and A.');
           try { renderAll(); } catch (e) {}
           return;
         }
@@ -490,11 +531,7 @@ function initSyncPanel() {
   /* Wired before the guard below: the header line has to open the panel even on a device
      where sync.js failed to load, or tapping it would do nothing at all. */
   var strip = $('syncstrip');
-  if (strip) strip.addEventListener('click', function () {
-    var panel = $('syncpanel');
-    panel.open = true;
-    panel.scrollIntoView({ block: 'start', behavior: 'smooth' });
-  });
+  if (strip) strip.addEventListener('click', function () { go('settings/sync'); });
 
   if (!window.StudyStore) {
     $('statusline').textContent = 'The sync module did not load. Materials still save on this device.';
@@ -739,7 +776,7 @@ function aiTagControl(m, i) {
   menu.id = 'aipop-' + i;
   menu.hidden = true;
   menu.setAttribute('role', 'group');
-  menu.setAttribute('aria-label', 'AI features for ' + (m.title || m.id));
+  menu.setAttribute('aria-label', 'Ask features for ' + (m.title || m.id));
   btn.setAttribute('aria-controls', menu.id);
 
   var err = el('p', 'err-inline aipoperr');
@@ -748,8 +785,8 @@ function aiTagControl(m, i) {
 
   function paintBtn() {
     var n = offered.filter(function (f) { return hasTag(m, f.tag); }).length;
-    btn.textContent = 'AI ' + n + '/' + total;
-    btn.setAttribute('aria-label', 'AI features, ' + n + ' of ' + total + ' on');
+    btn.textContent = 'Ask ' + n + '/' + total;
+    btn.setAttribute('aria-label', 'Ask features, ' + n + ' of ' + total + ' on');
     btn.classList.toggle('some', n > 0);
   }
 
@@ -1221,7 +1258,7 @@ function aiWordsInput(rows) {
 function aiTabs(parent, defs) {
   var bar = el('div', 'aitabs');
   bar.setAttribute('role', 'tablist');
-  bar.setAttribute('aria-label', 'AI settings');
+  bar.setAttribute('aria-label', 'Ask settings');
   parent.appendChild(bar);
   var t = { bar: bar, tabs: {}, panes: {}, badges: {}, order: [], current: null };
   defs.forEach(function (d) {
@@ -1337,13 +1374,13 @@ function buildAi(sec) {
   var e = { cap: {}, rows: Object.create(null), capRows: Object.create(null), groups: Object.create(null) };
 
   var head = el('div', 'aihead');
-  head.appendChild(el('h3', 'rubric', 'AI'));
+  head.appendChild(el('h3', 'rubric', 'Switches and spending'));
   e.refresh = el('button', 'ailink', 'Refresh');
   e.refresh.type = 'button';
   head.appendChild(e.refresh);
   sec.appendChild(head);
   sec.appendChild(el('p', 'note',
-    'Nothing runs unless it is switched on here and the material carries its tag (the AI button ' +
+    'Nothing runs unless it is switched on here and the material carries its tag (the Ask button ' +
     'on each row above). What a student types goes to Anthropic for the answer.'));
 
   e.msg = el('p', 'err-inline');
@@ -1360,10 +1397,10 @@ function buildAi(sec) {
   var sws = el('div', 'aistripsw');
   var master = el('div', 'aimaster');
   var mt = el('div', 'aimastertext');
-  mt.appendChild(el('span', 'aimastername', 'All AI features'));
+  mt.appendChild(el('span', 'aimastername', 'Everything Ask can do'));
   mt.appendChild(el('span', 'aimeta', 'Off holds every feature, whatever its own switch says.'));
   master.appendChild(mt);
-  e.master = aiSwitch('All AI features');
+  e.master = aiSwitch('Everything Ask can do');
   master.appendChild(e.master);
   sws.appendChild(master);
 
@@ -1411,7 +1448,7 @@ function buildAi(sec) {
   var pFeat = e.tabs.panes.features, pLim = e.tabs.panes.limits;
 
   /* ---- Features: what is on, who may use it, which model ---- */
-  e.held = el('p', 'aiheld', 'All AI features is off, so nothing here can run.');
+  e.held = el('p', 'aiheld', 'Everything Ask can do is off, so nothing here can run.');
   e.held.hidden = true;
   pFeat.appendChild(e.held);
   e.featNote = el('p', 'err-inline');
@@ -1631,7 +1668,7 @@ function buildAi(sec) {
   /* ---- Codes ---- */
   e.passGroup = aiGroup(e.secWho, 'passes', 'Codes');
   e.passGroup.body.appendChild(el('p', 'note',
-    'A code is one person: it saves their progress under that code and lets them use the AI ' +
+    'A code is one person: it saves their progress under that code and lets them use Ask ' +
     'features you tick, out of money you load onto it. It carries none of your own rights. ' +
     'Switch it off, end it, or let it end by itself in the morning. A code\'s end time is New York ' +
     'time. Your caps above still hold, and they run on a different clock: the day turns over at ' +
@@ -2081,10 +2118,10 @@ function aiPaintSaqRow(r, s) {
   r.spent.classList.add('nocap');
   r.spent.setAttribute('aria-label', aiCapCents(today) + ' today. It spends against the account caps under Limits.');
   r.about.textContent = 'Marks a written short answer against the rubric. It has no switch or cap of its ' +
-    'own: it runs whenever All AI features is on, against the account caps.';
+    'own: it runs whenever Everything Ask can do is on, against the account caps.';
   r.about.hidden = false;
   r.meta.textContent = 'tag ' + info.tag;
-  r.fixed.textContent = s.enabled ? 'On with All AI' : 'Off with All AI';
+  r.fixed.textContent = s.enabled ? 'On with everything' : 'Off with everything';
   r.li.classList.toggle('off', !s.enabled);
   aiPaintMode(r, s.mode);
   aiPaintModelSelect(r.model, s.model);
@@ -2326,7 +2363,7 @@ function aiPaintHead() {
 
   var items = [];
   if (s && !s.enabled) {
-    items.push(aiAttnItem('warn', 'All AI features is off, so nothing can run.'));
+    items.push(aiAttnItem('warn', 'Everything Ask can do is off, so nothing can run.'));
   }
   if (u && s) {
     var dayShare = dayCap > 0 ? Number(u.today_cents) / dayCap : 0;
@@ -3304,7 +3341,7 @@ function aiPassRow(p) {
     }
     btn('Ends in the morning', function () { return { id: p.id, when: 'morning' }; });
     btn('No end date', function () { return { id: p.id, when: 'none' }; }, 'Let this code run with no end date?');
-    btn('End now', function () { return { id: p.id, when: 'now' }; }, 'End this code now? They lose the AI features straight away.');
+    btn('End now', function () { return { id: p.id, when: 'now' }; }, 'End this code now? They lose the Ask features straight away.');
   } else {
     /* Bringing one back always sets a new end, so a revived code is never permanent by accident. */
     btn('Back for 3 hours', function () { return { id: p.id, revive: true, when: 'hours', hours: 3 }; });
@@ -4022,7 +4059,7 @@ function initAi() {
   var sec = $('aiblock');
   if (!sec || !aiEl) {
     if (sec && sec.parentNode) sec.parentNode.removeChild(sec);
-    var body = document.querySelector('#adminpanel .panelbody');
+    var body = $('aimount');
     if (!body) return;
     sec = el('section', 'block');
     sec.id = 'aiblock';
@@ -4217,6 +4254,8 @@ function boot() {
   initSyncPanel();
   initSW();
   initTelemetry();
+  /* Route at once: settings must open even when the catalog never arrives (offline, first visit). */
+  handleHash();
 
   loadCatalog().then(function () {
     $('err').hidden = true;

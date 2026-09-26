@@ -2,46 +2,36 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="color-scheme" content="light only">
+<meta name="color-scheme" content="light dark">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#F2F1ED">
+<meta name="theme-color" content="#F3F3F1" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0F1012" media="(prefers-color-scheme: dark)">
 <meta name="robots" content="noindex,nofollow">
-<title>Opening…</title>
+<title>Opening</title>
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..700&amp;family=Onest:wght@400;500;600;700&amp;display=swap">
+<link rel="stylesheet" href="assets/ui.css">
 <style>
-:root{
-  --paper:#F2F1ED; --ink:#1B2327; --ink2:#4E5B61; --ink3:#87949A;
-  --rule:#D2D2CB; --bad:#94402E;
-  --mono:ui-monospace,Menlo,Consolas,monospace;
-  --serif:Georgia,"Times New Roman",serif;
-  --cond:"Helvetica Neue",Arial,sans-serif;
-}
-*{box-sizing:border-box}
-body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif);
-  font-size:17px;line-height:1.5;min-height:100vh;display:flex;align-items:center;justify-content:center;
-  padding:calc(24px + env(safe-area-inset-top,0px)) 20px calc(24px + env(safe-area-inset-bottom,0px))}
-.card{max-width:440px;width:100%}
-.eyebrow{margin:0;font-family:var(--mono);font-size:11px;letter-spacing:.18em;
-  text-transform:uppercase;color:var(--ink3)}
-h1{margin:4px 0 0;font-size:26px;font-weight:600;letter-spacing:-.01em}
-p{margin:10px 0 0;color:var(--ink2);font-size:15.5px}
-.bad{color:var(--bad)}
-.btn{display:inline-block;margin-top:20px;min-height:48px;line-height:46px;padding:0 18px;
-  border:1px solid var(--ink);background:var(--ink);color:var(--paper);
-  font-family:var(--cond);font-size:15px;font-weight:600;border-radius:2px;
-  cursor:pointer;text-decoration:none}
-.btn.ghost{background:transparent;color:var(--ink);border-color:var(--rule)}
-.spin{display:inline-block;width:11px;height:11px;border:2px solid var(--rule);
-  border-top-color:var(--ink);border-radius:50%;animation:sp .7s linear infinite;vertical-align:-1px;margin-right:7px}
-@keyframes sp{to{transform:rotate(360deg)}}
-@media (prefers-reduced-motion:reduce){.spin{animation:none}}
+/* The opening screen: the kit's loading and error states (export: StateLoading, StateError). */
+.ui .opening { min-height: 100vh; min-height: 100dvh; }
+.ui .opening .sk-lines { display: flex; flex-direction: column; gap: 10px; }
+.ui .opening .fail-ico { width: 32px; height: 32px; color: var(--miss); }
+.ui .opening .fail-ico svg { width: 32px; height: 32px; }
+.ui .opening #acts:empty { display: none; }
+.ui .opening #acts { display: flex; flex-direction: column; gap: 4px; margin-top: auto; }
+.ui .opening .why-line { font-size: 13px; line-height: 18px; color: var(--text-2); }
 </style>
 </head>
-<body>
-<main class="card" id="card">
-  <p class="eyebrow">Study hub</p>
-  <h1 id="h">Opening…</h1>
-  <p id="msg"><span class="spin"></span>Fetching and decrypting.</p>
+<body class="ui m-hub">
+<main class="screen opening" id="card" aria-busy="true">
+  <header class="nav"><div class="nav-left"><a class="icon-btn" href="./"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Classes</a></div><div class="nav-title"></div><div class="nav-right"></div></header>
+  <div class="fail-ico" id="failico" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5v.5"/></g></svg></div>
+  <div class="stack-8">
+    <h1 class="t-title" id="h">Opening</h1>
+    <p class="t-callout c2" id="msg">Fetching and unlocking this material. Usually under a second.</p>
+  </div>
+  <div class="sk-lines" id="sk" aria-hidden="true"><span class="sk" style="width:62%"></span><span class="sk" style="width:88%"></span><span class="sk" style="width:74%"></span><span class="sk" style="width:40%"></span></div>
   <div id="acts"></div>
 </main>
 
@@ -76,16 +66,18 @@ p{margin:10px 0 0;color:var(--ink2);font-size:15.5px}
   function fail(title, detail, showLogin, why) {
     noteFailure(title, why);
     h.textContent = title;
-    msg.className = 'bad';
+    msg.className = 't-callout c2';
     msg.textContent = detail;
+    document.getElementById('failico').hidden = false;
+    document.getElementById('sk').hidden = true;
+    document.getElementById('card').removeAttribute('aria-busy');
     acts.innerHTML = '';
     var back = document.createElement('a');
-    back.className = 'btn ghost'; back.href = './'; back.textContent = 'Back to the hub';
+    back.className = showLogin ? 'btn btn-quiet' : 'btn btn-primary'; back.href = './'; back.textContent = 'Back to the hub';
     if (showLogin) {
       var a = document.createElement('a');
-      a.className = 'btn'; a.href = './'; a.textContent = 'Sign in as owner';
+      a.className = 'btn btn-primary'; a.href = './#settings/owner'; a.textContent = 'Sign in as owner';
       acts.appendChild(a);
-      acts.appendChild(document.createTextNode(' '));
     }
     acts.appendChild(back);
   }
@@ -104,7 +96,7 @@ p{margin:10px 0 0;color:var(--ink2);font-size:15.5px}
     for (var i = 0; i < items.length; i++) if (items[i].id === id) m = items[i];
     if (!m) return fail('Not found', 'No material with that name is available to you.');
     document.title = m.title || 'Study';
-    h.textContent = m.title || 'Opening…';
+    h.textContent = m.title || 'Opening';
 
     return StudyAuth.openMaterial(m.path, m.id).then(function (html) {
       // Hand the whole document over. Same URL, same origin, so localStorage, the

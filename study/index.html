@@ -2,313 +2,344 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="color-scheme" content="light only">
+<meta name="color-scheme" content="light dark">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#F2F1ED">
+<meta name="theme-color" content="#F3F3F1" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0F1012" media="(prefers-color-scheme: dark)">
 <meta name="robots" content="noindex,nofollow">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Study">
 <title>Study Hub</title>
 <link rel="manifest" href="assets/app.webmanifest">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="assets/icon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..700&amp;family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&amp;family=Onest:wght@400;500;600;700&amp;display=swap">
+<link rel="stylesheet" href="assets/ui.css">
 <link rel="stylesheet" href="assets/hub.css">
 </head>
-<body>
-
+<body class="ui m-hub">
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-gear" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></g></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></g></symbol>
+  <symbol id="i-sync" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.3-4.9L4 8M4 4v4h4M4 13a8 8 0 0 0 14.3 4.9L20 16M20 20v-4h-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></g></symbol>
+  <symbol id="i-box" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="5" rx="1.5"/><path d="M5 9v10h14V9M10 13h4"/></g></symbol>
+  <symbol id="i-key" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="4.5"/><path d="M10.7 12.3L20 3M16 7l3 3"/></g></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18V3z" fill="currentColor"/><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+  <symbol id="i-disk" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"/></g></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4.5-3 7.8-7 9-4-1.2-7-4.5-7-9V6z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></g></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></g></symbol>
+  <symbol id="i-chat" viewBox="0 0 24 24"><path d="M5 5h14v10H9l-4 4z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
+  <symbol id="i-inbox" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M4 13l2-8h12l2 8v6H4z"/><path d="M4 13h5a3 3 0 0 0 6 0h5"/></g></symbol>
+  <symbol id="i-out" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h5v16h-5M10 8l-4 4 4 4M6 12h10"/></g></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+</svg>
 <div id="app">
 
-  <header class="collar">
-    <div class="collar-in">
-      <p class="eyebrow">Study hub</p>
-      <h1 class="wordmark">Materials<span class="rolechip" id="rolechip" hidden></span></h1>
-      <p class="sub" id="subline">Loading…</p>
-      <button class="syncstrip" id="syncstrip" type="button" title="Open sync and backup">
-        <span class="dot" id="stripdot" aria-hidden="true"></span>
-        <span class="striptext" id="striptext">Checking…</span>
-        <span class="stripbar" id="stripbar" hidden aria-hidden="true">
-          <span class="stripbar-fill" id="stripbarfill"></span>
-        </span>
-      </button>
+  <!-- ============================================================ Home -->
+  <div class="screen hub" id="scr-home" data-screen="home">
+    <div class="hubtop">
+      <a class="icon-btn" href="#settings" aria-label="Settings"><svg><use href="#i-gear"/></svg></a>
     </div>
-  </header>
+    <header class="screen-head">
+      <h1 class="t-display">Study Hub <span class="tg ok" id="rolechip" hidden>Owner</span></h1>
+      <div class="hubsub">
+        <p class="t-callout c2" id="subline">Loading</p>
+        <button class="status" id="syncstrip" type="button" aria-label="Sync status, open settings">
+          <i id="stripdot" aria-hidden="true"></i>
+          <span class="striptext" id="striptext">Checking</span>
+          <span class="stripbar" id="stripbar" hidden aria-hidden="true"><span class="stripbar-fill" id="stripbarfill"></span></span>
+        </button>
+      </div>
+    </header>
 
-  <main class="sheet">
+    <section class="tonight" id="tonight" hidden></section>
 
-    <div class="findrow">
-      <input id="filter" type="search" placeholder="Filter by title, tag, or word"
+    <label class="search">
+      <svg aria-hidden="true"><use href="#i-search"/></svg>
+      <input id="filter" class="input" type="search" placeholder="Find a material or a word"
              autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
-             aria-label="Filter materials">
-    </div>
+             aria-label="Find a material">
+    </label>
 
-    <section id="recentwrap" class="recent" hidden>
-      <h2 class="rubric">Recently opened</h2>
-      <div id="recent" class="chips"></div>
+    <section id="recentwrap" class="stack-8" hidden>
+      <h2 class="group-label">Recently opened</h2>
+      <div id="recent" class="rec"></div>
     </section>
 
     <div id="err" class="err" hidden></div>
     <div id="classes" class="classes" aria-live="polite"></div>
-    <p id="noresults" class="empty" hidden>Nothing matches that.</p>
+    <p id="noresults" class="empty-line" hidden>Nothing matches that.</p>
 
-    <!-- ---- sync ---- -->
-    <details id="syncpanel" class="panel">
-      <summary>
-        <span class="dot" id="syncdot" aria-hidden="true"></span>
-        <span class="sumtext">Sync &amp; backup</span>
-        <span class="sumstate" id="syncsum">local only</span>
-      </summary>
-      <div class="panelbody">
-        <p class="statusline" id="statusline">Checking…</p>
-
-        <div class="syncbar" id="syncbar" hidden role="progressbar"
-             aria-valuemin="0" aria-valuemax="100" aria-label="Sync progress">
-          <div class="syncbar-track"><div class="syncbar-fill" id="syncbarfill"></div></div>
-          <p class="syncbar-label" id="syncbarlabel"></p>
-        </div>
-
-        <section class="block" id="pairblock">
-          <h3 class="rubric">Pairing</h3>
-          <p class="note" id="pairnote"></p>
-          <div id="unpaired">
-            <button class="btn" id="makecode" type="button">Create a pairing code</button>
-            <div class="joiner">
-              <label class="lbl" for="paircode">or enter the code from your other device</label>
-              <div class="row">
-                <input id="paircode" type="text" placeholder="K7Q2-9MXR-4B8T"
-                       autocomplete="off" autocorrect="off" autocapitalize="characters"
-                       spellcheck="false" maxlength="20">
-                <button class="btn" id="dopair" type="button">Pair</button>
-              </div>
-            </div>
-            <p class="err-inline" id="pairerr" hidden></p>
-          </div>
-          <div id="codeout" hidden>
-            <p class="lbl">On your other device, open this hub and enter:</p>
-            <p class="bigcode" id="bigcode"></p>
-            <div class="qrwrap"><div id="qr"></div></div>
-            <p class="note">Or point that device's camera at the square.</p>
-            <button class="btn ghost" id="codedone" type="button">Done</button>
-          </div>
-          <div id="paired" hidden>
-            <p class="lbl">Paired with code</p>
-            <p class="bigcode" id="maskedcode"></p>
-            <div class="row wrap">
-              <button class="btn ghost" id="reveal" type="button">Show code</button>
-              <button class="btn ghost" id="showqr" type="button">Show square</button>
-              <button class="btn ghost" id="syncnow" type="button">Sync now</button>
-              <button class="btn ghost danger" id="unpair" type="button">Unpair</button>
-            </div>
-            <div class="qrwrap" id="pairedqrwrap" hidden><div id="pairedqr"></div></div>
-          </div>
-        </section>
-
-        <section class="block">
-          <h3 class="rubric">What syncs</h3>
-          <p class="note">Progress in every material travels with the pairing code: the
-            schedule of every card, quiz results and test dates. What stays on each device on
-            purpose: the tab and section you had open, deck positions, your typing pace, recent
-            materials and the review log queue.</p>
-          <p class="note" id="syncsize"></p>
-        </section>
-
-        <section class="block">
-          <h3 class="rubric">Copy-and-paste backup</h3>
-          <p class="note">Works with no network at all. Import merges; it never wipes what is here.</p>
-          <div class="row wrap">
-            <button class="btn ghost" id="doexport" type="button">Export</button>
-            <button class="btn ghost" id="doimport" type="button">Import</button>
-          </div>
-          <textarea id="iobox" rows="4" spellcheck="false" hidden
-                    placeholder="Paste a backup code here, then press Preview"></textarea>
-          <div class="row wrap" id="iorow" hidden>
-            <button class="btn ghost" id="copyout" type="button" hidden>Copy</button>
-            <button class="btn" id="preview" type="button" hidden>Preview import</button>
-          </div>
-          <div id="importpreview" class="preview" hidden></div>
-        </section>
-
-        <section class="block">
-          <h3 class="rubric">Offline copy</h3>
-          <p class="note" id="swnote">Checking the offline cache…</p>
-          <div class="row wrap">
-            <button class="btn" id="doupdate" type="button" hidden>Update now</button>
-            <button class="btn ghost" id="clearcache" type="button">Clear cache &amp; reload</button>
-          </div>
-        </section>
-
-        <section class="block">
-          <h3 class="rubric">Help improve the hub</h3>
-          <p class="note">Every material here schedules you with a memory model, and the only
-            way to tell whether it is any good is to set what it predicted against what
-            actually happened. With this on, each review sends an anonymous line: which
-            question was asked, the grade, how long you took, and the model's own numbers at
-            that moment. Each visit also notes when a page opened and closed, how long it was
-            in front of you, the tab it was on, any error it hit, and a rough description of
-            the browser (like "iPhone, Safari 18"), so a broken page or a confusing screen
-            shows up. After a quiz you may be asked, once, how it went (a score is sent only if
-            you type one in). It never sends your name, your codes, or anything you typed in a
-            material, and it all waits on this device until there is a connection.</p>
-          <div class="row wrap">
-            <label class="row" style="gap:8px;align-items:center;cursor:pointer">
-              <input type="checkbox" id="telon" checked>
-              <span id="telstate">On</span>
-            </label>
-          </div>
-          <p class="note" id="telnote"></p>
-        </section>
-
-      </div>
-    </details>
-
-    <!-- ---- owner sign-in ---- -->
-    <details id="ownerpanel" class="panel">
-      <summary>
-        <span class="dot off" id="ownerdot" aria-hidden="true"></span>
-        <span class="sumtext">Owner</span>
-        <span class="sumstate" id="ownersum">signed out</span>
-      </summary>
-      <div class="panelbody">
-        <p class="note" id="ownernote">Sign in with the admin code to hide or lock
-           lock or retire materials, change codes, or open anything you have locked. Studying needs
-           no code at all.</p>
-        <form id="ownerform">
-          <label class="lbl" for="ocode">Admin code</label>
-          <div class="row">
-            <input id="ocode" type="password" autocomplete="current-password"
-                   autocorrect="off" autocapitalize="characters" spellcheck="false"
-                   enterkeyhint="go" placeholder="XXXX-XXXX-XXXX-XXXX">
-            <button class="btn ghost" type="button" id="peek">Show</button>
-            <button class="btn" type="submit" id="ownerbtn">Sign in</button>
-          </div>
-          <p class="err-inline" id="ownermsg" hidden></p>
-        </form>
-        <div id="ownerout" hidden>
-          <p class="note" id="whonote"></p>
-          <button class="btn ghost danger" id="signout" type="button">Sign out</button>
-        </div>
-      </div>
-    </details>
-
-    <!-- ---- admin ---- -->
-    <details id="adminpanel" class="panel" hidden>
-      <summary>
-        <span class="dot ok" aria-hidden="true"></span>
-        <span class="sumtext">Admin</span>
-        <span class="sumstate">controls</span>
-      </summary>
-      <div class="panelbody">
-
-        <section class="block">
-          <h3 class="rubric">Visibility &amp; locks</h3>
-          <p class="note"><b>Hidden</b> keeps an item off the list for viewers.
-             <b>Locked</b> also withholds its decryption key, which is what actually
-             stops a viewer from reading it. <b>Retired</b> keeps it openable but moves it
-             under a collapsed heading at the bottom: for an older quiz or assignment.</p>
-          <div id="adminitems"></div>
-        </section>
-
-        <section class="block">
-          <h3 class="rubric">Change a code</h3>
-          <p class="note">Changing a code signs out every other device using it. At least
-             10 characters; use something long.</p>
-          <div class="row wrap">
-            <button class="tog" id="roleAdmin" aria-pressed="true" type="button">Admin</button>
-            <button class="tog" id="roleViewer" aria-pressed="false" type="button">Viewer</button>
-          </div>
-          <div class="row" style="margin-top:10px">
-            <input id="newcode" type="password" autocomplete="new-password"
-                   placeholder="New code" spellcheck="false">
-            <button class="btn" id="savecode" type="button">Set</button>
-          </div>
-          <p class="err-inline" id="codemsg" hidden></p>
-        </section>
-
-        <section class="block">
-          <h3 class="rubric">Sessions</h3>
-          <p class="note" id="sessnote"></p>
-          <div class="row wrap">
-            <button class="btn ghost" id="revokestale" type="button" hidden>Clear one time sign ins</button>
-            <button class="btn ghost danger" id="revokeothers" type="button">Sign out every other device</button>
-          </div>
-        </section>
-
-        <section class="block" id="inboxblock">
-          <h3 class="rubric">Inbox</h3>
-          <p class="note" id="inboxnote"></p>
-          <div class="row wrap" style="margin-bottom:10px">
-            <button class="btn ghost sm" id="inboxshowall" type="button" aria-pressed="false">Show all</button>
-          </div>
-          <div id="inboxlist"></div>
-        </section>
-
-        <div class="warnbox">
-          Anything published before encryption was switched on may already be copied or
-          archived elsewhere. Locking it now hides it going forward; it cannot un-publish it.
-        </div>
-      </div>
-    </details>
-
-    <footer class="foot">
-      <p>Open to anyone with the link. Locked items need the owner’s code.</p>
-    </footer>
-
-  </main>
-
-  <button type="button" id="asktrigger" class="asktrigger" aria-label="Send"></button>
-
-  <dialog id="askmodal" class="askmodal">
-    <div class="askhead">
-      <h2>Ask for a material</h2>
-      <button type="button" class="askclose" id="askclose" aria-label="Cancel">&times;</button>
+    <div class="group" id="homeowner">
+      <a class="lrow" href="#settings/owner" id="ownerrow">
+        <span class="ico neutral"><svg><use href="#i-key"/></svg></span>
+        <span class="main"><span>Owner</span><span class="desc" id="ownerrowstate">Sign in to manage materials</span></span>
+        <svg class="chev"><use href="#i-chev"/></svg>
+      </a>
     </div>
 
+    <footer class="foot">
+      <p>Open to anyone with the link. Locked materials need the owner code.</p>
+    </footer>
+  </div>
+
+  <!-- ============================================================ Settings -->
+  <div class="screen legacy" id="scr-settings" data-screen="settings" hidden>
+    <header class="nav"><div class="nav-left"><a class="icon-btn" href="#"><svg><use href="#i-back"/></svg>Classes</a></div><div class="nav-title"></div><div class="nav-right"></div></header>
+    <h1 class="set-title">Settings</h1>
+
+    <!-- Account: pairing codes, until accounts exist -->
+    <section class="setsec" id="pairblock">
+      <h2 class="group-label">Account</h2>
+      <div class="group">
+        <div class="lrow stacked">
+          <div class="head">
+            <span class="ico neutral"><svg><use href="#i-user"/></svg></span>
+            <div class="main"><span>Pairing code</span><span class="desc" id="pairnote"></span></div>
+          </div>
+          <div id="unpaired" class="stack-12">
+            <button class="btn btn-secondary" id="makecode" type="button">Create a pairing code</button>
+            <label class="hint" for="paircode">Or enter the code from your other device</label>
+            <div class="field-row">
+              <input id="paircode" class="input" type="text" placeholder="K7Q2-9MXR-4B8T"
+                     autocomplete="off" autocorrect="off" autocapitalize="characters"
+                     spellcheck="false" maxlength="20">
+              <button class="btn btn-secondary btn-inline" id="dopair" type="button">Pair</button>
+            </div>
+            <p class="err-line" id="pairerr" hidden></p>
+          </div>
+          <div id="codeout" class="stack-12" hidden>
+            <p class="hint">On your other device, open this hub and enter:</p>
+            <p class="code-out" id="bigcode"></p>
+            <div class="qr-box"><div id="qr"></div></div>
+            <p class="hint">Or point that device's camera at the square.</p>
+            <button class="btn btn-secondary" id="codedone" type="button">Done</button>
+          </div>
+          <div id="paired" class="stack-12" hidden>
+            <p class="hint">Paired with code</p>
+            <p class="code-out" id="maskedcode"></p>
+            <div class="btn-row">
+              <button class="btn btn-secondary btn-inline" id="reveal" type="button">Show code</button>
+              <button class="btn btn-secondary btn-inline" id="showqr" type="button">Show square</button>
+              <button class="btn btn-secondary btn-inline" id="syncnow" type="button">Sync now</button>
+              <button class="btn btn-inline btn-outline-danger" id="unpair" type="button">Unpair</button>
+            </div>
+            <div class="qr-box" id="pairedqrwrap" hidden><div id="pairedqr"></div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Sync -->
+    <section class="setsec" id="syncpanel">
+      <h2 class="group-label">Sync</h2>
+      <div class="group">
+        <div class="lrow">
+          <span class="ico neutral"><svg><use href="#i-sync"/></svg></span>
+          <div class="main"><span>Sync</span><span class="desc" id="statusline">Checking</span></div>
+          <span class="val"><span class="dot" id="syncdot" aria-hidden="true"></span> <span id="syncsum">local only</span></span>
+        </div>
+        <div class="lrow stacked syncbarrow" id="syncbar" hidden role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-label="Sync progress">
+          <div class="meter"><i class="syncbar-fill" id="syncbarfill"></i></div>
+          <p class="desc" id="syncbarlabel"></p>
+        </div>
+        <div class="lrow stacked">
+          <div class="main"><span>What syncs</span>
+            <span class="desc">Progress in every material travels with the pairing code: the schedule of every card, quiz results and test dates. What stays on each device on purpose: the tab and section you had open, deck positions, your typing pace, recent materials and the review log queue.</span>
+            <span class="desc" id="syncsize"></span>
+          </div>
+        </div>
+        <div class="lrow stacked">
+          <div class="main"><span>Copy and paste backup</span><span class="desc">Works with no network at all. Import merges; it never wipes what is here.</span></div>
+          <div class="btn-row">
+            <button class="btn btn-secondary btn-inline" id="doexport" type="button">Export</button>
+            <button class="btn btn-secondary btn-inline" id="doimport" type="button">Import</button>
+          </div>
+          <textarea id="iobox" class="answer" rows="4" spellcheck="false" hidden aria-label="Backup code"
+                    placeholder="Paste a backup code here, then press Preview"></textarea>
+          <div class="btn-row" id="iorow" hidden>
+            <button class="btn btn-secondary btn-inline" id="copyout" type="button" hidden>Copy</button>
+            <button class="btn btn-primary btn-inline" id="preview" type="button" hidden>Preview import</button>
+          </div>
+          <div id="importpreview" class="preview" hidden></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- This device -->
+    <section class="setsec">
+      <h2 class="group-label">This device</h2>
+      <div class="group">
+        <div class="lrow">
+          <span class="ico neutral"><svg><use href="#i-moon"/></svg></span>
+          <div class="main"><span>Appearance</span></div>
+          <span class="val">Follows this device</span>
+        </div>
+        <div class="lrow stacked">
+          <div class="head">
+            <span class="ico neutral"><svg><use href="#i-disk"/></svg></span>
+            <div class="main"><span>Saved for offline</span><span class="desc" id="swnote">Checking the offline copy</span></div>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-primary btn-inline" id="doupdate" type="button" hidden>Update now</button>
+            <button class="btn btn-secondary btn-inline" id="clearcache" type="button">Clear cache and reload</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Privacy -->
+    <section class="setsec">
+      <h2 class="group-label">Privacy</h2>
+      <div class="group">
+        <div class="lrow stacked">
+          <div class="head">
+            <span class="ico neutral"><svg><use href="#i-shield"/></svg></span>
+            <div class="main"><span>Help improve the hub</span><span class="desc" id="telstate">On</span></div>
+            <label class="toggle-wrap"><input type="checkbox" id="telon" checked aria-label="Send anonymous review logs"><span class="toggle"></span></label>
+          </div>
+          <details class="more"><summary class="btn btn-quiet btn-inline">What is sent</summary><p class="desc">Every material schedules you with a memory model, and the only way to tell whether it is any good is to set what it predicted against what actually happened. With this on, each review sends an anonymous line: which question was asked, the grade, how long you took, and the model's own numbers at that moment. Each visit also notes when a page opened and closed, how long it was in front of you, the tab it was on, any error it hit, and a rough description of the browser (like "iPhone, Safari 18"), so a broken page or a confusing screen shows up. After a quiz you may be asked, once, how it went (a score is sent only if you type one in). It never sends your name, your codes, or anything you typed in a material, and it all waits on this device until there is a connection.</p></details>
+          <p class="desc" id="telnote"></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Owner -->
+    <p class="owner-rule" id="ownerrule">Only the owner</p>
+    <section class="setsec" id="ownerpanel">
+      <h2 class="group-label">Owner <span class="val" id="ownersum">signed out</span><span class="dot off" id="ownerdot" aria-hidden="true"></span></h2>
+      <div class="group">
+        <div class="lrow stacked">
+          <p class="desc" id="ownernote">Sign in with the admin code to hide, lock or retire materials, change codes, or open anything you have locked. Studying needs no code at all.</p>
+          <form id="ownerform" class="stack-8">
+            <label class="hint" for="ocode">Admin code</label>
+            <div class="field-row">
+              <input id="ocode" class="input" type="password" autocomplete="current-password"
+                     autocorrect="off" autocapitalize="characters" spellcheck="false"
+                     enterkeyhint="go" placeholder="Owner code">
+              <button class="btn btn-secondary btn-inline" type="button" id="peek">Show</button>
+            </div>
+            <button class="btn btn-secondary" type="submit" id="ownerbtn">Sign in</button>
+            <p class="err-line" id="ownermsg" hidden></p>
+          </form>
+          <div id="ownerout" class="stack-8" hidden>
+            <p class="desc" id="whonote"></p>
+          </div>
+        </div>
+      </div>
+      <div class="group" id="adminpanel" hidden>
+        <a class="lrow" href="#owner/materials"><span class="ico neutral"><svg><use href="#i-layers"/></svg></span><span class="main"><span>Materials</span><span class="desc">Hidden, locked, retired, and which features each may run</span></span><svg class="chev"><use href="#i-chev"/></svg></a>
+        <a class="lrow" href="#owner/access"><span class="ico neutral"><svg><use href="#i-key"/></svg></span><span class="main"><span>Access</span><span class="desc">Codes and signed in devices</span></span><svg class="chev"><use href="#i-chev"/></svg></a>
+        <a class="lrow" href="#owner/ask"><span class="ico neutral"><svg><use href="#i-chat"/></svg></span><span class="main"><span>Ask and question writing</span><span class="desc">Switches, spending, codes, reports and chats</span></span><svg class="chev"><use href="#i-chev"/></svg></a>
+        <a class="lrow" href="#owner/inbox"><span class="ico neutral"><svg><use href="#i-inbox"/></svg></span><span class="main"><span>Inbox</span><span class="desc" id="inboxrowstate">Requests sent from the hub</span></span><svg class="chev"><use href="#i-chev"/></svg></a>
+        <button class="lrow danger" id="signout" type="button"><span class="ico danger"><svg><use href="#i-out"/></svg></span><span class="main">Sign out</span></button>
+      </div>
+    </section>
+
+    <footer class="foot"><p>Study Hub. Works offline, syncs with a pairing code.</p></footer>
+  </div>
+
+  <!-- ============================================================ Owner: materials -->
+  <div class="screen legacy owner" id="scr-owner-materials" data-screen="owner/materials" hidden>
+    <header class="nav"><div class="nav-left"><a class="icon-btn" href="#settings/owner"><svg><use href="#i-back"/></svg>Settings</a></div><div class="nav-title"></div><div class="nav-right"></div></header>
+    <h1 class="set-title">Materials</h1>
+    <p class="prose"><b>Hidden</b> keeps an item off the list for viewers. <b>Locked</b> also withholds its decryption key, which is what actually stops a viewer from reading it. <b>Retired</b> keeps it openable but moves it under a collapsed heading at the bottom: for an older quiz or assignment.</p>
+    <div id="adminitems" class="panel-list"></div>
+    <div class="note-box warnbox"><svg aria-hidden="true" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5" stroke-linecap="round"/></g></svg><span>Anything published before encryption was switched on may already be copied or archived elsewhere. Locking it now hides it going forward; it cannot un-publish it.</span></div>
+  </div>
+
+  <!-- ============================================================ Owner: access -->
+  <div class="screen legacy owner" id="scr-owner-access" data-screen="owner/access" hidden>
+    <header class="nav"><div class="nav-left"><a class="icon-btn" href="#settings/owner"><svg><use href="#i-back"/></svg>Settings</a></div><div class="nav-title"></div><div class="nav-right"></div></header>
+    <h1 class="set-title">Access</h1>
+    <section class="setsec">
+      <h2 class="group-label">Change a code</h2>
+      <div class="group"><div class="lrow stacked">
+        <p class="desc">Changing a code signs out every other device using it. At least 10 characters; use something long.</p>
+        <div class="seg rolepick"><button class="tog" id="roleAdmin" aria-pressed="true" type="button">Admin</button><button class="tog" id="roleViewer" aria-pressed="false" type="button">Viewer</button></div>
+        <div class="field-row">
+          <input id="newcode" class="input" type="password" autocomplete="new-password" placeholder="New code" spellcheck="false" aria-label="New code">
+          <button class="btn btn-primary btn-inline" id="savecode" type="button">Set</button>
+        </div>
+        <p class="err-line" id="codemsg" hidden></p>
+      </div></div>
+    </section>
+    <section class="setsec">
+      <h2 class="group-label">Sessions</h2>
+      <div class="group"><div class="lrow stacked">
+        <p class="desc" id="sessnote"></p>
+        <div class="btn-row">
+          <button class="btn btn-secondary btn-inline" id="revokestale" type="button" hidden>Clear one time sign ins</button>
+          <button class="btn btn-inline btn-outline-danger" id="revokeothers" type="button">Sign out every other device</button>
+        </div>
+      </div></div>
+    </section>
+  </div>
+
+  <!-- ============================================================ Owner: inbox -->
+  <div class="screen legacy owner" id="scr-owner-inbox" data-screen="owner/inbox" hidden>
+    <header class="nav"><div class="nav-left"><a class="icon-btn" href="#settings/owner"><svg><use href="#i-back"/></svg>Settings</a></div><div class="nav-title"></div><div class="nav-right"></div></header>
+    <h1 class="set-title">Inbox</h1>
+    <section class="setsec" id="inboxblock">
+      <p class="prose" id="inboxnote"></p>
+      <div class="btn-row"><button class="btn btn-secondary btn-inline" id="inboxshowall" type="button" aria-pressed="false">Show all</button></div>
+      <div id="inboxlist" class="stack-12"></div>
+    </section>
+  </div>
+
+  <!-- ============================================================ Owner: Ask and question writing -->
+  <div class="screen legacy owner wide" id="scr-owner-ask" data-screen="owner/ask" hidden>
+    <header class="nav"><div class="nav-left"><a class="icon-btn" href="#settings/owner"><svg><use href="#i-back"/></svg>Settings</a></div><div class="nav-title"></div><div class="nav-right"></div></header>
+    <h1 class="set-title">Ask and question writing</h1>
+    <div class="panelbody" id="aimount"></div>
+  </div>
+
+  <!-- The request button: unlabeled, bottom right, for anyone -->
+  <button type="button" id="asktrigger" class="asktrigger" aria-label="Send"><svg aria-hidden="true"><use href="#i-plus"/></svg></button>
+  <dialog id="askmodal" class="askmodal legacy">
+    <div class="askhead">
+      <h2>Ask for a material</h2>
+      <button type="button" class="askclose" id="askclose" aria-label="Cancel"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+    </div>
     <div class="askbody" id="askbody">
       <label class="lbl" for="asksubject">Class or subject</label>
-      <input id="asksubject" type="text" class="askinput" autocomplete="off">
-
+      <input id="asksubject" type="text" class="askinput input" autocomplete="off">
       <label class="lbl" for="askpurpose">What it is for</label>
-      <input id="askpurpose" type="text" class="askinput"
-             placeholder="Unit 3 test, chapter quiz, final" autocomplete="off">
-
+      <input id="askpurpose" type="text" class="askinput input" placeholder="Unit 3 test, chapter quiz, final" autocomplete="off">
       <label class="lbl" for="askdue">Date if there is one</label>
-      <input id="askdue" type="date" class="askinput">
-
+      <input id="askdue" type="date" class="askinput input">
       <label class="lbl" for="askfiles">Files</label>
-      <input id="askfiles" type="file" multiple
-             accept=".pdf,.doc,.docx,.ppt,.pptx,.txt,image/*">
+      <input id="askfiles" type="file" multiple accept=".pdf,.doc,.docx,.ppt,.pptx,.txt,image/*">
       <ul class="askfilelist" id="askfilelist"></ul>
-      <p class="err-inline" id="askfileerr" hidden></p>
-
-      <p class="lbl" style="margin-top:16px">Features</p>
+      <p class="err-line" id="askfileerr" hidden></p>
+      <p class="lbl">Features</p>
       <div class="askgrid" id="askgrid"></div>
-
       <label class="lbl" for="asknotes">Anything else</label>
-      <textarea id="asknotes" class="askinput" rows="3"></textarea>
-
+      <textarea id="asknotes" class="askinput answer" rows="3"></textarea>
       <label class="lbl" for="askname">Your name</label>
-      <input id="askname" type="text" class="askinput" autocomplete="off">
-
-      <p class="err-inline" id="askerr" hidden></p>
-
+      <input id="askname" type="text" class="askinput input" autocomplete="off">
+      <p class="err-line" id="askerr" hidden></p>
       <div class="askprogress" id="askprogress" hidden>
-        <p class="note" id="askprogresstext"></p>
-        <div class="syncbar-track"><div class="syncbar-fill" id="askprogressfill"></div></div>
+        <p class="hint" id="askprogresstext"></p>
+        <div class="meter"><i id="askprogressfill"></i></div>
       </div>
-
       <div class="askdone" id="askdone" hidden>
         <p id="askdonetext"></p>
-        <button type="button" class="btn" id="askdoneclose">Done</button>
+        <button type="button" class="btn btn-primary" id="askdoneclose">Done</button>
       </div>
-
-      <div class="row wrap" id="askactions" style="margin-top:18px">
-        <button type="button" class="btn" id="asksend">Send</button>
-        <button type="button" class="btn ghost" id="askcancel">Cancel</button>
+      <div class="btn-row" id="askactions">
+        <button type="button" class="btn btn-primary btn-inline" id="asksend">Send</button>
+        <button type="button" class="btn btn-secondary btn-inline" id="askcancel">Cancel</button>
       </div>
     </div>
   </dialog>
-
 </div>
-
 <script src="assets/auth.js"></script>
 <script src="assets/sync.js"></script>
 <script src="assets/hub.js"></script>

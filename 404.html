@@ -2,43 +2,24 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="color-scheme" content="light only">
+<meta name="color-scheme" content="light dark">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#F2F1ED">
+<meta name="theme-color" content="#F3F3F1" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0F1012" media="(prefers-color-scheme: dark)">
 <title>Not here</title>
 <link rel="icon" href="/study/assets/icon.svg" type="image/svg+xml">
-<style>
-:root{
-  --paper:#F2F1ED; --sheet:#FFFFFF; --ink:#1B2327; --ink2:#4E5B61; --ink3:#87949A;
-  --rule:#D2D2CB; --accent:#6B5430;
-  --mono:ui-monospace,Menlo,Consolas,monospace;
-  --serif:Georgia,"Times New Roman",serif;
-  --cond:"Helvetica Neue",Arial,sans-serif;
-}
-*{box-sizing:border-box}
-body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
-  font-family:var(--serif);font-size:17px;line-height:1.5;
-  display:flex;align-items:center;justify-content:center;
-  padding:calc(24px + env(safe-area-inset-top,0px)) 20px calc(24px + env(safe-area-inset-bottom,0px))}
-.card{width:100%;max-width:440px}
-.eyebrow{margin:0;font-family:var(--mono);font-size:11px;letter-spacing:.18em;
-  text-transform:uppercase;color:var(--ink3)}
-h1{margin:4px 0 0;font-size:28px;font-weight:600;letter-spacing:-.01em}
-p{margin:12px 0 0;color:var(--ink2);font-size:15.5px}
-code{font-family:var(--mono);font-size:13px;background:#E8E7E1;padding:2px 5px;
-  border-radius:2px;overflow-wrap:anywhere}
-a.btn{display:inline-block;margin-top:22px;min-height:48px;line-height:46px;padding:0 18px;
-  border:1px solid var(--ink);background:var(--ink);color:var(--paper);
-  font-family:var(--cond);font-size:15px;font-weight:600;border-radius:2px;text-decoration:none}
-</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..700&amp;family=Onest:wght@400;500;600;700&amp;display=swap">
+<link rel="stylesheet" href="/study/assets/ui.css">
 </head>
-<body>
-<main class="card">
-  <p class="eyebrow">Study hub</p>
-  <h1 id="h">Nothing at this address</h1>
-  <p id="p">The page you asked for is not here.</p>
-  <p><code id="u"></code></p>
-  <a class="btn" href="/study/" id="go">Go to the hub</a>
+<body class="ui m-hub">
+<main class="screen" style="min-height:100vh;min-height:100dvh;padding-top:calc(var(--safe-top) + 72px)">
+  <div class="stack-8">
+    <h1 class="t-title" id="h">Nothing at this address</h1>
+    <p class="t-callout c2" id="p">The page you asked for is not here.</p>
+    <p class="t-foot c2" id="u"></p>
+  </div>
+  <a class="btn btn-primary" href="/study/" id="go" style="margin-top:auto">Go to the hub</a>
 </main>
 <script>
 /* Materials used to live at m/<class>/<name>.html. They are now encrypted and opened

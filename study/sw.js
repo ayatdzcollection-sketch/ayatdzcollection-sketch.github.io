@@ -8,7 +8,7 @@
  * sync.js, auth.js). Devices check for a new version on every load and whenever they
  * regain a connection, so a bump reaches them without anyone having to think about it.
  */
-const VERSION = 'v57';
+const VERSION = 'v58';
 const SHELL_CACHE = 'studyhub-' + VERSION;
 const FONT_CACHE  = 'studyhub-fonts';          // unversioned: fonts are immutable
 const MAT_CACHE   = 'studyhub-materials';      // ciphertext; survives shell updates
@@ -16,7 +16,7 @@ const SCOPE = self.registration.scope;
 
 const SHELL = [
   './', 'index.html', 'view.html',
-  'assets/hub.css', 'assets/hub.js', 'assets/sync.js', 'assets/auth.js',
+  'assets/ui.css', 'assets/hub.css', 'assets/hub.js', 'assets/sync.js', 'assets/auth.js',
   'assets/app.webmanifest', 'assets/icon.svg'
 ].map(p => new URL(p, SCOPE).href);
 

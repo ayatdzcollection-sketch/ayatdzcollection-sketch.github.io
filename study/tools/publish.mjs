@@ -69,7 +69,7 @@ function decrypt(buf, keyB64) {
    resolve a level too high. Rewritten here rather than in each material, so the source
    files stay openable on their own. */
 const toViewerPaths = html => html.replace(/(["'(])\.\.\/\.\.\/assets\//g, '$1assets/');
-const toSourcePaths = html => html.replace(/(["'(])assets\/(sync|hub)\.js/g, '$1../../assets/$2.js');
+const toSourcePaths = html => html.replace(/(["'(])assets\/(sync|hub)\.js/g, '$1../../assets/$2.js').replace(/(["'(])assets\/ui\.css/g, '$1../../assets/ui.css');
 
 /* ---------- login ---------- */
 
