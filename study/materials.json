@@ -7,6 +7,16 @@
       "term": "2026-27",
       "materials": [
         {
+          "id": "daily",
+          "ask": true,
+          "ai": true,
+          "title": "APUSH daily",
+          "blurb": "The one APUSH material for every night of Period 3 (chapters 5, 6 and 7), and the next period when it is added. Today plans the night from the calendar in about 25 minutes, done by 8:15: due cards, the reading with the book closed, the cold check on the eve of a reading quiz, one short answer before an SA quiz, mock sections and a sweep of the whole period before the unit test on 13 October, a warm up that morning. A missed night is spread over the nights left. Read has three lines to say for every heading, then the check. Terms keeps your own Key Term definitions, practised from your words and never written for you. SAQ marks each part out of 3 on the teacher's scale. Test holds the full mock, its answer sheet, cold checks and a readiness check that predicts your score. Every wrong option says what kind of mistake it was, and a weekly card names the one costing you the most.",
+          "tags": ["period-3", "fraser", "chapters-5-7", "reading-quiz", "except-questions", "saq", "sbmcq", "key-terms", "daily", "ai-gen"],
+          "added": "2026-09-26",
+          "sort": 1
+        },
+        {
           "id": "fifty-states",
           "ask": true,
           "title": "The Fifty States: name and locate",
