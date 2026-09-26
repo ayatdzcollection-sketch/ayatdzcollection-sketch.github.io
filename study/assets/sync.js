@@ -51,6 +51,7 @@ var SYNC_EXCLUDE = {
   'apushp12': ['ui'],
   'apush5saq': ['ui'],
   'apush6': ['ui'],
+  'apushdaily': ['ui'],
   'psychu0': ['ui'],
   'la10vocab1': ['ui'],
   'frchateaux': ['ui'],
@@ -652,6 +653,47 @@ function mergeAskThreads(aVal, bVal) {
 
 /* A rule that holds for one key in every namespace is written once as '*:<key>'. A namespace's
  * own rule still comes first. */
+/* APUSH daily's Key Term definitions are the student's own graded work, the most valuable thing
+ * the material holds. Per term the newer write wins (by its stamp in 'at', like settings), and
+ * the text it replaced is kept one step back in prev, so a stale device writing over a newer
+ * definition, or two devices writing at once, can never lose one: Terms offers "bring back the
+ * last version". A delete is { t:'', del:true } with its own stamp, and keeps prev too. */
+function mergeDefs(aVal, bVal, aM, bM) {
+  var out = mergeSettings(aVal, bVal, aM, bM);
+  var a = aVal && typeof aVal === 'object' ? aVal : {}, b = bVal && typeof bVal === 'object' ? bVal : {};
+  for (var k in out) {
+    if (!Object.prototype.hasOwnProperty.call(out, k) || k === 'at' || k === 'v') continue;
+    var win = out[k], lose = win === a[k] ? b[k] : a[k];
+    if (!win || typeof win !== 'object' || !lose || typeof lose !== 'object') continue;
+    var lt = typeof lose.t === 'string' ? lose.t : '';
+    /* The losing text goes one step back; when both hold the same text (an old copy of the same
+     * device), the step back the other one kept is carried over rather than dropped. */
+    var keep = lt && lt !== win.t ? lt : (!win.prev && typeof lose.prev === 'string' && lose.prev && lose.prev !== win.t ? lose.prev : '');
+    if (keep && win.prev !== keep) { var c = {}; for (var f in win) if (Object.prototype.hasOwnProperty.call(win, f)) c[f] = win[f]; c.prev = keep; out[k] = c; }
+  }
+  return out;
+}
+/* Personal cards: [{ id, f, b, src, ts, v, del }]. Union by id; the later edit (v) supplies the
+ * card; a delete on either side sticks and drops the text; newest 400 kept. */
+function mergeMine(aVal, bVal) {
+  var by = {};
+  [aVal, bVal].forEach(function (arr) {
+    if (!Array.isArray(arr)) return;
+    for (var i = 0; i < arr.length; i++) {
+      var c = arr[i]; if (!c || typeof c.id !== 'string') continue;
+      var p = by[c.id];
+      if (!p) { by[c.id] = c; continue; }
+      var del = !!(p.del || c.del);
+      var win = (c.v || 0) > (p.v || 0) ? c : (c.v || 0) < (p.v || 0) ? p : (canonicalJson(c) > canonicalJson(p) ? c : p);
+      by[c.id] = del ? { id: c.id, ts: win.ts, v: Math.max(p.v || 0, c.v || 0), del: true } : win;
+    }
+  });
+  var out = []; for (var k in by) if (Object.prototype.hasOwnProperty.call(by, k)) out.push(by[k]);
+  out.sort(function (x, y) { return (x.ts || 0) - (y.ts || 0); });
+  return out.slice(-400);
+}
+var mergeDailyFsrs = makeFsrsMerge('cards', null, 40);
+
 var BUILTIN_MERGES = {
   '*:askthreads': mergeAskThreads,
   'fifty-states:fsrs': mergeFsrsValue,
@@ -675,6 +717,21 @@ var BUILTIN_MERGES = {
   'apush5saq:trapnotes': mergeTrapNotes,
   'apush5saq:uimarks': mergeMarks,             // must knows and lessons, kept inside ui
   'apush5saq:askprefs': mergeSettings,
+  'apushdaily:fsrs': mergeDailyFsrs,           // APUSH daily: one scheduler, 40 tests kept
+  'apushdaily:defs': mergeDefs,                // the student's own Key Term definitions, never lost
+  'apushdaily:mine': mergeMine,                // personal cards, never the shared bank
+  'apushdaily:plan': mergeSettings,            // focus and what to study
+  'apushdaily:settings': mergeSettings,
+  'apushdaily:cal': mergeSettings,             // dates the student moved
+  'apushdaily:nights': mergeSettings,          // what each night did, per day
+  'apushdaily:grades': mergeSettings,          // typed scores, per assessment
+  'apushdaily:misses': makeEventMerge(300),    // every practice miss, for the diagnosis
+  'apushdaily:saqlog': makeEventMerge(40),
+  'apushdaily:ready': makeEventMerge(40),      // readiness checks and their predictions
+  'apushdaily:marks': mergeMarks,              // headings recalled, the mock parts, weekly cards
+  'apushdaily:asknotes': mergeAskNotes,
+  'apushdaily:trapnotes': mergeTrapNotes,
+  'apushdaily:askprefs': mergeSettings,
   'apush6:fsrs': mergeCardsFsrs,               // APUSH chapter 6, both quizzes: same record shape
   'apush6:asknotes': mergeAskNotes,
   'apush6:trapnotes': mergeTrapNotes,
@@ -2449,7 +2506,7 @@ var TEACH_ROUTES = {
   'other/psych-unit0': ['Guide', 'guide'],
   'fr/chateaux': ['Les mots', 'mots']
 };
-var NO_NUDGE = { 'la10/vocab-ch1': true, 'chem/periodic-table': true };
+var NO_NUDGE = { 'la10/vocab-ch1': true, 'chem/periodic-table': true, 'apush/daily': true };
 var TEACH_LABELS = ['Learn', 'Lessons', 'Lesson', 'Guide', 'Teach', 'Study guide'];
 function clickLabel(label) {
   try {

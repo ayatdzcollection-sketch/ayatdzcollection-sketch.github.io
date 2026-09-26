@@ -899,6 +899,7 @@ const MATERIAL_KEYS = {
   'apushp12':     ['asknotes', 'askprefs', 'askthreads', 'fsrs', 'trapnotes', 'ui'],
   'apush5saq':    ['asknotes', 'askprefs', 'askthreads', 'fsrs', 'trapnotes', 'ui'],
   'apush6':       ['asknotes', 'askprefs', 'askthreads', 'fsrs', 'trapnotes', 'ui'],
+  'apushdaily':   ['asknotes', 'askprefs', 'askthreads', 'cal', 'defs', 'fsrs', 'grades', 'marks', 'mine', 'misses', 'nights', 'plan', 'ready', 'saqlog', 'settings', 'trapnotes', 'ui'],
   'chemunit':     ['asknotes', 'askprefs', 'askthreads', 'fsrs', 'trapnotes', 'ui'],
   'la10crucible': ['asknotes', 'askprefs', 'askthreads', 'fsrs', 'trapnotes', 'ui'],
   'la10crucible34': ['asknotes', 'askprefs', 'askthreads', 'fsrs', 'trapnotes', 'ui'],
@@ -1087,3 +1088,80 @@ test('alg2u1 lessons: a lesson finished on one device stays finished on the othe
   const m = REG['alg2u1:lessons']({ a: 1, b: 5 }, { b: 9, c: 2 });
   assert.deepEqual(m, { a: 1, b: 9, c: 2 });
 });
+
+/* ---------- apushdaily: the student's definitions are never lost, personal cards stay theirs ---------- */
+test('apushdaily defs: per term the newer write wins and the older text is kept one step back', () => {
+  const m = BUILTIN_MERGES['apushdaily:defs'];
+  const phone = { 't-stamp-act': { t: 'phone version' }, 't-jay-treaty': { t: 'jay, phone' }, at: { 't-stamp-act': 100, 't-jay-treaty': 300 } };
+  const laptop = { 't-stamp-act': { t: 'laptop version' }, 't-xyz-affair': { t: 'xyz' }, at: { 't-stamp-act': 200, 't-xyz-affair': 150 } };
+  const a = m(phone, laptop, 1, 1), b = m(laptop, phone, 1, 1);
+  assert.equal(a['t-stamp-act'].t, 'laptop version');
+  assert.equal(a['t-stamp-act'].prev, 'phone version', 'the losing text is kept');
+  assert.equal(a['t-jay-treaty'].t, 'jay, phone'); assert.equal(a['t-xyz-affair'].t, 'xyz');
+  assert.deepEqual(a, b, 'both directions agree');
+  const del = m(a, { 't-stamp-act': { t: '', del: true, prev: 'laptop version' }, at: { 't-stamp-act': 400 } }, 1, 1);
+  assert.equal(del['t-stamp-act'].del, true); assert.equal(del['t-stamp-act'].prev, 'laptop version');
+});
+test('apushdaily mine: personal cards union by id, later edit wins, deletes stick', () => {
+  const m = BUILTIN_MERGES['apushdaily:mine'];
+  const out = m([{ id: 'u1', f: 'a', b: 'b', ts: 1, v: 1 }, { id: 'u2', f: 'x', b: 'y', ts: 2, v: 1 }], [{ id: 'u1', f: 'a2', b: 'b2', ts: 1, v: 2 }, { id: 'u2', ts: 2, v: 3, del: true }, { id: 'u3', f: 'n', b: 'm', ts: 3, v: 1 }]);
+  assert.equal(out.find(c => c.id === 'u1').f, 'a2');
+  assert.equal(out.find(c => c.id === 'u2').del, true); assert.equal(out.find(c => c.id === 'u2').f, undefined);
+  assert.equal(out.length, 3);
+});
+test('apushdaily: the tab stays on the device, progress and misses travel', () => {
+  assert.equal(askExcluded('apushdaily', 'ui'), true, 'the tab stays on the device');
+  assert.equal(askExcluded('apushdaily', 'defs'), false, 'definitions travel');
+  const m = BUILTIN_MERGES['apushdaily:misses'];
+  const out = m([{ ts: 1, id: 'p3-6-q-001', w: 0, code: 'xt' }], [{ ts: 2, id: 'p3-6-q-002', w: 1, code: 'link' }, { ts: 1, id: 'p3-6-q-001', w: 0, code: 'xt' }]);
+  assert.equal(out.length, 2);
+  const f = BUILTIN_MERGES['apushdaily:fsrs']({ cards: { a: { s: 1, d: 5, last: 10, reps: 1 } }, quizDate: '2026-10-05', exams: [] }, { cards: { a: { s: 3, d: 4, last: 20, reps: 2 } }, quizDate: '2026-10-13', exams: [{ ts: 5, fmt: 'mock', pts: 20, of: 26 }] }, 1, 2);
+  assert.equal(f.cards.a.reps, 2); assert.equal(f.exams.length, 1);
+});
+test('apushdaily: every key merges the same both ways, settles, and loses no definition (random devices)', () => {
+  let seed = 7; const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+  const pick = a => a[Math.floor(rnd() * a.length)];
+  const terms = ['t-stamp-act', 't-jay-treaty', 't-xyz-affair', 't-shays-s-rebellion'];
+  const device = base => {
+    const at = () => 1000 + Math.floor(rnd() * 9000);
+    const defs = { at: {} }; terms.forEach(k => { if (rnd() < 0.7) { defs[k] = rnd() < 0.15 ? { t: '', del: true } : { t: k + ' text ' + Math.floor(rnd() * 5) }; defs.at[k] = at(); } });
+    const cards = {}; ['p3-5-q-001', 'p3-6-q-002', 'p3-7-q-003', 'p3-t-004'].forEach(id => { if (rnd() < 0.8) cards[id] = { s: rnd() * 20, d: 1 + rnd() * 9, last: at(), reps: 1 + Math.floor(rnd() * 5), lapses: 0 }; });
+    const nights = { at: {} }; ['2026-10-01', '2026-10-02'].forEach(d => { if (rnd() < 0.6) { nights[d] = { heads: [pick(['h1', 'h2'])], due: Math.floor(rnd() * 20), mins: 10 }; nights.at[d] = at(); } });
+    return {
+      fsrs: { cards, quizDate: pick(['2026-10-05', '2026-10-09', '2026-10-13']), exams: rnd() < 0.5 ? [{ ts: at(), fmt: 'mock', pts: 20, of: 26 }] : [] },
+      defs, nights,
+      mine: rnd() < 0.5 ? [{ id: 'u-aaaa1', f: 'front ' + Math.floor(rnd() * 3), b: 'back', ts: 5, v: at() }] : [],
+      plan: { focus: rnd() < 0.5 ? { chs: ['c6'], kinds: ['except'], until: 'quiz', set: at() } : null, at: { focus: at() } },
+      settings: { budget: pick([10, 25, 45]), askStyle: pick(['coach', 'direct']), at: { budget: at(), askStyle: at() } },
+      cal: { 'c7-rq': pick(['2026-10-05', '2026-10-06']), at: { 'c7-rq': at() } },
+      grades: { 'c6-rq': { score: Math.floor(rnd() * 10), of: 10 }, at: { 'c6-rq': at() } },
+      misses: [{ ts: at(), id: 'p3-6-q-002', w: 1, code: 'xt' }],
+      saqlog: [{ ts: at(), saq: 'p3-6-s-001', ch: 'c6', parts: [{ pts: 2 }] }],
+      ready: [{ ts: at(), ch: 'c6', n: 7, of: 10, pred: 8 }],
+      marks: { heads: { h1: at() }, week: rnd() < 0.5 ? { 'w40': at() } : {}, lastMockMissed: [1, 2], missSeen: '2026-10-01' }
+    };
+  };
+  const keys = ['fsrs', 'defs', 'nights', 'mine', 'plan', 'settings', 'cal', 'grades', 'misses', 'saqlog', 'ready', 'marks'];
+  for (let round = 0; round < 200; round++) {
+    const A = device(), B = device(), am = 1000 + Math.floor(rnd() * 9000), bm = 1000 + Math.floor(rnd() * 9000);
+    for (const k of keys) {
+      const m = BUILTIN_MERGES['apushdaily:' + k];
+      assert.equal(typeof m, 'function', k + ' has a rule');
+      const ab = m(A[k], B[k], am, bm), ba = m(B[k], A[k], bm, am);
+      assert.deepEqual(canon(ab), canon(ba), k + ' merges the same both ways (round ' + round + ')');
+      assert.deepEqual(canon(m(ab, ab, am, am)), canon(ab), k + ' settles: merging again changes nothing');
+      assert.deepEqual(canon(m(ab, A[k], Math.max(am, bm), am)), canon(ab), k + ' settles against an old copy of A');
+    }
+    const D = BUILTIN_MERGES['apushdaily:defs'](A.defs, B.defs, am, bm);
+    for (const k of terms) {
+      const texts = [A.defs[k], B.defs[k]].filter(x => x && x.t).map(x => x.t);
+      for (const t of texts) assert.ok(D[k] && (D[k].t === t || D[k].prev === t), 'definition "' + t + '" survives the merge (round ' + round + ')');
+    }
+    const F = BUILTIN_MERGES['apushdaily:fsrs'](A.fsrs, B.fsrs, am, bm);
+    for (const id of Object.keys(Object.assign({}, A.fsrs.cards, B.fsrs.cards))) {
+      const newest = [A.fsrs.cards[id], B.fsrs.cards[id]].filter(Boolean).reduce((x, y) => (y.last > x.last ? y : x));
+      assert.equal(F.cards[id].last, newest.last, 'card ' + id + ' keeps its newest review');
+    }
+  }
+});
+function canon(v) { if (Array.isArray(v)) return v.map(canon); if (v && typeof v === 'object') { const o = {}; Object.keys(v).sort().forEach(k => { o[k] = canon(v[k]); }); return o; } return v; }
